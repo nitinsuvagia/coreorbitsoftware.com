@@ -1,0 +1,285 @@
+version: '3.8'
+
+services:
+  # ===========================================
+  # INFRASTRUCTURE SERVICES
+  # ===========================================
+  
+  postgres:
+    image: postgres:16-alpine
+    container_name: oms-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: oms_master
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - oms-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: oms-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - oms-network
+
+  localstack:
+    image: localstack/localstack:latest
+    container_name: oms-localstack
+    restart: unless-stopped
+    environment:
+      - SERVICES=sqs,sns,s3
+      - DEFAULT_REGION=us-east-1
+    ports:
+      - "4566:4566"
+    volumes:
+      - localstack_data:/var/lib/localstack
+    networks:
+      - oms-network
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    container_name: oms-api-gateway
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    env_file:
+      - .env
+      - .env.docker
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - oms-network
+
+  # ===========================================
+  # MICROSERVICES
+  # ===========================================
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: services/auth-service/Dockerfile
+    container_name: oms-auth-service
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    env_file:
+      - .env
+      - .env.docker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - oms-network
+
+  employee-service:
+    build:
+      context: .
+      dockerfile: services/employee-service/Dockerfile
+    container_name: oms-employee-service
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    env_file:
+      - .env
+      - .env.docker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - oms-network
+
+  attendance-service:
+    build:
+      context: .
+      dockerfile: services/attendance-service/Dockerfile
+    container_name: oms-attendance-service
+    restart: unless-stopped
+    ports:
+      - "3003:3003"
+    env_file:
+      - .env
+      - .env.docker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - oms-network
+
+  project-service:
+    build:
+      context: .
+      dockerfile: services/project-service/Dockerfile
+    container_name: oms-project-service
+    restart: unless-stopped
+    ports:
+      - "3004:3004"
+    env_file:
+      - .env
+      - .env.docker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - oms-network
+
+  task-service:
+    build:
+      context: .
+      dockerfile: services/task-service/Dockerfile
+    container_name: oms-task-service
+    restart: unless-stopped
+    ports:
+      - "3005:3005"
+    env_file:
+      - .env
+      - .env.docker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - oms-network
+
+  billing-service:
+    build:
+      context: .
+      dockerfile: services/billing-service/Dockerfile
+    container_name: oms-billing-service
+    restart: unless-stopped
+    ports:
+      - "3006:3006"
+    env_file:
+      - .env
+      - .env.docker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - oms-network
+
+  document-service:
+    build:
+      context: .
+      dockerfile: services/document-service/Dockerfile
+    container_name: oms-document-service
+    restart: unless-stopped
+    ports:
+      - "3007:3007"
+    env_file:
+      - .env
+      - .env.docker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      localstack:
+        condition: service_started
+    networks:
+      - oms-network
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: services/notification-service/Dockerfile
+    container_name: oms-notification-service
+    restart: unless-stopped
+    ports:
+      - "3008:3008"
+    env_file:
+      - .env
+      - .env.docker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      localstack:
+        condition: service_started
+    networks:
+      - oms-network
+
+  report-service:
+    build:
+      context: .
+      dockerfile: services/report-service/Dockerfile
+    container_name: oms-report-service
+    restart: unless-stopped
+    ports:
+      - "3009:3009"
+    env_file:
+      - .env
+      - .env.docker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      localstack:
+        condition: service_started
+    networks:
+      - oms-network
+
+  # ===========================================
+  # FRONTEND
+  # ===========================================
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: oms-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+      - .env.docker
+    depends_on:
+      - api-gateway
+    networks:
+      - oms-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  localstack_data:
+
+networks:
+  oms-network:
+    driver: bridge

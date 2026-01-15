@@ -1,0 +1,56 @@
+{
+  "name": "@oms/database",
+  "version": "1.0.0",
+  "description": "Database schemas and Prisma clients for Office Management System",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./master": {
+      "import": "./dist/master/index.mjs",
+      "require": "./dist/master/index.js",
+      "types": "./dist/master/index.d.ts"
+    },
+    "./tenant": {
+      "import": "./dist/tenant/index.mjs",
+      "require": "./dist/tenant/index.js",
+      "types": "./dist/tenant/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rimraf dist",
+    "db:generate:master": "prisma generate --schema=./prisma/master/schema.prisma",
+    "db:generate:tenant": "prisma generate --schema=./prisma/tenant/schema.prisma",
+    "db:generate": "npm run db:generate:master && npm run db:generate:tenant",
+    "db:push:master": "prisma db push --schema=./prisma/master/schema.prisma",
+    "db:migrate:master": "prisma migrate dev --schema=./prisma/master/schema.prisma",
+    "db:migrate:tenant": "prisma migrate dev --schema=./prisma/tenant/schema.prisma",
+    "db:studio:master": "prisma studio --schema=./prisma/master/schema.prisma",
+    "db:studio:tenant": "prisma studio --schema=./prisma/tenant/schema.prisma",
+    "db:seed:master": "ts-node prisma/master/seed.ts",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "@oms/tenant-db-manager": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "prisma": "^5.10.0",
+    "rimraf": "^5.0.5",
+    "ts-node": "^10.9.2",
+    "tsup": "^8.0.1",
+    "typescript": "^5.3.3"
+  },
+  "peerDependencies": {
+    "@oms/shared-types": "*"
+  }
+}

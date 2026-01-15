@@ -1,0 +1,70 @@
+version: '3.8'
+
+# Development Docker Compose - Uses pre-built images or host node_modules
+# Run with: docker compose -f docker-compose.dev.yml up
+
+services:
+  # ===========================================
+  # INFRASTRUCTURE SERVICES
+  # ===========================================
+  
+  postgres:
+    image: postgres:16-alpine
+    container_name: oms-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: oms_master
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - oms-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: oms-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - oms-network
+
+  localstack:
+    image: localstack/localstack:latest
+    container_name: oms-localstack
+    restart: unless-stopped
+    environment:
+      - SERVICES=sqs,sns,s3
+      - DEFAULT_REGION=us-east-1
+    ports:
+      - "4566:4566"
+    volumes:
+      - localstack_data:/var/lib/localstack
+    networks:
+      - oms-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  localstack_data:
+
+networks:
+  oms-network:
+    driver: bridge

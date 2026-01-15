@@ -1,0 +1,224 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* ============================================================================
+   APPEARANCE PREFERENCES
+   ============================================================================ */
+
+/* Font Size Preferences */
+:root[data-font-size="small"] {
+  font-size: 14px;
+}
+
+:root[data-font-size="medium"] {
+  font-size: 16px;
+}
+
+:root[data-font-size="large"] {
+  font-size: 18px;
+}
+
+/* Compact Mode */
+:root[data-compact="true"] {
+  --spacing-multiplier: 0.75;
+}
+
+:root[data-compact="true"] .p-4 { padding: 0.75rem; }
+:root[data-compact="true"] .p-6 { padding: 1rem; }
+:root[data-compact="true"] .py-4 { padding-top: 0.75rem; padding-bottom: 0.75rem; }
+:root[data-compact="true"] .px-4 { padding-left: 0.75rem; padding-right: 0.75rem; }
+:root[data-compact="true"] .gap-4 { gap: 0.75rem; }
+:root[data-compact="true"] .gap-6 { gap: 1rem; }
+:root[data-compact="true"] .space-y-4 > * + * { margin-top: 0.75rem; }
+:root[data-compact="true"] .space-y-6 > * + * { margin-top: 1rem; }
+
+/* Reduced Motion */
+:root[data-reduced-motion="true"] * {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
+/* Accent Colors - Override primary color based on selection */
+:root[data-accent-color="blue"] {
+  --primary: 221.2 83.2% 53.3%;
+  --ring: 221.2 83.2% 53.3%;
+}
+
+:root[data-accent-color="purple"] {
+  --primary: 270 76% 58%;
+  --ring: 270 76% 58%;
+}
+
+:root[data-accent-color="green"] {
+  --primary: 142 71% 45%;
+  --ring: 142 71% 45%;
+}
+
+:root[data-accent-color="orange"] {
+  --primary: 25 95% 53%;
+  --ring: 25 95% 53%;
+}
+
+:root[data-accent-color="red"] {
+  --primary: 0 84% 60%;
+  --ring: 0 84% 60%;
+}
+
+:root[data-accent-color="pink"] {
+  --primary: 330 81% 60%;
+  --ring: 330 81% 60%;
+}
+
+:root[data-accent-color="teal"] {
+  --primary: 175 77% 40%;
+  --ring: 175 77% 40%;
+}
+
+:root[data-accent-color="indigo"] {
+  --primary: 239 84% 67%;
+  --ring: 239 84% 67%;
+}
+
+/* Dark mode accent color adjustments */
+.dark[data-accent-color="blue"] {
+  --primary: 217.2 91.2% 59.8%;
+  --ring: 217.2 91.2% 59.8%;
+}
+
+.dark[data-accent-color="purple"] {
+  --primary: 270 70% 65%;
+  --ring: 270 70% 65%;
+}
+
+.dark[data-accent-color="green"] {
+  --primary: 142 69% 58%;
+  --ring: 142 69% 58%;
+}
+
+.dark[data-accent-color="orange"] {
+  --primary: 25 95% 60%;
+  --ring: 25 95% 60%;
+}
+
+.dark[data-accent-color="red"] {
+  --primary: 0 84% 65%;
+  --ring: 0 84% 65%;
+}
+
+.dark[data-accent-color="pink"] {
+  --primary: 330 81% 65%;
+  --ring: 330 81% 65%;
+}
+
+.dark[data-accent-color="teal"] {
+  --primary: 175 70% 50%;
+  --ring: 175 70% 50%;
+}
+
+.dark[data-accent-color="indigo"] {
+  --primary: 239 84% 72%;
+  --ring: 239 84% 72%;
+}
+
+/* Font Family Preferences */
+:root {
+  --font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
+:root[data-font-family="inter"] {
+  --font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
+:root[data-font-family="roboto"] {
+  --font-family: 'Roboto', ui-sans-serif, system-ui, sans-serif;
+}
+
+:root[data-font-family="open-sans"] {
+  --font-family: 'Open Sans', ui-sans-serif, system-ui, sans-serif;
+}
+
+:root[data-font-family="lato"] {
+  --font-family: 'Lato', ui-sans-serif, system-ui, sans-serif;
+}
+
+:root[data-font-family="poppins"] {
+  --font-family: 'Poppins', ui-sans-serif, system-ui, sans-serif;
+}
+
+:root[data-font-family="montserrat"] {
+  --font-family: 'Montserrat', ui-sans-serif, system-ui, sans-serif;
+}
+
+:root[data-font-family="nunito"] {
+  --font-family: 'Nunito', ui-sans-serif, system-ui, sans-serif;
+}
+
+:root[data-font-family="raleway"] {
+  --font-family: 'Raleway', ui-sans-serif, system-ui, sans-serif;
+}
+
+:root[data-font-family="source-sans"] {
+  --font-family: 'Source Sans 3', ui-sans-serif, system-ui, sans-serif;
+}
+
+:root[data-font-family="work-sans"] {
+  --font-family: 'Work Sans', ui-sans-serif, system-ui, sans-serif;
+}

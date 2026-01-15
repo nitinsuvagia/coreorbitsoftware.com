@@ -1,0 +1,53 @@
+# Terraform Variable Values for Production
+# Customize these values for your deployment
+
+aws_region  = "us-east-1"
+environment = "production"
+project_name = "office-mgmt"
+
+# VPC Configuration
+vpc_cidr = "10.0.0.0/16"
+availability_zones = ["us-east-1a", "us-east-1b", "us-east-1c"]
+public_subnet_cidrs = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+private_subnet_cidrs = ["10.0.10.0/24", "10.0.20.0/24", "10.0.30.0/24"]
+
+# ECS EC2 Configuration
+ecs_instance_type = "t3.large"
+ecs_min_instances = 2
+ecs_max_instances = 6
+ecs_desired_instances = 2
+
+# Database Configuration
+db_instance_class = "db.t3.medium"
+db_allocated_storage = 100
+db_max_allocated_storage = 500
+db_name = "office_management"
+db_username = "admin"
+db_multi_az = true
+
+# Redis Configuration
+redis_node_type = "cache.t3.medium"
+redis_num_cache_nodes = 2
+
+# Application Configuration
+domain_name = "officemanagement.com"  # Replace with your domain
+jwt_expires_in = "24h"
+
+# Service Task Counts
+api_gateway_desired_count = 2
+auth_service_desired_count = 2
+employee_service_desired_count = 2
+attendance_service_desired_count = 2
+project_service_desired_count = 2
+task_service_desired_count = 2
+notification_service_desired_count = 1
+document_service_desired_count = 2
+billing_service_desired_count = 1
+report_service_desired_count = 1
+web_app_desired_count = 2
+
+# Logging
+log_retention_days = 30
+
+# SSL/TLS (leave empty to auto-create)
+acm_certificate_arn = ""

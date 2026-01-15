@@ -1,0 +1,31 @@
+<h2>Your Role Has Been Updated</h2>
+
+<p>Hello {{firstName}},</p>
+
+<p>This is to notify you that your platform administrator role has been changed.</p>
+
+<div class="info-box">
+  <p><strong>Role Change Details:</strong></p>
+  <p>Previous Role: <strong>{{oldRole}}</strong><br>
+  New Role: <strong>{{newRole}}</strong><br>
+  Changed By: {{changedBy}}<br>
+  Date: {{changeDate}}</p>
+</div>
+
+{{#if isPromotion}}
+<p>Congratulations on your expanded responsibilities! Your new role grants you additional privileges and access to more platform features.</p>
+{{else}}
+<p>Your role has been updated. Please review your current permissions in the platform settings.</p>
+{{/if}}
+
+<a href="{{platformUrl}}/settings" class="button">View Your Permissions</a>
+
+<div class="divider"></div>
+
+<p><strong>What's changed:</strong></p>
+{{{roleDescription}}}
+
+<p>If you have any questions about your new role or permissions, please contact the platform administrator who made this change.</p>
+
+<p>Best regards,<br>
+<strong>OMS Platform Team</strong></p>

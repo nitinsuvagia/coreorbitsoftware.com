@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: document-service
+  namespace: office-management
+  labels:
+    app: document-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: document-service
+  template:
+    metadata:
+      labels:
+        app: document-service
+    spec:
+      containers:
+        - name: document-service
+          image: office-management/document-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3007
+          envFrom:
+            - configMapRef:
+                name: app-config
+            - secretRef:
+                name: app-secrets
+          env:
+            - name: PORT
+              value: "3007"
+            - name: REDIS_URL
+              value: "redis://redis:6379"
+          volumeMounts:
+            - name: document-storage
+              mountPath: /app/uploads
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3007
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3007
+            initialDelaySeconds: 30
+            periodSeconds: 10
+      volumes:
+        - name: document-storage
+          persistentVolumeClaim:
+            claimName: document-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: document-pvc
+  namespace: office-management
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: document-service
+  namespace: office-management
+spec:
+  selector:
+    app: document-service
+  ports:
+    - port: 3007
+      targetPort: 3007
+  type: ClusterIP

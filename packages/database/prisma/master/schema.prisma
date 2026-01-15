@@ -1,0 +1,891 @@
+// ============================================================================
+// MASTER DATABASE SCHEMA
+// ============================================================================
+// This database stores:
+// - Platform admins (SuperAdmin, SubAdmin, AdminUser)
+// - Tenants registry (companies using the SaaS)
+// - Subscriptions & billing
+// - Subdomain mappings
+// - Platform-wide settings
+//
+// Database Name: oms_master
+// ============================================================================
+
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../../../../node_modules/.prisma/master-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("MASTER_DATABASE_URL")
+}
+
+// ============================================================================
+// PLATFORM ADMINS - Can only login via main domain
+// ============================================================================
+
+model PlatformAdmin {
+  id                String               @id @default(uuid())
+  email             String               @unique
+  username          String               @unique
+  passwordHash      String               @map("password_hash")
+  role              PlatformAdminRole
+  status            PlatformAdminStatus  @default(PENDING)
+  
+  // Profile
+  firstName         String               @map("first_name")
+  lastName          String               @map("last_name")
+  displayName       String               @map("display_name")
+  avatar            String?
+  phone             String?
+  timezone          String               @default("UTC")
+  language          String               @default("en")
+  
+  // Security
+  mfaEnabled        Boolean              @default(false) @map("mfa_enabled")
+  mfaType           MfaType?             @map("mfa_type")
+  mfaSecret         String?              @map("mfa_secret")
+  mfaBackupCodes    String[]             @map("mfa_backup_codes")
+  passwordChangedAt DateTime             @default(now()) @map("password_changed_at")
+  passwordExpiresAt DateTime?            @map("password_expires_at")
+  loginAttempts     Int                  @default(0) @map("login_attempts")
+  lockedUntil       DateTime?            @map("locked_until")
+  allowedIpAddresses String[]            @map("allowed_ip_addresses")
+  
+  // Timestamps
+  lastLoginAt       DateTime?            @map("last_login_at")
+  lastActivityAt    DateTime?            @map("last_activity_at")
+  invitedBy         String?              @map("invited_by")
+  invitedAt         DateTime?            @map("invited_at")
+  createdAt         DateTime             @default(now()) @map("created_at")
+  updatedAt         DateTime             @updatedAt @map("updated_at")
+  deletedAt         DateTime?            @map("deleted_at")
+  
+  // Preferences
+  appearancePreferences Json?            @map("appearance_preferences")
+  
+  // Relations
+  inviter           PlatformAdmin?       @relation("InvitedBy", fields: [invitedBy], references: [id])
+  invitees          PlatformAdmin[]      @relation("InvitedBy")
+  sessions          PlatformAdminSession[]
+  loginHistory      PlatformLoginHistory[]
+  trustedDevices    TrustedDevice[]
+  auditLogs         PlatformAuditLog[]
+  passwordResetTokens PasswordResetToken[]
+  
+  @@index([email])
+  @@index([status])
+  @@index([role])
+  @@map("platform_admins")
+}
+
+enum PlatformAdminRole {
+  SUPER_ADMIN
+  SUB_ADMIN
+  ADMIN_USER
+  BILLING_ADMIN
+  SUPPORT_AGENT
+}
+
+enum PlatformAdminStatus {
+  PENDING
+  ACTIVE
+  INACTIVE
+  LOCKED
+  SUSPENDED
+}
+
+enum MfaType {
+  TOTP
+  SMS
+  EMAIL
+}
+
+// ============================================================================
+// PLATFORM ADMIN SESSIONS
+// ============================================================================
+
+model PlatformAdminSession {
+  id              String        @id @default(uuid())
+  adminId         String        @map("admin_id")
+  tokenHash       String        @unique @map("token_hash")
+  tokenFamily     String        @map("token_family")
+  ipAddress       String        @map("ip_address")
+  userAgent       String        @map("user_agent")
+  deviceId        String?       @map("device_id")
+  expiresAt       DateTime      @map("expires_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  lastActivityAt  DateTime      @default(now()) @map("last_activity_at")
+  revokedAt       DateTime?     @map("revoked_at")
+  
+  admin           PlatformAdmin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  
+  @@index([adminId])
+  @@index([tokenHash])
+  @@index([expiresAt])
+  @@map("platform_admin_sessions")
+}
+
+// ============================================================================
+// PLATFORM LOGIN HISTORY
+// ============================================================================
+
+model PlatformLoginHistory {
+  id            String        @id @default(uuid())
+  adminId       String        @map("admin_id")
+  timestamp     DateTime      @default(now())
+  ipAddress     String        @map("ip_address")
+  userAgent     String        @map("user_agent")
+  location      String?
+  success       Boolean
+  failureReason String?       @map("failure_reason")
+  mfaUsed       Boolean       @default(false) @map("mfa_used")
+  
+  admin         PlatformAdmin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  
+  @@index([adminId])
+  @@index([timestamp])
+  @@map("platform_login_history")
+}
+
+// ============================================================================
+// TRUSTED DEVICES
+// ============================================================================
+
+model TrustedDevice {
+  id            String        @id @default(uuid())
+  adminId       String        @map("admin_id")
+  deviceName    String        @map("device_name")
+  deviceType    DeviceType    @map("device_type")
+  browser       String
+  os            String
+  fingerprint   String
+  lastUsedAt    DateTime      @default(now()) @map("last_used_at")
+  trustedAt     DateTime      @default(now()) @map("trusted_at")
+  expiresAt     DateTime      @map("expires_at")
+  
+  admin         PlatformAdmin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  
+  @@unique([adminId, fingerprint])
+  @@index([adminId])
+  @@map("trusted_devices")
+}
+
+enum DeviceType {
+  DESKTOP
+  MOBILE
+  TABLET
+}
+
+// ============================================================================
+// PASSWORD RESET TOKENS - For platform admins
+// ============================================================================
+
+model PasswordResetToken {
+  id            String        @id @default(uuid())
+  adminId       String        @map("admin_id")
+  token         String        @unique
+  expiresAt     DateTime      @map("expires_at")
+  usedAt        DateTime?     @map("used_at")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  
+  admin         PlatformAdmin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  
+  @@index([token])
+  @@index([adminId])
+  @@map("password_reset_tokens")
+}
+
+// ============================================================================
+// TENANTS - Companies using the SaaS
+// ============================================================================
+
+model Tenant {
+  id              String          @id @default(uuid())
+  name            String
+  slug            String          @unique
+  legalName       String?         @map("legal_name")
+  logo            String?         // Thumbnail logo for system use (avatars, lists)
+  reportLogo      String?         @map("report_logo") // Full-size logo for reports/documents
+  status          TenantStatus    @default(PENDING)
+  
+  // Database Configuration
+  databaseName    String          @unique @map("database_name")
+  databaseHost    String?         @map("database_host")
+  databasePort    Int?            @map("database_port")
+  databasePoolSize Int            @default(10) @map("database_pool_size")
+  
+  // Contact Info
+  email           String
+  phone           String?
+  website         String?
+  
+  // Address
+  addressLine1    String?         @map("address_line_1")
+  addressLine2    String?         @map("address_line_2")
+  city            String?
+  state           String?
+  country         String?
+  postalCode      String?         @map("postal_code")
+  
+  // Timestamps
+  trialEndsAt     DateTime?       @map("trial_ends_at")
+  activatedAt     DateTime?       @map("activated_at")
+  suspendedAt     DateTime?       @map("suspended_at")
+  terminatedAt    DateTime?       @map("terminated_at")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+  deletedAt       DateTime?       @map("deleted_at")
+  
+  // Metadata
+  metadata        Json?
+  
+  // Relations
+  settings        TenantSettings?
+  subscription    Subscription?
+  subdomains      TenantSubdomain[]
+  customDomains   CustomDomain[]
+  invoices        Invoice[]
+  usageRecords    UsageRecord[]
+  payments        Payment[]
+  paymentMethods  PaymentMethod[]
+  
+  @@index([slug])
+  @@index([status])
+  @@index([email])
+  @@map("tenants")
+}
+
+enum TenantStatus {
+  PENDING
+  TRIAL
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+  TERMINATED
+}
+
+// ============================================================================
+// TENANT SETTINGS
+// ============================================================================
+
+model TenantSettings {
+  id                  String    @id @default(uuid())
+  tenantId            String    @unique @map("tenant_id")
+  
+  // General
+  timezone            String    @default("UTC")
+  dateFormat          String    @default("YYYY-MM-DD") @map("date_format")
+  timeFormat          TimeFormat @default(TWENTY_FOUR_HOUR) @map("time_format")
+  currency            String    @default("USD")
+  language            String    @default("en")
+  fiscalYearStart     Int       @default(1) @map("fiscal_year_start")
+  
+  // Working Hours
+  workingDays         Int[]     @default([1, 2, 3, 4, 5]) @map("working_days")
+  workStartTime       String    @default("09:00") @map("work_start_time")
+  workEndTime         String    @default("18:00") @map("work_end_time")
+  breakStartTime      String?   @map("break_start_time")
+  breakEndTime        String?   @map("break_end_time")
+  
+  // Enabled Modules
+  moduleEmployee      Boolean   @default(true) @map("module_employee")
+  moduleAttendance    Boolean   @default(true) @map("module_attendance")
+  moduleProject       Boolean   @default(true) @map("module_project")
+  moduleTask          Boolean   @default(true) @map("module_task")
+  moduleClient        Boolean   @default(true) @map("module_client")
+  moduleAsset         Boolean   @default(false) @map("module_asset")
+  moduleHrPayroll     Boolean   @default(false) @map("module_hr_payroll")
+  moduleMeeting       Boolean   @default(true) @map("module_meeting")
+  moduleRecruitment   Boolean   @default(false) @map("module_recruitment")
+  moduleResource      Boolean   @default(false) @map("module_resource")
+  moduleFile          Boolean   @default(true) @map("module_file")
+  
+  // Features
+  ssoEnabled          Boolean   @default(false) @map("sso_enabled")
+  mfaRequired         Boolean   @default(false) @map("mfa_required")
+  ipWhitelist         Boolean   @default(false) @map("ip_whitelist")
+  auditLogEnabled     Boolean   @default(true) @map("audit_log_enabled")
+  customFields        Boolean   @default(false) @map("custom_fields")
+  advancedReporting   Boolean   @default(false) @map("advanced_reporting")
+  apiAccess           Boolean   @default(false) @map("api_access")
+  webhooksEnabled     Boolean   @default(false) @map("webhooks_enabled")
+  
+  // Branding
+  primaryColor        String    @default("#3B82F6") @map("primary_color")
+  secondaryColor      String    @default("#1E40AF") @map("secondary_color")
+  logoUrl             String?   @map("logo_url")
+  faviconUrl          String?   @map("favicon_url")
+  customCss           String?   @map("custom_css")
+  
+  // Security
+  passwordMinLength       Int   @default(8) @map("password_min_length")
+  passwordRequireUppercase Boolean @default(true) @map("password_require_uppercase")
+  passwordRequireNumbers   Boolean @default(true) @map("password_require_numbers")
+  passwordRequireSymbols   Boolean @default(false) @map("password_require_symbols")
+  passwordExpiryDays      Int?  @map("password_expiry_days")
+  sessionTimeoutMinutes   Int   @default(60) @map("session_timeout_minutes")
+  maxLoginAttempts        Int   @default(5) @map("max_login_attempts")
+  lockoutDurationMinutes  Int   @default(15) @map("lockout_duration_minutes")
+  allowedIpRanges         String[] @map("allowed_ip_ranges")
+  
+  // Integrations
+  integrations        String[]  @default([])
+  
+  // Timestamps
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  
+  tenant              Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  @@map("tenant_settings")
+}
+
+enum TimeFormat {
+  TWELVE_HOUR
+  TWENTY_FOUR_HOUR
+}
+
+// ============================================================================
+// TENANT SUBDOMAINS
+// ============================================================================
+
+model TenantSubdomain {
+  id                String            @id @default(uuid())
+  tenantId          String            @map("tenant_id")
+  subdomain         String            @unique
+  status            SubdomainStatus   @default(PENDING)
+  isPrimary         Boolean           @default(false) @map("is_primary")
+  sslCertificateId  String?           @map("ssl_certificate_id")
+  verifiedAt        DateTime?         @map("verified_at")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+  
+  tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  @@index([tenantId])
+  @@index([subdomain])
+  @@map("tenant_subdomains")
+}
+
+enum SubdomainStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  RESERVED
+}
+
+// ============================================================================
+// CUSTOM DOMAINS (Premium Feature)
+// ============================================================================
+
+model CustomDomain {
+  id                  String              @id @default(uuid())
+  tenantId            String              @map("tenant_id")
+  domain              String              @unique
+  status              CustomDomainStatus  @default(PENDING_VERIFICATION)
+  verificationType    DnsVerificationType @default(CNAME) @map("verification_type")
+  verificationToken   String              @map("verification_token")
+  verifiedAt          DateTime?           @map("verified_at")
+  sslCertificateId    String?             @map("ssl_certificate_id")
+  sslExpiresAt        DateTime?           @map("ssl_expires_at")
+  lastCheckedAt       DateTime?           @map("last_checked_at")
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+  
+  tenant              Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  @@index([tenantId])
+  @@index([domain])
+  @@map("custom_domains")
+}
+
+enum CustomDomainStatus {
+  PENDING_VERIFICATION
+  DNS_VERIFICATION_FAILED
+  SSL_PENDING
+  SSL_FAILED
+  ACTIVE
+  SUSPENDED
+  EXPIRED
+}
+
+enum DnsVerificationType {
+  CNAME
+  TXT
+}
+
+// ============================================================================
+// SUBSCRIPTIONS
+// ============================================================================
+
+model Subscription {
+  id                  String              @id @default(uuid())
+  tenantId            String              @unique @map("tenant_id")
+  planId              String              @map("plan_id")
+  status              SubscriptionStatus  @default(ACTIVE)
+  
+  // Billing
+  billingCycle        BillingCycle        @default(MONTHLY) @map("billing_cycle")
+  amount              Decimal             @db.Decimal(10, 2)
+  currency            String              @default("USD")
+  
+  // Limits
+  maxUsers            Int                 @map("max_users")
+  maxStorage          BigInt              @map("max_storage") // in bytes
+  maxProjects         Int?                @map("max_projects")
+  maxClients          Int?                @map("max_clients")
+  
+  // Dates
+  currentPeriodStart  DateTime            @map("current_period_start")
+  currentPeriodEnd    DateTime            @map("current_period_end")
+  trialStart          DateTime?           @map("trial_start")
+  trialEnd            DateTime?           @map("trial_end")
+  canceledAt          DateTime?           @map("canceled_at")
+  cancelAtPeriodEnd   Boolean             @default(false) @map("cancel_at_period_end")
+  
+  // Payment
+  stripeCustomerId    String?             @map("stripe_customer_id")
+  stripeSubscriptionId String?            @map("stripe_subscription_id")
+  paymentMethodId     String?             @map("payment_method_id")
+  
+  // Timestamps
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+  
+  tenant              Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan                SubscriptionPlan    @relation(fields: [planId], references: [id])
+  paymentMethods      PaymentMethod[]
+  
+  @@index([tenantId])
+  @@index([status])
+  @@map("subscriptions")
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  UNPAID
+  PAUSED
+}
+
+enum BillingCycle {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+// ============================================================================
+// SUBSCRIPTION PLANS
+// ============================================================================
+
+model SubscriptionPlan {
+  id                String          @id @default(uuid())
+  name              String
+  slug              String          @unique
+  description       String?
+  tier              PlanTier
+  isActive          Boolean         @default(true) @map("is_active")
+  isPublic          Boolean         @default(true) @map("is_public")
+  
+  // Pricing
+  monthlyPrice      Decimal         @db.Decimal(10, 2) @map("monthly_price")
+  yearlyPrice       Decimal         @db.Decimal(10, 2) @map("yearly_price")
+  currency          String          @default("USD")
+  
+  // Limits
+  maxUsers          Int             @map("max_users")
+  maxStorage        BigInt          @map("max_storage") // in bytes
+  maxProjects       Int?            @map("max_projects")
+  maxClients        Int?            @map("max_clients")
+  
+  // Features
+  features          Json
+  
+  // Stripe
+  stripePriceIdMonthly String?      @map("stripe_price_id_monthly")
+  stripePriceIdYearly  String?      @map("stripe_price_id_yearly")
+  
+  // Timestamps
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+  
+  subscriptions     Subscription[]
+  
+  @@index([slug])
+  @@index([tier])
+  @@map("subscription_plans")
+}
+
+enum PlanTier {
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+  CUSTOM
+}
+
+// ============================================================================
+// INVOICES
+// ============================================================================
+
+model Invoice {
+  id                String          @id @default(uuid())
+  tenantId          String          @map("tenant_id")
+  subscriptionId    String?         @map("subscription_id")
+  invoiceNumber     String          @unique @map("invoice_number")
+  status            InvoiceStatus   @default(DRAFT)
+  
+  // Amounts
+  subtotal          Decimal         @db.Decimal(10, 2)
+  tax               Decimal         @default(0) @db.Decimal(10, 2)
+  discount          Decimal         @default(0) @db.Decimal(10, 2)
+  total             Decimal         @db.Decimal(10, 2)
+  amountPaid        Decimal         @default(0) @db.Decimal(10, 2) @map("amount_paid")
+  amountDue         Decimal         @db.Decimal(10, 2) @map("amount_due")
+  currency          String          @default("USD")
+  
+  // Dates
+  issueDate         DateTime        @map("issue_date")
+  dueDate           DateTime        @map("due_date")
+  paidAt            DateTime?       @map("paid_at")
+  
+  // Payment
+  stripeInvoiceId   String?         @map("stripe_invoice_id")
+  stripePaymentIntentId String?     @map("stripe_payment_intent_id")
+  paymentMethod     String?         @map("payment_method")
+  
+  // Details
+  lineItems         Json            @map("line_items")
+  notes             String?
+  metadata          Json?
+  
+  // Timestamps
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+  
+  tenant            Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  payments          Payment[]
+  
+  @@index([tenantId])
+  @@index([subscriptionId])
+  @@index([status])
+  @@index([invoiceNumber])
+  @@map("invoices")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  CANCELED
+  REFUNDED
+}
+
+// ============================================================================
+// USAGE RECORDS (for metered billing)
+// ============================================================================
+
+model UsageRecord {
+  id                String          @id @default(uuid())
+  tenantId          String          @map("tenant_id")
+  metricId          String          @map("metric_id")
+  metric            UsageMetric?
+  quantity          BigInt
+  recordedAt        DateTime        @default(now()) @map("recorded_at")
+  periodStart       DateTime        @map("period_start")
+  periodEnd         DateTime        @map("period_end")
+  unitPrice         Decimal?        @db.Decimal(10, 4) @map("unit_price")
+  amount            Decimal         @default(0) @db.Decimal(10, 2)
+  invoiced          Boolean         @default(false)
+  metadata          Json?
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+  
+  tenant            Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  @@unique([tenantId, metricId, periodStart, periodEnd], name: "tenantId_metricId_periodStart_periodEnd")
+  @@index([tenantId])
+  @@index([metric])
+  @@index([metricId])
+  @@index([recordedAt])
+  @@map("usage_records")
+}
+
+enum UsageMetric {
+  ACTIVE_USERS
+  STORAGE_BYTES
+  API_CALLS
+  EMAILS_SENT
+  SMS_SENT
+  FILE_UPLOADS
+}
+
+// ============================================================================
+// PAYMENTS
+// ============================================================================
+
+model Payment {
+  id                String          @id @default(uuid())
+  tenantId          String          @map("tenant_id")
+  invoiceId         String?         @map("invoice_id")
+  paymentMethodId   String?         @map("payment_method_id")
+  amount            Decimal         @db.Decimal(10, 2)
+  currency          String          @default("USD")
+  status            PaymentStatus   @default(PENDING)
+  
+  // Stripe
+  stripePaymentIntentId String?     @unique @map("stripe_payment_intent_id")
+  stripeChargeId    String?         @map("stripe_charge_id")
+  
+  // Details
+  description       String?
+  metadata          Json?
+  failureReason     String?         @map("failure_reason")
+  refundedAmount    Decimal         @default(0) @db.Decimal(10, 2) @map("refunded_amount")
+  
+  // Timestamps
+  processedAt       DateTime?       @map("processed_at")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+  
+  tenant            Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoice           Invoice?        @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  paymentMethodRef  PaymentMethod?  @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
+  
+  @@index([tenantId])
+  @@index([invoiceId])
+  @@index([status])
+  @@map("payments")
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+// ============================================================================
+// PAYMENT METHODS
+// ============================================================================
+
+model PaymentMethod {
+  id                String              @id @default(uuid())
+  tenantId          String              @map("tenant_id")
+  subscriptionId    String?             @map("subscription_id")
+  type              PaymentMethodType   @default(CARD)
+  isDefault         Boolean             @default(false) @map("is_default")
+  
+  // Card details (masked)
+  cardBrand         String?             @map("card_brand")
+  cardLast4         String?             @map("card_last4")
+  cardExpMonth      Int?                @map("card_exp_month")
+  cardExpYear       Int?                @map("card_exp_year")
+  
+  // Bank details (for ACH)
+  bankName          String?             @map("bank_name")
+  bankLast4         String?             @map("bank_last4")
+  
+  // Stripe
+  stripePaymentMethodId String?         @unique @map("stripe_payment_method_id")
+  
+  // Billing address
+  billingName       String?             @map("billing_name")
+  billingEmail      String?             @map("billing_email")
+  billingAddress    Json?               @map("billing_address")
+  
+  // Timestamps
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+  
+  tenant            Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscription      Subscription?       @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  payments          Payment[]
+  
+  @@index([tenantId])
+  @@index([subscriptionId])
+  @@index([isDefault])
+  @@map("payment_methods")
+}
+
+enum PaymentMethodType {
+  CARD
+  BANK_ACCOUNT
+  PAYPAL
+  OTHER
+}
+
+// ============================================================================
+// PLATFORM AUDIT LOG
+// ============================================================================
+
+model PlatformAuditLog {
+  id              String          @id @default(uuid())
+  adminId         String?         @map("admin_id")
+  action          String
+  resource        String
+  resourceId      String?         @map("resource_id")
+  description     String?
+  metadata        Json?
+  ipAddress       String?         @map("ip_address")
+  userAgent       String?         @map("user_agent")
+  timestamp       DateTime        @default(now())
+  
+  admin           PlatformAdmin?  @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  
+  @@index([adminId])
+  @@index([action])
+  @@index([resource])
+  @@index([timestamp])
+  @@map("platform_audit_logs")
+}
+
+// ============================================================================
+// PLATFORM ANNOUNCEMENTS
+// ============================================================================
+
+model Announcement {
+  id              String              @id @default(uuid())
+  title           String
+  content         String
+  type            AnnouncementType    @default(INFO)
+  priority        AnnouncementPriority @default(NORMAL)
+  targetAudience  TargetAudience      @default(ALL) @map("target_audience")
+  isActive        Boolean             @default(true) @map("is_active")
+  startsAt        DateTime            @default(now()) @map("starts_at")
+  endsAt          DateTime?           @map("ends_at")
+  createdBy       String              @map("created_by")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+  
+  @@index([isActive])
+  @@index([startsAt, endsAt])
+  @@map("announcements")
+}
+
+enum AnnouncementType {
+  INFO
+  WARNING
+  SUCCESS
+  ERROR
+  MAINTENANCE
+}
+
+enum AnnouncementPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum TargetAudience {
+  ALL
+  TENANTS_ONLY
+  PLATFORM_ADMINS_ONLY
+  SPECIFIC_TENANTS
+}
+
+// ============================================================================
+// SUPPORT TICKETS
+// ============================================================================
+
+model SupportTicket {
+  id              String            @id @default(uuid())
+  ticketNumber    String            @unique @map("ticket_number")
+  tenantId        String?           @map("tenant_id")
+  subject         String
+  description     String
+  status          TicketStatus      @default(OPEN)
+  priority        TicketPriority    @default(MEDIUM)
+  category        TicketCategory
+  assignedTo      String?           @map("assigned_to")
+  resolvedAt      DateTime?         @map("resolved_at")
+  closedAt        DateTime?         @map("closed_at")
+  createdBy       String            @map("created_by")
+  createdByType   CreatedByType     @map("created_by_type")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  
+  messages        TicketMessage[]
+  
+  @@index([tenantId])
+  @@index([status])
+  @@index([assignedTo])
+  @@index([ticketNumber])
+  @@map("support_tickets")
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_ON_CUSTOMER
+  WAITING_ON_SUPPORT
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TicketCategory {
+  BILLING
+  TECHNICAL
+  FEATURE_REQUEST
+  BUG_REPORT
+  ACCOUNT
+  GENERAL
+}
+
+enum CreatedByType {
+  PLATFORM_ADMIN
+  TENANT_USER
+}
+
+model TicketMessage {
+  id              String            @id @default(uuid())
+  ticketId        String            @map("ticket_id")
+  senderId        String            @map("sender_id")
+  senderType      CreatedByType     @map("sender_type")
+  message         String
+  attachments     String[]
+  isInternal      Boolean           @default(false) @map("is_internal")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  
+  ticket          SupportTicket     @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  
+  @@index([ticketId])
+  @@map("ticket_messages")
+}
+
+// ============================================================================
+// PLATFORM SETTINGS - Platform-wide configuration stored as JSON
+// ============================================================================
+
+model PlatformSettings {
+  id              String    @id @default("default")
+  
+  // Settings stored as JSON for flexibility
+  general         Json      @default("{}")
+  email           Json      @default("{}")
+  security        Json      @default("{}")
+  billing         Json      @default("{}")
+  integrations    Json      @default("{}")
+  maintenance     Json      @default("{}")
+  
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  
+  @@map("platform_settings")
+}

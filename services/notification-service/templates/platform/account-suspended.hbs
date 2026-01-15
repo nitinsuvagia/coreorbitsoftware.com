@@ -1,0 +1,38 @@
+<h2>Account Suspended</h2>
+
+<p>Hello {{firstName}},</p>
+
+<div class="warning-box">
+  <p><strong>Important Notice:</strong> Your OMS Platform Administrator account has been suspended.</p>
+</div>
+
+<p>Your account access has been temporarily suspended for the following reason:</p>
+
+<div class="info-box">
+  <p><strong>Suspension Details:</strong></p>
+  <p>Reason: {{reason}}<br>
+  Suspended By: {{suspendedBy}}<br>
+  Date: {{suspensionDate}}</p>
+</div>
+
+{{#if isTemporary}}
+<p>This is a temporary suspension. Your access will be restored on {{reactivationDate}}.</p>
+{{else}}
+<p>This suspension requires review. Please contact the platform administrator for more information.</p>
+{{/if}}
+
+<p>During this time, you will not be able to:</p>
+<ul style="color: #4a5568; margin-left: 20px;">
+  <li>Access the platform administration panel</li>
+  <li>Manage users or tenants</li>
+  <li>View system analytics</li>
+  <li>Perform any administrative actions</li>
+</ul>
+
+<div class="divider"></div>
+
+<p>If you believe this suspension was made in error or have questions, please contact:</p>
+<p><strong>Platform Support:</strong> <a href="mailto:itsupport@omsystem.com">itsupport@omsystem.com</a></p>
+
+<p>Best regards,<br>
+<strong>OMS Platform Team</strong></p>

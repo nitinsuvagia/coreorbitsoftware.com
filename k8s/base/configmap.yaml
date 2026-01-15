@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: office-management
+data:
+  # General Settings
+  NODE_ENV: "production"
+  
+  # Service URLs (internal K8s DNS)
+  AUTH_SERVICE_URL: "http://auth-service:3001"
+  EMPLOYEE_SERVICE_URL: "http://employee-service:3002"
+  ATTENDANCE_SERVICE_URL: "http://attendance-service:3003"
+  PROJECT_SERVICE_URL: "http://project-service:3004"
+  TASK_SERVICE_URL: "http://task-service:3005"
+  NOTIFICATION_SERVICE_URL: "http://notification-service:3006"
+  DOCUMENT_SERVICE_URL: "http://document-service:3007"
+  BILLING_SERVICE_URL: "http://billing-service:3008"
+  REPORT_SERVICE_URL: "http://report-service:3009"
+  
+  # Database (without password)
+  DATABASE_HOST: "postgres"
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: "office_master"
+  DATABASE_USER: "postgres"
+  
+  # Redis
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  
+  # JWT Settings
+  JWT_EXPIRES_IN: "7d"
+  REFRESH_TOKEN_EXPIRES_IN: "30d"
+  
+  # Storage
+  STORAGE_TYPE: "local"
+  STORAGE_PATH: "/app/uploads"
+  
+  # Email Settings (for development)
+  SMTP_HOST: "mailhog"
+  SMTP_PORT: "1025"
+  SMTP_SECURE: "false"

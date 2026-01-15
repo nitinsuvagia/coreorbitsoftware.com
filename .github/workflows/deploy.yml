@@ -1,0 +1,392 @@
+# GitHub Actions CI/CD Pipeline for Office Management SaaS
+# Build and Deploy to AWS ECS EC2
+
+name: Deploy to ECS
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'Service to deploy (all, api-gateway, auth-service, etc.)'
+        required: false
+        default: 'all'
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+  PROJECT_NAME: office-mgmt
+  ECS_CLUSTER: office-mgmt-cluster
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  # ============================================
+  # Determine Changed Services
+  # ============================================
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      api-gateway: ${{ steps.changes.outputs.api-gateway }}
+      auth-service: ${{ steps.changes.outputs.auth-service }}
+      employee-service: ${{ steps.changes.outputs.employee-service }}
+      attendance-service: ${{ steps.changes.outputs.attendance-service }}
+      project-service: ${{ steps.changes.outputs.project-service }}
+      task-service: ${{ steps.changes.outputs.task-service }}
+      notification-service: ${{ steps.changes.outputs.notification-service }}
+      document-service: ${{ steps.changes.outputs.document-service }}
+      billing-service: ${{ steps.changes.outputs.billing-service }}
+      report-service: ${{ steps.changes.outputs.report-service }}
+      web-app: ${{ steps.changes.outputs.web-app }}
+      packages: ${{ steps.changes.outputs.packages }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes
+        uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            api-gateway:
+              - 'services/api-gateway/**'
+              - 'packages/**'
+            auth-service:
+              - 'services/auth-service/**'
+              - 'packages/**'
+            employee-service:
+              - 'services/employee-service/**'
+              - 'packages/**'
+            attendance-service:
+              - 'services/attendance-service/**'
+              - 'packages/**'
+            project-service:
+              - 'services/project-service/**'
+              - 'packages/**'
+            task-service:
+              - 'services/task-service/**'
+              - 'packages/**'
+            notification-service:
+              - 'services/notification-service/**'
+              - 'packages/**'
+            document-service:
+              - 'services/document-service/**'
+              - 'packages/**'
+            billing-service:
+              - 'services/billing-service/**'
+              - 'packages/**'
+            report-service:
+              - 'services/report-service/**'
+              - 'packages/**'
+            web-app:
+              - 'apps/web/**'
+              - 'packages/**'
+            packages:
+              - 'packages/**'
+
+  # ============================================
+  # Build and Test
+  # ============================================
+  build-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linting
+        run: npm run lint
+
+      - name: Run type checking
+        run: npm run type-check
+
+      - name: Run tests
+        run: npm run test
+
+      - name: Build all packages
+        run: npm run build
+
+  # ============================================
+  # Build and Push Docker Images
+  # ============================================
+  build-push:
+    name: Build & Push
+    needs: [detect-changes, build-test]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging'
+    strategy:
+      matrix:
+        service:
+          - name: api-gateway
+            path: services/api-gateway
+            changed: ${{ needs.detect-changes.outputs.api-gateway }}
+          - name: auth-service
+            path: services/auth-service
+            changed: ${{ needs.detect-changes.outputs.auth-service }}
+          - name: employee-service
+            path: services/employee-service
+            changed: ${{ needs.detect-changes.outputs.employee-service }}
+          - name: attendance-service
+            path: services/attendance-service
+            changed: ${{ needs.detect-changes.outputs.attendance-service }}
+          - name: project-service
+            path: services/project-service
+            changed: ${{ needs.detect-changes.outputs.project-service }}
+          - name: task-service
+            path: services/task-service
+            changed: ${{ needs.detect-changes.outputs.task-service }}
+          - name: notification-service
+            path: services/notification-service
+            changed: ${{ needs.detect-changes.outputs.notification-service }}
+          - name: document-service
+            path: services/document-service
+            changed: ${{ needs.detect-changes.outputs.document-service }}
+          - name: billing-service
+            path: services/billing-service
+            changed: ${{ needs.detect-changes.outputs.billing-service }}
+          - name: report-service
+            path: services/report-service
+            changed: ${{ needs.detect-changes.outputs.report-service }}
+          - name: web-app
+            path: apps/web
+            changed: ${{ needs.detect-changes.outputs.web-app }}
+    steps:
+      - name: Checkout
+        if: matrix.service.changed == 'true' || github.event.inputs.service == 'all' || github.event.inputs.service == matrix.service.name
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        if: matrix.service.changed == 'true' || github.event.inputs.service == 'all' || github.event.inputs.service == matrix.service.name
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        if: matrix.service.changed == 'true' || github.event.inputs.service == 'all' || github.event.inputs.service == matrix.service.name
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        if: matrix.service.changed == 'true' || github.event.inputs.service == 'all' || github.event.inputs.service == matrix.service.name
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        if: matrix.service.changed == 'true' || github.event.inputs.service == 'all' || github.event.inputs.service == matrix.service.name
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.service.path }}/Dockerfile
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/${{ env.PROJECT_NAME }}/${{ matrix.service.name }}:${{ github.sha }}
+            ${{ env.ECR_REGISTRY }}/${{ env.PROJECT_NAME }}/${{ matrix.service.name }}:${{ github.ref == 'refs/heads/main' && 'latest' || 'staging' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NODE_ENV=${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+
+  # ============================================
+  # Deploy to ECS
+  # ============================================
+  deploy:
+    name: Deploy to ECS
+    needs: [detect-changes, build-push]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging'
+    strategy:
+      matrix:
+        service:
+          - name: api-gateway
+            ecs_service: api-gateway
+            changed: ${{ needs.detect-changes.outputs.api-gateway }}
+          - name: auth-service
+            ecs_service: auth-service
+            changed: ${{ needs.detect-changes.outputs.auth-service }}
+          - name: employee-service
+            ecs_service: employee-service
+            changed: ${{ needs.detect-changes.outputs.employee-service }}
+          - name: attendance-service
+            ecs_service: attendance-service
+            changed: ${{ needs.detect-changes.outputs.attendance-service }}
+          - name: project-service
+            ecs_service: project-service
+            changed: ${{ needs.detect-changes.outputs.project-service }}
+          - name: task-service
+            ecs_service: task-service
+            changed: ${{ needs.detect-changes.outputs.task-service }}
+          - name: notification-service
+            ecs_service: notification-service
+            changed: ${{ needs.detect-changes.outputs.notification-service }}
+          - name: document-service
+            ecs_service: document-service
+            changed: ${{ needs.detect-changes.outputs.document-service }}
+          - name: billing-service
+            ecs_service: billing-service
+            changed: ${{ needs.detect-changes.outputs.billing-service }}
+          - name: report-service
+            ecs_service: report-service
+            changed: ${{ needs.detect-changes.outputs.report-service }}
+          - name: web-app
+            ecs_service: web-app
+            changed: ${{ needs.detect-changes.outputs.web-app }}
+      max-parallel: 3
+    steps:
+      - name: Configure AWS credentials
+        if: matrix.service.changed == 'true' || github.event.inputs.service == 'all' || github.event.inputs.service == matrix.service.name
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update ECS service
+        if: matrix.service.changed == 'true' || github.event.inputs.service == 'all' || github.event.inputs.service == matrix.service.name
+        run: |
+          # Get current task definition
+          TASK_DEF=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ matrix.service.ecs_service }} \
+            --query 'services[0].taskDefinition' \
+            --output text)
+          
+          # Get task definition details
+          aws ecs describe-task-definition \
+            --task-definition $TASK_DEF \
+            --query 'taskDefinition' > task-def.json
+          
+          # Update image in task definition
+          NEW_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.PROJECT_NAME }}/${{ matrix.service.name }}:${{ github.sha }}"
+          
+          jq --arg IMAGE "$NEW_IMAGE" \
+            '.containerDefinitions[0].image = $IMAGE | 
+             del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+            task-def.json > new-task-def.json
+          
+          # Register new task definition
+          NEW_TASK_DEF=$(aws ecs register-task-definition \
+            --cli-input-json file://new-task-def.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+          
+          # Update service
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ matrix.service.ecs_service }} \
+            --task-definition $NEW_TASK_DEF \
+            --force-new-deployment
+
+      - name: Wait for deployment
+        if: matrix.service.changed == 'true' || github.event.inputs.service == 'all' || github.event.inputs.service == matrix.service.name
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ matrix.service.ecs_service }}
+
+  # ============================================
+  # Run Database Migrations
+  # ============================================
+  migrate:
+    name: Run Migrations
+    needs: [deploy]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Run migrations via ECS Exec
+        run: |
+          # Get a running task from auth-service
+          TASK_ARN=$(aws ecs list-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service-name auth-service \
+            --query 'taskArns[0]' \
+            --output text)
+          
+          # Run migrations
+          aws ecs execute-command \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --task $TASK_ARN \
+            --container auth-service \
+            --interactive \
+            --command "npx prisma migrate deploy"
+
+  # ============================================
+  # Notify on Completion
+  # ============================================
+  notify:
+    name: Notify
+    needs: [deploy, migrate]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Notify Slack on Success
+        if: ${{ needs.deploy.result == 'success' }}
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: |
+            {
+              "text": "✅ Deployment Successful",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "✅ *Office Management* deployed successfully to ${{ github.ref == 'refs/heads/main' && 'Production' || 'Staging' }}\n\n*Commit:* ${{ github.sha }}\n*Branch:* ${{ github.ref_name }}\n*Actor:* ${{ github.actor }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+      - name: Notify Slack on Failure
+        if: ${{ needs.deploy.result == 'failure' }}
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: |
+            {
+              "text": "❌ Deployment Failed",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "❌ *Office Management* deployment failed\n\n*Commit:* ${{ github.sha }}\n*Branch:* ${{ github.ref_name }}\n*Actor:* ${{ github.actor }}\n\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK

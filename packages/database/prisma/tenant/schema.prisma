@@ -1,0 +1,1046 @@
+// ============================================================================
+// TENANT DATABASE SCHEMA - Part 1: Core
+// ============================================================================
+// Each tenant gets their own database with this schema
+// Database Name: oms_tenant_{slug} (e.g., oms_tenant_acme)
+//
+// This file contains:
+// - Users (tenant employees who login)
+// - Roles & Permissions
+// - Departments
+// - Employees
+// ============================================================================
+
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../../../../node_modules/.prisma/tenant-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("TENANT_DATABASE_URL")
+}
+
+// ============================================================================
+// USERS - Tenant employees who can login
+// ============================================================================
+
+model User {
+  id           String       @id @default(uuid())
+  employeeId   String?      @unique @map("employee_id")
+  email        String       @unique
+  username     String?      @unique
+  passwordHash String?      @map("password_hash")
+  status       UserStatus   @default(PENDING)
+  authProvider AuthProvider @default(LOCAL) @map("auth_provider")
+  providerId   String?      @map("provider_id")
+
+  // Profile
+  firstName   String  @map("first_name")
+  lastName    String  @map("last_name")
+  displayName String  @map("display_name")
+  avatar      String?
+  phone       String?
+  timezone    String  @default("UTC")
+  language    String  @default("en")
+
+  // Preferences
+  theme                 Theme   @default(SYSTEM)
+  appearancePreferences Json?   @map("appearance_preferences")
+  notifyEmail           Boolean @default(true) @map("notify_email")
+  notifyPush            Boolean @default(true) @map("notify_push")
+  notifyDesktop         Boolean @default(true) @map("notify_desktop")
+
+  // Security
+  mfaEnabled        Boolean   @default(false) @map("mfa_enabled")
+  mfaSecret         String?   @map("mfa_secret")
+  mfaBackupCodes    String[]  @map("mfa_backup_codes")
+  passwordChangedAt DateTime? @map("password_changed_at")
+  loginAttempts     Int       @default(0) @map("login_attempts")
+  lockedUntil       DateTime? @map("locked_until")
+  emailVerified     Boolean   @default(false) @map("email_verified")
+  emailVerifiedAt   DateTime? @map("email_verified_at")
+
+  // Timestamps
+  lastLoginAt    DateTime? @map("last_login_at")
+  lastActivityAt DateTime? @map("last_activity_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
+
+  // Relations
+  employee                Employee?                @relation(fields: [employeeId], references: [id])
+  roles                   UserRole[]
+  sessions                UserSession[]
+  loginHistory            LoginHistory[]
+  notifications           Notification[]
+  createdTasks            Task[]                   @relation("TaskCreator")
+  assignedTasks           TaskAssignee[]
+  comments                Comment[]
+  timeEntries             TimeEntry[]
+  auditLogs               AuditLog[]               @relation("AuditUser")
+  passwordResetTokens     PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  createdFolders          Folder[]                 @relation("FolderCreator")
+  uploadedFiles           File[]                   @relation("FileUploader")
+  uploadedVersions        FileVersion[]            @relation("FileVersionUploader")
+  createdEvents           CalendarEvent[]          @relation("EventCreator")
+  eventAttendances        CalendarAttendee[]       @relation("EventAttendee")
+
+  @@index([email])
+  @@index([status])
+  @@map("users")
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  INACTIVE
+  LOCKED
+  SUSPENDED
+}
+
+enum AuthProvider {
+  LOCAL
+  GOOGLE
+  MICROSOFT
+  SAML
+  LDAP
+  OAUTH
+  OIDC
+}
+
+enum Theme {
+  LIGHT
+  DARK
+  SYSTEM
+}
+
+// ============================================================================
+// USER SESSIONS
+// ============================================================================
+
+model UserSession {
+  id             String    @id @default(uuid())
+  userId         String    @map("user_id")
+  tokenHash      String    @unique @map("token_hash")
+  tokenFamily    String    @map("token_family")
+  ipAddress      String    @map("ip_address")
+  userAgent      String    @map("user_agent")
+  deviceId       String?   @map("device_id")
+  expiresAt      DateTime  @map("expires_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  lastActivityAt DateTime  @default(now()) @map("last_activity_at")
+  revokedAt      DateTime? @map("revoked_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("user_sessions")
+}
+
+// ============================================================================
+// LOGIN HISTORY
+// ============================================================================
+
+model LoginHistory {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  timestamp     DateTime @default(now())
+  ipAddress     String   @map("ip_address")
+  userAgent     String   @map("user_agent")
+  location      String?
+  success       Boolean
+  failureReason String?  @map("failure_reason")
+  mfaUsed       Boolean  @default(false) @map("mfa_used")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([timestamp])
+  @@map("login_history")
+}
+
+// ============================================================================
+// PASSWORD RESET TOKENS - For tenant users
+// ============================================================================
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  token     String    @unique
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+// ============================================================================
+// EMAIL VERIFICATION TOKENS - For tenant users
+// ============================================================================
+
+model EmailVerificationToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  email     String
+  token     String    @unique
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+  @@map("email_verification_tokens")
+}
+
+// ============================================================================
+// ROLES & PERMISSIONS
+// ============================================================================
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  isSystem    Boolean  @default(false) @map("is_system")
+  isDefault   Boolean  @default(false) @map("is_default")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@index([slug])
+  @@map("roles")
+}
+
+model Permission {
+  id          String  @id @default(uuid())
+  resource    String
+  action      String
+  description String?
+
+  roles RolePermission[]
+
+  @@unique([resource, action])
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String          @id @default(uuid())
+  roleId       String          @map("role_id")
+  permissionId String          @map("permission_id")
+  scope        PermissionScope @default(ALL)
+  conditions   Json?
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  roleId     String    @map("role_id")
+  assignedAt DateTime  @default(now()) @map("assigned_at")
+  assignedBy String?   @map("assigned_by")
+  expiresAt  DateTime? @map("expires_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@map("user_roles")
+}
+
+enum PermissionScope {
+  OWN
+  TEAM
+  DEPARTMENT
+  ALL
+}
+
+// ============================================================================
+// DEPARTMENTS
+// ============================================================================
+
+model Department {
+  id          String    @id @default(uuid())
+  name        String
+  code        String    @unique
+  description String?
+  parentId    String?   @map("parent_id")
+  managerId   String?   @map("manager_id")
+  isActive    Boolean   @default(true) @map("is_active")
+  sortOrder   Int       @default(0) @map("sort_order")
+  metadata    Json?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  parent    Department?  @relation("DepartmentHierarchy", fields: [parentId], references: [id])
+  children  Department[] @relation("DepartmentHierarchy")
+  manager   Employee?    @relation("DepartmentManager", fields: [managerId], references: [id])
+  employees Employee[]
+  teams     Team[]
+
+  @@index([code])
+  @@index([parentId])
+  @@map("departments")
+}
+
+// ============================================================================
+// TEAMS
+// ============================================================================
+
+model Team {
+  id           String    @id @default(uuid())
+  name         String
+  code         String    @unique
+  description  String?
+  departmentId String?   @map("department_id")
+  leaderId     String?   @map("leader_id")
+  isActive     Boolean   @default(true) @map("is_active")
+  metadata     Json?
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  department Department?   @relation(fields: [departmentId], references: [id])
+  leader     Employee?     @relation("TeamLeader", fields: [leaderId], references: [id])
+  members    TeamMember[]
+  projects   ProjectTeam[]
+
+  @@index([code])
+  @@index([departmentId])
+  @@map("teams")
+}
+
+model TeamMember {
+  id         String         @id @default(uuid())
+  teamId     String         @map("team_id")
+  employeeId String         @map("employee_id")
+  role       TeamMemberRole @default(MEMBER)
+  joinedAt   DateTime       @default(now()) @map("joined_at")
+  leftAt     DateTime?      @map("left_at")
+
+  team     Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, employeeId])
+  @@map("team_members")
+}
+
+enum TeamMemberRole {
+  LEADER
+  MEMBER
+  VIEWER
+}
+
+// ============================================================================
+// EMPLOYEES
+// ============================================================================
+
+model Employee {
+  id                 String  @id @default(uuid())
+  employeeCode       String  @unique @map("employee_code")
+  departmentId       String? @map("department_id")
+  reportingManagerId String? @map("reporting_manager_id")
+  designationId      String? @map("designation_id")
+
+  // Personal Info
+  firstName     String         @map("first_name")
+  lastName      String         @map("last_name")
+  middleName    String?        @map("middle_name")
+  displayName   String         @map("display_name")
+  email         String         @unique
+  personalEmail String?        @map("personal_email")
+  phone         String?
+  mobile        String?
+  dateOfBirth   DateTime?      @map("date_of_birth")
+  gender        Gender?
+  maritalStatus MaritalStatus? @map("marital_status")
+  nationality   String?
+  avatar        String?
+
+  // Address
+  addressLine1 String? @map("address_line_1")
+  addressLine2 String? @map("address_line_2")
+  city         String?
+  state        String?
+  country      String?
+  postalCode   String? @map("postal_code")
+
+  // Employment
+  employmentType   EmploymentType @default(FULL_TIME) @map("employment_type")
+  status           EmployeeStatus @default(ACTIVE)
+  joinDate         DateTime       @map("join_date")
+  confirmationDate DateTime?      @map("confirmation_date")
+  probationEndDate DateTime?      @map("probation_end_date")
+  exitDate         DateTime?      @map("exit_date")
+  exitReason       String?        @map("exit_reason")
+
+  // Work Info
+  workLocation String? @map("work_location")
+  workShift    String? @map("work_shift")
+  timezone     String  @default("UTC")
+
+  // Compensation (basic - detailed in Payroll)
+  baseSalary Decimal? @map("base_salary") @db.Decimal(12, 2)
+  currency   String   @default("USD")
+
+  // Metadata
+  skills         String[]
+  certifications String[]
+  metadata       Json?
+
+  // Timestamps
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  // Relations
+  user               User?
+  department         Department?         @relation(fields: [departmentId], references: [id])
+  reportingManager   Employee?           @relation("ReportingManager", fields: [reportingManagerId], references: [id])
+  directReports      Employee[]          @relation("ReportingManager")
+  designation        Designation?        @relation(fields: [designationId], references: [id])
+  managedDepartments Department[]        @relation("DepartmentManager")
+  ledTeams           Team[]              @relation("TeamLeader")
+  teamMemberships    TeamMember[]
+  documents          EmployeeDocument[]
+  emergencyContacts  EmergencyContact[]
+  bankDetails        BankDetail[]
+  educations         EmployeeEducation[]
+  attendances        Attendance[]
+  leaves             Leave[]
+  leaveBalances      LeaveBalance[]
+  projectAssignments ProjectMember[]
+  timesheets         Timesheet[]
+  assets             AssetAssignment[]
+
+  @@index([email])
+  @@index([employeeCode])
+  @@index([departmentId])
+  @@index([status])
+  @@map("employees")
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+enum MaritalStatus {
+  SINGLE
+  MARRIED
+  DIVORCED
+  WIDOWED
+  OTHER
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERN
+  INTERNSHIP
+  CONSULTANT
+  TEMPORARY
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  ON_LEAVE
+  PROBATION
+  NOTICE_PERIOD
+  TERMINATED
+  RESIGNED
+  RETIRED
+}
+
+// ============================================================================
+// DESIGNATIONS
+// ============================================================================
+
+model Designation {
+  id          String   @id @default(uuid())
+  name        String
+  code        String   @unique
+  level       Int      @default(1)
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  employees Employee[]
+
+  @@index([code])
+  @@map("designations")
+}
+
+// ============================================================================
+// EMPLOYEE DOCUMENTS
+// ============================================================================
+
+model EmployeeDocument {
+  id         String       @id @default(uuid())
+  employeeId String       @map("employee_id")
+  type       DocumentType
+  name       String
+  fileUrl    String       @map("file_url")
+  fileSize   Int          @map("file_size")
+  mimeType   String       @map("mime_type")
+  expiryDate DateTime?    @map("expiry_date")
+  isVerified Boolean      @default(false) @map("is_verified")
+  verifiedBy String?      @map("verified_by")
+  verifiedAt DateTime?    @map("verified_at")
+  metadata   Json?
+  createdAt  DateTime     @default(now()) @map("created_at")
+  updatedAt  DateTime     @updatedAt @map("updated_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([type])
+  @@map("employee_documents")
+}
+
+enum DocumentType {
+  RESUME
+  ID_PROOF
+  ADDRESS_PROOF
+  EDUCATION
+  EXPERIENCE
+  OFFER_LETTER
+  CONTRACT
+  NDA
+  TAX_FORM
+  CERTIFICATION
+  OTHER
+}
+
+// ============================================================================
+// EMERGENCY CONTACTS
+// ============================================================================
+
+model EmergencyContact {
+  id             String   @id @default(uuid())
+  employeeId     String   @map("employee_id")
+  name           String
+  relationship   String
+  phone          String
+  alternatePhone String?  @map("alternate_phone")
+  email          String?
+  address        String?
+  isPrimary      Boolean  @default(false) @map("is_primary")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@map("emergency_contacts")
+}
+
+// ============================================================================
+// BANK DETAILS
+// ============================================================================
+
+model BankDetail {
+  id            String          @id @default(uuid())
+  employeeId    String          @map("employee_id")
+  bankName      String          @map("bank_name")
+  branchName    String?         @map("branch_name")
+  accountNumber String          @map("account_number")
+  accountType   BankAccountType @default(SAVINGS) @map("account_type")
+  routingNumber String?         @map("routing_number")
+  swiftCode     String?         @map("swift_code")
+  ifscCode      String?         @map("ifsc_code")
+  isPrimary     Boolean         @default(false) @map("is_primary")
+  isVerified    Boolean         @default(false) @map("is_verified")
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@map("bank_details")
+}
+
+enum BankAccountType {
+  SAVINGS
+  CHECKING
+  CURRENT
+}
+
+// ============================================================================
+// EMPLOYEE EDUCATION
+// ============================================================================
+
+model EmployeeEducation {
+  id              String          @id @default(uuid())
+  employeeId      String          @map("employee_id")
+  educationType   EducationType   @map("education_type")
+  institutionName String          @map("institution_name")
+  institutionType InstitutionType @default(UNIVERSITY) @map("institution_type")
+  degree          String? // e.g., Bachelor's, Master's, PhD
+  fieldOfStudy    String?         @map("field_of_study") // e.g., Computer Science, MBA
+  specialization  String? // e.g., Software Engineering
+  enrollmentYear  Int             @map("enrollment_year")
+  completionYear  Int?            @map("completion_year")
+  isOngoing       Boolean         @default(false) @map("is_ongoing")
+  gradeType       GradeType       @default(PERCENTAGE) @map("grade_type")
+  grade           String? // e.g., "85.5", "3.8", "A+"
+  percentage      Decimal?        @db.Decimal(5, 2) // Normalized percentage
+  boardUniversity String?         @map("board_university") // Board/University name
+  metadata        Json?
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([educationType])
+  @@map("employee_educations")
+}
+
+enum EducationType {
+  HIGH_SCHOOL // 10th/SSC
+  INTERMEDIATE // 12th/HSC/Pre-University
+  DIPLOMA
+  BACHELORS
+  MASTERS
+  DOCTORATE
+  POST_DOCTORATE
+  CERTIFICATION
+  VOCATIONAL
+  OTHER
+}
+
+enum InstitutionType {
+  SCHOOL
+  COLLEGE
+  UNIVERSITY
+  INSTITUTE
+  ONLINE
+  OTHER
+}
+
+enum GradeType {
+  PERCENTAGE
+  CGPA_10 // CGPA out of 10
+  CGPA_4 // GPA out of 4 (US system)
+  GRADE_LETTER // A, B, C, etc.
+  DIVISION // First, Second, Third
+  PASS_FAIL
+}
+
+// ============================================================================
+// FILE MANAGEMENT WITH VERSIONING
+// ============================================================================
+
+model Folder {
+  id        String   @id @default(uuid())
+  name      String
+  path      String
+  parentId  String?  @map("parent_id")
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  parent   Folder?  @relation("FolderHierarchy", fields: [parentId], references: [id])
+  children Folder[] @relation("FolderHierarchy")
+  files    File[]
+  creator  User     @relation("FolderCreator", fields: [createdBy], references: [id])
+
+  @@index([parentId])
+  @@index([path])
+  @@map("folders")
+}
+
+model File {
+  id             String    @id @default(uuid())
+  folderId       String?   @map("folder_id")
+  name           String
+  storageName    String    @map("storage_name")
+  storageKey     String    @map("storage_key")
+  mimeType       String    @map("mime_type")
+  size           Int
+  description    String?
+  tags           String[]
+  thumbnails     Json?
+  entityType     String?   @map("entity_type")
+  entityId       String?   @map("entity_id")
+  uploadedBy     String    @map("uploaded_by")
+  currentVersion Int       @default(1) @map("current_version")
+  isDeleted      Boolean   @default(false) @map("is_deleted")
+  deletedAt      DateTime? @map("deleted_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  folder   Folder?       @relation(fields: [folderId], references: [id])
+  uploader User          @relation("FileUploader", fields: [uploadedBy], references: [id])
+  versions FileVersion[]
+
+  @@index([folderId])
+  @@index([entityType, entityId])
+  @@index([uploadedBy])
+  @@map("files")
+}
+
+model FileVersion {
+  id          String   @id @default(uuid())
+  fileId      String   @map("file_id")
+  version     Int
+  storageName String   @map("storage_name")
+  storageKey  String   @map("storage_key")
+  size        Int
+  uploadedBy  String   @map("uploaded_by")
+  changeNote  String?  @map("change_note")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  file     File @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  uploader User @relation("FileVersionUploader", fields: [uploadedBy], references: [id])
+
+  @@unique([fileId, version])
+  @@index([fileId])
+  @@map("file_versions")
+}
+
+// ============================================================================
+// CALENDAR EVENTS
+// ============================================================================
+
+model CalendarEvent {
+  id          String              @id @default(uuid())
+  title       String
+  description String?
+  startTime   DateTime            @map("start_time")
+  endTime     DateTime            @map("end_time")
+  allDay      Boolean             @default(false) @map("all_day")
+  location    String?
+  meetingUrl  String?             @map("meeting_url")
+  type        CalendarEventType   @default(MEETING)
+  status      CalendarEventStatus @default(CONFIRMED)
+  recurrence  Json? // For recurring events
+  reminders   Int[] // Minutes before event to remind
+  color       String? // Custom color
+  isPrivate   Boolean             @default(false) @map("is_private")
+
+  // Relations
+  createdById String             @map("created_by_id")
+  createdBy   User               @relation("EventCreator", fields: [createdById], references: [id])
+  attendees   CalendarAttendee[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([createdById])
+  @@index([startTime, endTime])
+  @@map("calendar_events")
+}
+
+model CalendarAttendee {
+  id          String         @id @default(uuid())
+  eventId     String         @map("event_id")
+  userId      String         @map("user_id")
+  status      AttendeeStatus @default(PENDING)
+  isOrganizer Boolean        @default(false) @map("is_organizer")
+  isRequired  Boolean        @default(true) @map("is_required")
+  respondedAt DateTime?      @map("responded_at")
+
+  event CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User          @relation("EventAttendee", fields: [userId], references: [id])
+
+  @@unique([eventId, userId])
+  @@index([userId])
+  @@map("calendar_attendees")
+}
+
+enum CalendarEventType {
+  MEETING
+  TASK
+  REMINDER
+  LEAVE
+  HOLIDAY
+  BIRTHDAY
+  OTHER
+}
+
+enum CalendarEventStatus {
+  CONFIRMED
+  TENTATIVE
+  CANCELLED
+}
+
+enum AttendeeStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  TENTATIVE
+}
+
+// Placeholder models for relations (will be defined in subsequent chunks)
+model Attendance {
+  id         String   @id @default(uuid())
+  employeeId String   @map("employee_id")
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
+  @@map("attendances")
+}
+
+model Leave {
+  id         String   @id @default(uuid())
+  employeeId String   @map("employee_id")
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
+  @@map("leaves")
+}
+
+model LeaveBalance {
+  id         String   @id @default(uuid())
+  employeeId String   @map("employee_id")
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
+  @@map("leave_balances")
+}
+
+model ProjectMember {
+  id         String   @id @default(uuid())
+  employeeId String   @map("employee_id")
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
+  @@map("project_members")
+}
+
+model ProjectTeam {
+  id     String @id @default(uuid())
+  teamId String @map("team_id")
+  team   Team   @relation(fields: [teamId], references: [id])
+
+  @@map("project_teams")
+}
+
+model Task {
+  id          String         @id @default(uuid())
+  createdById String         @map("created_by_id")
+  createdBy   User           @relation("TaskCreator", fields: [createdById], references: [id])
+  assignees   TaskAssignee[]
+  comments    Comment[]
+  timeEntries TimeEntry[]
+
+  @@map("tasks")
+}
+
+model TaskAssignee {
+  id     String @id @default(uuid())
+  taskId String @map("task_id")
+  userId String @map("user_id")
+  task   Task   @relation(fields: [taskId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@map("task_assignees")
+}
+
+model Timesheet {
+  id         String   @id @default(uuid())
+  employeeId String   @map("employee_id")
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
+  @@map("timesheets")
+}
+
+model TimeEntry {
+  id     String  @id @default(uuid())
+  userId String  @map("user_id")
+  taskId String? @map("task_id")
+  user   User    @relation(fields: [userId], references: [id])
+  task   Task?   @relation(fields: [taskId], references: [id])
+
+  @@map("time_entries")
+}
+
+model AssetAssignment {
+  id         String   @id @default(uuid())
+  employeeId String   @map("employee_id")
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
+  @@map("asset_assignments")
+}
+
+model Notification {
+  id     String @id @default(uuid())
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+model Comment {
+  id     String  @id @default(uuid())
+  userId String  @map("user_id")
+  taskId String? @map("task_id")
+  user   User    @relation(fields: [userId], references: [id])
+  task   Task?   @relation(fields: [taskId], references: [id])
+
+  @@map("comments")
+}
+
+model AuditLog {
+  id     String  @id @default(uuid())
+  userId String? @map("user_id")
+  user   User?   @relation("AuditUser", fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+// ============================================================================
+// JOB DESCRIPTIONS - HR Recruitment
+// ============================================================================
+
+model JobDescription {
+  id               String         @id @default(uuid())
+  title            String
+  department       String
+  location         String
+  employmentType   EmploymentType @map("employment_type")
+  salaryMin        Int            @map("salary_min")
+  salaryMax        Int            @map("salary_max")
+  currency         String         @default("USD")
+  status           JobStatus      @default(OPEN)
+  openings         Int            @default(1)
+  experienceMin    Int            @default(0) @map("experience_min")
+  experienceMax    Int            @default(0) @map("experience_max")
+  description      String?        @db.Text
+  requirements     String[]       @default([])
+  responsibilities String[]       @default([])
+  benefits         String[]       @default([])
+  techStack        String[]       @default([]) @map("tech_stack")
+  postedDate       DateTime       @default(now()) @map("posted_date")
+  closingDate      DateTime       @map("closing_date")
+
+  // Statistics for completed/hired jobs
+  totalApplied Int? @map("total_applied")
+  shortlisted  Int?
+  interviewed  Int?
+  hired        Int?
+
+  // Metadata
+  createdBy String?   @map("created_by")
+  updatedBy String?   @map("updated_by")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  // Relations
+  candidates JobCandidate[]
+
+  @@index([status])
+  @@index([department])
+  @@index([postedDate])
+  @@map("job_descriptions")
+}
+
+// ============================================================================
+// JOB CANDIDATES - Applicants for job positions
+// ============================================================================
+
+model JobCandidate {
+  id              String          @id @default(uuid())
+  jobId           String          @map("job_id")
+  
+  // Candidate Info
+  firstName       String          @map("first_name")
+  lastName        String          @map("last_name")
+  email           String
+  phone           String?
+  
+  // Application Details
+  resumeUrl       String?         @map("resume_url")
+  coverLetter     String?         @db.Text @map("cover_letter")
+  linkedinUrl     String?         @map("linkedin_url")
+  portfolioUrl    String?         @map("portfolio_url")
+  source          String?         // DIRECT, LINKEDIN, REFERRAL, JOB_PORTAL, CAREER_PAGE, OTHER
+  
+  // Status tracking
+  status          CandidateStatus @default(APPLIED)
+  stage           CandidateStage  @default(APPLICATION)
+  rating          Int?            @default(0)
+  
+  // Experience
+  currentCompany  String?         @map("current_company")
+  currentRole     String?         @map("current_role")
+  experienceYears Int?            @map("experience_years")
+  expectedSalary  Int?            @map("expected_salary")
+  noticePeriod    String?         @map("notice_period")
+  
+  // Skills (stored as JSON array of strings)
+  skills          String[]        @default([])
+  
+  // Notes and feedback
+  notes           String?         @db.Text
+  interviewNotes  String?         @db.Text @map("interview_notes")
+  
+  // Dates
+  appliedAt       DateTime        @default(now()) @map("applied_at")
+  screenedAt      DateTime?       @map("screened_at")
+  interviewedAt   DateTime?       @map("interviewed_at")
+  offeredAt       DateTime?       @map("offered_at")
+  hiredAt         DateTime?       @map("hired_at")
+  rejectedAt      DateTime?       @map("rejected_at")
+  
+  // Metadata
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  // Relations
+  job             JobDescription  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@index([email])
+  @@index([status])
+  @@index([stage])
+  @@map("job_candidates")
+}
+
+enum CandidateStatus {
+  APPLIED
+  SCREENING
+  SHORTLISTED
+  INTERVIEWED
+  OFFERED
+  HIRED
+  REJECTED
+  WITHDRAWN
+}
+
+enum CandidateStage {
+  APPLICATION
+  PHONE_SCREEN
+  TECHNICAL_INTERVIEW
+  HR_INTERVIEW
+  FINAL_INTERVIEW
+  OFFER
+  ONBOARDING
+}
+
+enum JobStatus {
+  OPEN
+  ON_HOLD
+  CLOSED
+  COMPLETED
+}

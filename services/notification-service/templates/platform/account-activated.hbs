@@ -1,0 +1,35 @@
+<h2>Account Activated</h2>
+
+<p>Hello {{firstName}},</p>
+
+<p>Good news! Your OMS Platform Administrator account has been activated.</p>
+
+<div class="info-box">
+  <p><strong>Activation Details:</strong></p>
+  <p>Activated By: {{activatedBy}}<br>
+  Date: {{activationDate}}<br>
+  Status: <strong style="color: #48bb78;">ACTIVE</strong></p>
+</div>
+
+<p>You can now access all the features and permissions associated with your role: <strong>{{role}}</strong></p>
+
+<a href="{{platformUrl}}" class="button">Access Platform</a>
+
+<div class="divider"></div>
+
+<p><strong>Available Features:</strong></p>
+<ul style="color: #4a5568; margin-left: 20px;">
+  <li>Platform administration panel</li>
+  <li>User and tenant management</li>
+  <li>System analytics and reports</li>
+  <li>Configuration settings</li>
+</ul>
+
+{{#if previousSuspension}}
+<p style="color: #718096; font-size: 14px;">Note: Your previous suspension has been lifted. Please review and comply with the platform usage policies.</p>
+{{/if}}
+
+<p>Welcome back! If you have any questions, please contact our support team.</p>
+
+<p>Best regards,<br>
+<strong>OMS Platform Team</strong></p>

@@ -1,0 +1,1520 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { toast } from 'sonner';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Skeleton } from '@/components/ui/skeleton';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  ArrowLeft,
+  Briefcase,
+  MapPin,
+  Calendar,
+  Users,
+  UserCheck,
+  Video,
+  Award,
+  Building2,
+  Mail,
+  Phone,
+  Star,
+  MoreVertical,
+  Plus,
+  Search,
+  Filter,
+  Download,
+  CheckCircle,
+  XCircle,
+  Edit,
+  FileText,
+  TrendingUp,
+  UserPlus,
+  Eye,
+  Sparkles,
+  Upload,
+  X,
+  File,
+} from 'lucide-react';
+import { jobApi, type JobDescription } from '@/lib/api/jobs';
+import { candidateApi, type JobCandidate, type CreateCandidateDto } from '@/lib/api/candidates';
+import { useOrgSettings } from '@/hooks/use-org-settings';
+import { formatSalaryRange, formatDate, getCurrencySymbol, getAvatarColor } from '@/lib/format';
+import { JobDescriptionForm, type JobFormData } from '../_components/JobDescriptionForm';
+
+const statusColors: Record<string, string> = {
+  open: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+  'on-hold': 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
+  closed: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+  completed: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+};
+
+const candidateStatusColors: Record<string, string> = {
+  APPLIED: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300',
+  SCREENING: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+  SHORTLISTED: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400',
+  INTERVIEWED: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
+  OFFERED: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
+  HIRED: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+  REJECTED: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+  WITHDRAWN: 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-500',
+};
+
+// Stat Card Component
+function StatCard({ 
+  title, 
+  value, 
+  icon: Icon, 
+  color = 'primary',
+}: { 
+  title: string; 
+  value: number | string; 
+  icon: React.ElementType; 
+  color?: string;
+}) {
+  const colorClasses: Record<string, string> = {
+    primary: 'bg-primary/10 text-primary',
+    blue: 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400',
+    green: 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400',
+    purple: 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400',
+    amber: 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400',
+    red: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
+  };
+
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="flex items-center gap-3">
+          <div className={`p-2.5 rounded-xl ${colorClasses[color]}`}>
+            <Icon className="h-5 w-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-muted-foreground truncate">{title}</p>
+            <p className="text-2xl font-bold">{value}</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function JobDetailPage() {
+  const params = useParams();
+  const router = useRouter();
+  const jobId = params.id as string;
+  const orgSettings = useOrgSettings();
+
+  const [job, setJob] = useState<JobDescription | null>(null);
+  const [candidates, setCandidates] = useState<JobCandidate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [candidatesLoading, setCandidatesLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [addCandidateOpen, setAddCandidateOpen] = useState(false);
+  const [editFormOpen, setEditFormOpen] = useState(false);
+  const [editCandidateOpen, setEditCandidateOpen] = useState(false);
+  const [editingCandidate, setEditingCandidate] = useState<JobCandidate | null>(null);
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const [editResumeFile, setEditResumeFile] = useState<File | null>(null);
+  const [uploadingResume, setUploadingResume] = useState(false);
+  const [savingCandidate, setSavingCandidate] = useState(false);
+  const [documentViewerOpen, setDocumentViewerOpen] = useState(false);
+  const [viewingDocument, setViewingDocument] = useState<{ url: string; name: string } | null>(null);
+
+  // Form state for add candidate
+  const [newCandidate, setNewCandidate] = useState<CreateCandidateDto>({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    resumeUrl: '',
+    source: 'DIRECT',
+    notes: '',
+  });
+
+  useEffect(() => {
+    loadJob();
+    loadCandidates();
+  }, [jobId]);
+
+  const loadJob = async () => {
+    try {
+      setLoading(true);
+      const data = await jobApi.getJob(jobId);
+      setJob(data);
+    } catch (error) {
+      console.error('Failed to load job:', error);
+      toast.error('Failed to load job details');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadCandidates = async () => {
+    try {
+      setCandidatesLoading(true);
+      const data = await candidateApi.getCandidates(jobId);
+      setCandidates(data);
+    } catch (error) {
+      console.error('Failed to load candidates:', error);
+    } finally {
+      setCandidatesLoading(false);
+    }
+  };
+
+  const handleAddCandidate = async () => {
+    try {
+      setUploadingResume(true);
+      
+      // If resume file is selected, convert to base64
+      let resumeData: { filename: string; content: string; mimeType: string } | undefined;
+      if (resumeFile) {
+        const base64Content = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const result = reader.result as string;
+            // Remove the data:...;base64, prefix
+            const base64 = result.split(',')[1];
+            resolve(base64);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(resumeFile);
+        });
+        
+        resumeData = {
+          filename: resumeFile.name,
+          content: base64Content,
+          mimeType: resumeFile.type,
+        };
+      }
+      
+      await candidateApi.createCandidate(jobId, {
+        ...newCandidate,
+        resumeData,
+      });
+      toast.success('Candidate added successfully');
+      setAddCandidateOpen(false);
+      setResumeFile(null);
+      setNewCandidate({
+        firstName: '',
+        lastName: '',
+        email: '',
+        phone: '',
+        resumeUrl: '',
+        source: 'DIRECT',
+        notes: '',
+      });
+      loadCandidates();
+    } catch (error) {
+      console.error('Failed to add candidate:', error);
+      toast.error('Failed to add candidate');
+    } finally {
+      setUploadingResume(false);
+    }
+  };
+
+  // Handle resume file selection
+  const handleResumeFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Validate file type
+      const allowedTypes = [
+        'application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      ];
+      if (!allowedTypes.includes(file.type)) {
+        toast.error('Invalid file type', {
+          description: 'Please upload a PDF, DOC, or DOCX file.',
+        });
+        return;
+      }
+      // Validate file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error('File too large', {
+          description: 'Please upload a file smaller than 5MB.',
+        });
+        return;
+      }
+      setResumeFile(file);
+    }
+  };
+
+  // Handle job edit form submission
+  const handleEditFormSubmit = async (data: JobFormData) => {
+    try {
+      await jobApi.updateJob(jobId, {
+        title: data.title,
+        department: data.department,
+        location: data.location,
+        employmentType: data.employmentType,
+        salaryMin: data.salaryMin,
+        salaryMax: data.salaryMax,
+        currency: data.currency,
+        status: data.status,
+        closingDate: data.closingDate,
+        openings: data.openings,
+        experienceMin: data.experienceMin,
+        experienceMax: data.experienceMax,
+        description: data.description,
+        requirements: data.requirements,
+        responsibilities: data.responsibilities,
+        benefits: data.benefits,
+        techStack: data.techStack,
+      });
+      toast.success('Job Updated Successfully', {
+        description: 'The job description has been updated.',
+      });
+      setEditFormOpen(false);
+      loadJob(); // Reload job data
+    } catch (error) {
+      console.error('Failed to update job:', error);
+      toast.error('Failed to Update Job', {
+        description: 'An error occurred while saving the job. Please try again.',
+      });
+    }
+  };
+
+  const handleUpdateStatus = async (candidateId: string, status: string) => {
+    try {
+      await candidateApi.updateCandidate(jobId, candidateId, { status });
+      toast.success('Candidate status updated');
+      loadCandidates();
+    } catch (error) {
+      console.error('Failed to update status:', error);
+      toast.error('Failed to update status');
+    }
+  };
+
+  // Open edit candidate dialog
+  const handleEditCandidate = (candidate: JobCandidate) => {
+    setEditingCandidate(candidate);
+    setEditResumeFile(null);
+    setEditCandidateOpen(true);
+  };
+
+  // Open document viewer
+  const handleViewDocument = (url: string, candidateName: string) => {
+    setViewingDocument({ url, name: `${candidateName}'s Resume` });
+    setDocumentViewerOpen(true);
+  };
+
+  // Download document
+  const handleDownloadDocument = async (url: string, candidateName: string) => {
+    try {
+      const fullUrl = url.startsWith('http') ? url : `${window.location.origin}${url}`;
+      const response = await fetch(fullUrl);
+      const blob = await response.blob();
+      
+      // Get file extension from URL
+      const extension = url.split('.').pop() || 'pdf';
+      const filename = `${candidateName.replace(/\s+/g, '_')}_Resume.${extension}`;
+      
+      // Create download link
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+      
+      toast.success('Download started');
+    } catch (error) {
+      console.error('Download failed:', error);
+      toast.error('Failed to download file');
+    }
+  };
+
+  // Download candidates list as PDF
+  const handleDownloadCandidatesPDF = async () => {
+    try {
+      // Create PDF content
+      const content = `
+Candidates for ${job?.title || 'Job Position'}
+
+${filteredCandidates.map(candidate => 
+        `${candidate.firstName} ${candidate.lastName}\n` +
+        `Email: ${candidate.email}\n` +
+        `Phone: ${candidate.phone || 'N/A'}\n` +
+        `Status: ${candidate.status}\n` +
+        `Source: ${candidate.source}\n` +
+        `Applied: ${formatDate(candidate.appliedAt, orgSettings)}\n` +
+        `Notes: ${candidate.notes || 'N/A'}\n\n`
+      ).join('')}`;
+      
+      // Create and download text file (simplified PDF alternative)
+      const blob = new Blob([content], { type: 'text/plain' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${job?.title?.replace(/\s+/g, '_')}_Candidates.txt`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success('Candidates list downloaded');
+    } catch (error) {
+      console.error('Download failed:', error);
+      toast.error('Failed to download candidates list');
+    }
+  };
+
+  // Get document viewer URL - use Google Docs Viewer for DOC/DOCX, iframe for PDF
+  const getDocumentViewerUrl = (url: string): { type: 'iframe' | 'google' | 'unsupported'; viewUrl: string } => {
+    const extension = url.split('.').pop()?.toLowerCase();
+    // For local files served from our server
+    const fullUrl = url.startsWith('http') ? url : `${window.location.origin}${url}`;
+    
+    if (extension === 'pdf') {
+      return { type: 'iframe', viewUrl: fullUrl };
+    } else if (extension === 'doc' || extension === 'docx') {
+      // Use Google Docs Viewer for Word documents
+      return { type: 'google', viewUrl: `https://docs.google.com/gview?url=${encodeURIComponent(fullUrl)}&embedded=true` };
+    }
+    return { type: 'unsupported', viewUrl: fullUrl };
+  };
+
+  // Handle edit resume file selection
+  const handleEditResumeFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const allowedTypes = [
+        'application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      ];
+      if (!allowedTypes.includes(file.type)) {
+        toast.error('Invalid file type', {
+          description: 'Please upload a PDF, DOC, or DOCX file.',
+        });
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error('File too large', {
+          description: 'Please upload a file smaller than 5MB.',
+        });
+        return;
+      }
+      setEditResumeFile(file);
+    }
+  };
+
+  // Save edited candidate
+  const handleSaveCandidate = async () => {
+    if (!editingCandidate) return;
+    
+    try {
+      setSavingCandidate(true);
+      
+      // If new resume file is selected, convert to base64
+      let resumeData: { filename: string; content: string; mimeType: string } | undefined;
+      if (editResumeFile) {
+        const base64Content = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const result = reader.result as string;
+            const base64 = result.split(',')[1];
+            resolve(base64);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(editResumeFile);
+        });
+        
+        resumeData = {
+          filename: editResumeFile.name,
+          content: base64Content,
+          mimeType: editResumeFile.type,
+        };
+      }
+      
+      await candidateApi.updateCandidate(jobId, editingCandidate.id, {
+        firstName: editingCandidate.firstName,
+        lastName: editingCandidate.lastName,
+        email: editingCandidate.email,
+        phone: editingCandidate.phone || undefined,
+        status: editingCandidate.status,
+        rating: editingCandidate.rating || undefined,
+        notes: editingCandidate.notes || undefined,
+        interviewNotes: editingCandidate.interviewNotes || undefined,
+        resumeData,
+      });
+      toast.success('Candidate updated successfully');
+      setEditCandidateOpen(false);
+      setEditingCandidate(null);
+      setEditResumeFile(null);
+      loadCandidates();
+    } catch (error) {
+      console.error('Failed to update candidate:', error);
+      toast.error('Failed to update candidate');
+    } finally {
+      setSavingCandidate(false);
+    }
+  };
+
+  const filteredCandidates = candidates.filter((candidate) => {
+    const matchesSearch = 
+      `${candidate.firstName} ${candidate.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      candidate.email.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStatus = statusFilter === 'all' || candidate.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  // Stats
+  const stats = {
+    total: candidates.length,
+    screening: candidates.filter(c => c.status === 'SCREENING').length,
+    shortlisted: candidates.filter(c => c.status === 'SHORTLISTED').length,
+    interviewed: candidates.filter(c => c.status === 'INTERVIEWED').length,
+    hired: candidates.filter(c => c.status === 'HIRED').length,
+    rejected: candidates.filter(c => c.status === 'REJECTED').length,
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        {/* Header Skeleton */}
+        <div className="flex items-start justify-between">
+          <div>
+            <Button 
+              variant="ghost" 
+              className="mb-2 -ml-2 text-muted-foreground opacity-50"
+              disabled
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Jobs
+            </Button>
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-9 w-56 inline-block" />
+              <Badge className="opacity-50"><Skeleton className="h-4 w-12 inline-block" /></Badge>
+            </div>
+            <div className="flex items-center gap-4 text-muted-foreground mt-2">
+              <span className="flex items-center gap-1">
+                <Building2 className="h-4 w-4 opacity-30" />
+                <Skeleton className="h-4 w-20 inline-block" />
+              </span>
+              <span className="flex items-center gap-1">
+                <MapPin className="h-4 w-4 opacity-30" />
+                <Skeleton className="h-4 w-24 inline-block" />
+              </span>
+              <span className="flex items-center gap-1">
+                <Briefcase className="h-4 w-4 opacity-30" />
+                <Skeleton className="h-4 w-16 inline-block" />
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" disabled className="opacity-50">
+              <Edit className="h-4 w-4 mr-2" />
+              Edit Job
+            </Button>
+            <Button disabled className="opacity-50">
+              <UserPlus className="h-4 w-4 mr-2" />
+              Add Candidate
+            </Button>
+          </div>
+        </div>
+
+        {/* Stats Row Skeleton */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          {[
+            { title: 'Total Applied', icon: Users, color: 'primary' },
+            { title: 'Screening', icon: Eye, color: 'blue' },
+            { title: 'Shortlisted', icon: UserCheck, color: 'purple' },
+            { title: 'Interviewed', icon: Video, color: 'amber' },
+            { title: 'Hired', icon: Award, color: 'green' },
+            { title: 'Rejected', icon: XCircle, color: 'red' },
+          ].map((stat, i) => (
+            <Card key={i}>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2.5 rounded-xl opacity-30 ${
+                    stat.color === 'primary' ? 'bg-primary/10 text-primary' :
+                    stat.color === 'blue' ? 'bg-blue-100 text-blue-600' :
+                    stat.color === 'purple' ? 'bg-purple-100 text-purple-600' :
+                    stat.color === 'amber' ? 'bg-amber-100 text-amber-600' :
+                    stat.color === 'green' ? 'bg-green-100 text-green-600' :
+                    'bg-red-100 text-red-600'
+                  }`}>
+                    <stat.icon className="h-5 w-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-muted-foreground truncate">{stat.title}</p>
+                    <Skeleton className="h-7 w-8 inline-block mt-1" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {/* Main Content Skeleton */}
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+          {/* Left Side - Job Details */}
+          <div className="lg:col-span-3">
+            <Card className="h-full flex flex-col">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <FileText className="h-5 w-5 opacity-30" />
+                  Job Description
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex-1">
+                <div className="space-y-6">
+                  {/* Key Info Skeleton */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide">Salary Range</p>
+                      <Skeleton className="h-5 w-32 inline-block" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide">Experience</p>
+                      <Skeleton className="h-5 w-24 inline-block" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide">Openings</p>
+                      <Skeleton className="h-5 w-20 inline-block" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide">Closing Date</p>
+                      <Skeleton className="h-5 w-24 inline-block" />
+                    </div>
+                  </div>
+                  <Separator />
+                  {/* Description Skeleton */}
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-semibold flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-primary opacity-30" />
+                      Description
+                    </h4>
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-11/12" />
+                    <Skeleton className="h-4 w-3/4" />
+                  </div>
+                  {/* Requirements Skeleton */}
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-semibold flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-green-500 opacity-30" />
+                      Requirements
+                    </h4>
+                    {[1, 2, 3, 4].map(i => (
+                      <div key={i} className="flex items-start gap-2">
+                        <span className="text-primary mt-1 opacity-30">•</span>
+                        <Skeleton className="h-4 w-full" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Right Side - Candidates */}
+          <div className="lg:col-span-2 flex flex-col gap-4">
+            {/* Filters Skeleton */}
+            <div className="flex items-center gap-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground opacity-30" />
+                <Input placeholder="Search candidates..." className="pl-8 opacity-50" disabled />
+              </div>
+              <Button variant="outline" disabled className="opacity-50">
+                <Filter className="mr-2 h-4 w-4" />
+                All Status
+              </Button>
+              <Button variant="outline" size="icon" disabled className="opacity-50">
+                <Download className="h-4 w-4" />
+              </Button>
+            </div>
+            {/* Candidates Grid Skeleton */}
+            <div className="grid gap-3">
+              {[1, 2, 3, 4].map(i => (
+                <Card key={i}>
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-start gap-3 flex-1 min-w-0">
+                        <Avatar className="h-11 w-11 flex-shrink-0">
+                          <AvatarFallback className="bg-muted font-semibold opacity-50">
+                            <Skeleton className="h-6 w-6" />
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Skeleton className="h-5 w-28 inline-block" />
+                            <Badge className="opacity-50"><Skeleton className="h-3 w-14 inline-block" /></Badge>
+                          </div>
+                          <div className="flex flex-col gap-1 text-sm text-muted-foreground">
+                            <div className="flex items-center gap-1.5">
+                              <Mail className="h-3.5 w-3.5 opacity-30" />
+                              <Skeleton className="h-3 w-36 inline-block" />
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <Phone className="h-3.5 w-3.5 opacity-30" />
+                              <Skeleton className="h-3 w-24 inline-block" />
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                            <Badge variant="outline" className="text-xs font-normal opacity-50">
+                              <Skeleton className="h-3 w-12 inline-block" />
+                            </Badge>
+                            <span className="flex items-center gap-1">
+                              <Calendar className="h-3 w-3 opacity-30" />
+                              <Skeleton className="h-3 w-16 inline-block" />
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0 opacity-50" disabled>
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!job) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Card className="max-w-md">
+          <CardContent className="py-12 text-center">
+            <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <p className="text-lg font-medium mb-2">Job not found</p>
+            <p className="text-muted-foreground mb-4">The job description you&apos;re looking for doesn&apos;t exist or has been deleted.</p>
+            <Button onClick={() => router.push('/hr/jobs')}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Jobs
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-start justify-between">
+        <div>
+          <Button 
+            variant="ghost" 
+            className="mb-2 -ml-2 text-muted-foreground hover:text-foreground"
+            onClick={() => router.push('/hr/jobs')}
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Jobs
+          </Button>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-bold tracking-tight">{job.title}</h1>
+            <Badge className={statusColors[job.status]}>
+              {job.status.replace('-', ' ').toUpperCase()}
+            </Badge>
+          </div>
+          <div className="flex items-center gap-4 text-muted-foreground mt-2">
+            <span className="flex items-center gap-1">
+              <Building2 className="h-4 w-4" />
+              {job.department}
+            </span>
+            <span className="flex items-center gap-1">
+              <MapPin className="h-4 w-4" />
+              {job.location}
+            </span>
+            <span className="flex items-center gap-1">
+              <Briefcase className="h-4 w-4" />
+              {job.employmentType.replace('-', ' ')}
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setEditFormOpen(true)}>
+            <Edit className="h-4 w-4 mr-2" />
+            Edit Job
+          </Button>
+          <Button onClick={() => setAddCandidateOpen(true)}>
+            <UserPlus className="h-4 w-4 mr-2" />
+            Add Candidate
+          </Button>
+        </div>
+      </div>
+
+      {/* Stats Row */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <StatCard title="Total Applied" value={stats.total} icon={Users} color="primary" />
+        <StatCard title="Screening" value={stats.screening} icon={Eye} color="blue" />
+        <StatCard title="Shortlisted" value={stats.shortlisted} icon={UserCheck} color="purple" />
+        <StatCard title="Interviewed" value={stats.interviewed} icon={Video} color="amber" />
+        <StatCard title="Hired" value={stats.hired} icon={Award} color="green" />
+        <StatCard title="Rejected" value={stats.rejected} icon={XCircle} color="red" />
+      </div>
+
+      {/* Main Content - Split Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        {/* Left Side - Job Details (60%) */}
+        <div className="lg:col-span-3">
+          <Card className="h-full flex flex-col">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                Job Description
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex-1 overflow-hidden">
+              <ScrollArea className="h-full pr-4">
+                <div className="space-y-6">
+                  {/* Key Info */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide">Salary Range</p>
+                      <p className="font-medium">
+                        {formatSalaryRange(job.salaryRange.min, job.salaryRange.max, orgSettings, job.employmentType)}
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide">Experience</p>
+                      <p className="font-medium">{job.experience.min} - {job.experience.max} years</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide">Openings</p>
+                      <p className="font-medium">{job.openings} positions</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide">Closing Date</p>
+                      <p className="font-medium">{formatDate(job.closingDate, orgSettings)}</p>
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Description */}
+                  {job.description && (
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-semibold flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-primary" />
+                        Description
+                      </h4>
+                      <p className="text-sm text-muted-foreground leading-relaxed">{job.description}</p>
+                    </div>
+                  )}
+
+                  {/* Requirements */}
+                  {job.requirements && job.requirements.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-semibold flex items-center gap-2">
+                        <CheckCircle className="h-4 w-4 text-green-500" />
+                        Requirements
+                      </h4>
+                      <ul className="space-y-1.5">
+                        {job.requirements.map((req, idx) => (
+                          <li key={idx} className="text-sm text-muted-foreground flex items-start gap-2">
+                            <span className="text-primary mt-1">•</span>
+                            {req}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Responsibilities */}
+                  {job.responsibilities && job.responsibilities.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-semibold flex items-center gap-2">
+                        <Briefcase className="h-4 w-4 text-blue-500" />
+                        Responsibilities
+                      </h4>
+                      <ul className="space-y-1.5">
+                        {job.responsibilities.map((resp, idx) => (
+                          <li key={idx} className="text-sm text-muted-foreground flex items-start gap-2">
+                            <span className="text-primary mt-1">•</span>
+                            {resp}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Benefits */}
+                  {job.benefits && job.benefits.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-semibold flex items-center gap-2">
+                        <Star className="h-4 w-4 text-amber-500" />
+                        Benefits
+                      </h4>
+                      <div className="flex flex-wrap gap-2">
+                        {job.benefits.map((benefit, idx) => (
+                          <Badge key={idx} variant="secondary" className="text-xs">
+                            {benefit}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tech Stack */}
+                  {job.techStack && job.techStack.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-semibold flex items-center gap-2">
+                        <TrendingUp className="h-4 w-4 text-purple-500" />
+                        Tech Stack
+                      </h4>
+                      <div className="flex flex-wrap gap-2">
+                        {job.techStack.map((tech, idx) => (
+                          <Badge key={idx} variant="outline" className="text-xs">
+                            {tech}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Right Side - Candidates List (40%) */}
+        <div className="lg:col-span-2 flex flex-col gap-4">
+          {/* Filters - Outside Card */}
+          <div className="flex items-center gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search candidates..."
+                className="pl-8"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  <Filter className="mr-2 h-4 w-4" />
+                  {statusFilter === 'all' ? 'All Status' : statusFilter}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setStatusFilter('all')}>
+                  All Status
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setStatusFilter('APPLIED')}>
+                  Applied
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setStatusFilter('SCREENING')}>
+                  Screening
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setStatusFilter('SHORTLISTED')}>
+                  Shortlisted
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setStatusFilter('INTERVIEWED')}>
+                  Interviewed
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setStatusFilter('OFFERED')}>
+                  Offered
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setStatusFilter('HIRED')}>
+                  Hired
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setStatusFilter('REJECTED')}>
+                  Rejected
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button variant="outline" size="icon" title="Download Candidates List" onClick={handleDownloadCandidatesPDF}>
+              <Download className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {/* Candidates Grid */}
+          <Card className="flex-1 flex flex-col">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                Candidates ({filteredCandidates.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex-1 overflow-hidden p-0">
+              {candidatesLoading ? (
+                <div className="grid gap-3 p-6">
+                  {[1, 2, 3, 4].map(i => (
+                    <Card key={i}>
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-4">
+                          <Skeleton className="h-12 w-12 rounded-full" />
+                          <div className="flex-1 space-y-2">
+                            <Skeleton className="h-4 w-32" />
+                            <Skeleton className="h-3 w-48" />
+                          </div>
+                          <Skeleton className="h-6 w-20 rounded-full" />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+            ) : filteredCandidates.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 px-6">
+                <div className="rounded-full bg-primary/10 p-6 mb-4">
+                  <Users className="h-12 w-12 text-primary" />
+                </div>
+                <h3 className="text-lg font-semibold mb-2">No Candidates Yet</h3>
+                <p className="text-muted-foreground text-center max-w-sm mb-4">
+                  {searchTerm || statusFilter !== 'all' 
+                    ? 'Try adjusting your search or filter' 
+                    : 'Add your first candidate to start tracking applications'}
+                </p>
+                {!searchTerm && statusFilter === 'all' && (
+                  <Button onClick={() => setAddCandidateOpen(true)}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add First Candidate
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <ScrollArea className="h-full">
+                <div className="grid gap-3 p-6">
+                  {filteredCandidates.map((candidate) => (
+                    <Card key={candidate.id} className="hover:bg-muted/50 transition-colors">
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-3 flex-1 min-w-0">
+                            <Avatar className="h-11 w-11 flex-shrink-0">
+                              <AvatarFallback className={`${getAvatarColor(candidate.email || candidate.firstName + candidate.lastName).className} font-semibold`}>
+                                {candidate.firstName[0]}{candidate.lastName[0]}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <h4 className="font-semibold truncate">
+                                  {candidate.firstName} {candidate.lastName}
+                                </h4>
+                                <Badge className={candidateStatusColors[candidate.status]} >
+                                  {candidate.status}
+                                </Badge>
+                              </div>
+                              <div className="flex flex-col gap-1 text-sm text-muted-foreground">
+                                <div className="flex items-center gap-1.5">
+                                  <Mail className="h-3.5 w-3.5" />
+                                  <span className="truncate">{candidate.email}</span>
+                                </div>
+                                {candidate.phone && (
+                                  <div className="flex items-center gap-1.5">
+                                    <Phone className="h-3.5 w-3.5" />
+                                    <span>{candidate.phone}</span>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                                <span className="flex items-center gap-1">
+                                  <Badge variant="outline" className="text-xs font-normal">
+                                    {candidate.source}
+                                  </Badge>
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <Calendar className="h-3 w-3" />
+                                  {formatDate(candidate.appliedAt, orgSettings)}
+                                </span>
+                                {candidate.rating && (
+                                  <span className="flex items-center gap-1">
+                                    <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                                    {candidate.rating}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleEditCandidate(candidate)}>
+                                <Edit className="h-4 w-4 mr-2" />
+                                Edit Candidate
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuLabel>Change Status</DropdownMenuLabel>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, 'SCREENING')}>
+                                Move to Screening
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, 'SHORTLISTED')}>
+                                Shortlist
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, 'INTERVIEWED')}>
+                                Mark as Interviewed
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, 'OFFERED')}>
+                                Send Offer
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, 'HIRED')}>
+                                <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
+                                Mark as Hired
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem 
+                                onClick={() => handleUpdateStatus(candidate.id, 'REJECTED')}
+                                className="text-red-600"
+                              >
+                                <XCircle className="h-4 w-4 mr-2" />
+                                Reject
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </ScrollArea>
+            )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* Add Candidate Dialog */}
+        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0 border-b pb-4">
+            <DialogTitle>Add New Candidate</DialogTitle>
+            <DialogDescription>
+              Add a new candidate to this job opening
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto py-4">
+            <div className="grid gap-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="firstName">First Name *</Label>
+                <Input
+                  id="firstName"
+                  value={newCandidate.firstName}
+                  onChange={(e) => setNewCandidate({ ...newCandidate, firstName: e.target.value })}
+                  placeholder="John"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="lastName">Last Name *</Label>
+                <Input
+                  id="lastName"
+                  value={newCandidate.lastName}
+                  onChange={(e) => setNewCandidate({ ...newCandidate, lastName: e.target.value })}
+                  placeholder="Doe"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email">Email *</Label>
+              <Input
+                id="email"
+                type="email"
+                value={newCandidate.email}
+                onChange={(e) => setNewCandidate({ ...newCandidate, email: e.target.value })}
+                placeholder="john.doe@example.com"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="phone">Phone</Label>
+              <Input
+                id="phone"
+                value={newCandidate.phone}
+                onChange={(e) => setNewCandidate({ ...newCandidate, phone: e.target.value })}
+                placeholder="+91 9876543210"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="source">Source</Label>
+              <Select 
+                value={newCandidate.source} 
+                onValueChange={(value) => setNewCandidate({ ...newCandidate, source: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="DIRECT">Direct</SelectItem>
+                  <SelectItem value="LINKEDIN">LinkedIn</SelectItem>
+                  <SelectItem value="REFERRAL">Referral</SelectItem>
+                  <SelectItem value="JOB_PORTAL">Job Portal</SelectItem>
+                  <SelectItem value="CAREER_PAGE">Career Page</SelectItem>
+                  <SelectItem value="OTHER">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="resumeUrl">Resume URL</Label>
+              <Input
+                id="resumeUrl"
+                value={newCandidate.resumeUrl}
+                onChange={(e) => setNewCandidate({ ...newCandidate, resumeUrl: e.target.value })}
+                placeholder="https://drive.google.com/..."
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Upload CV/Resume</Label>
+              <div className="flex flex-col gap-2">
+                {resumeFile ? (
+                  <div className="flex items-center gap-2 p-3 border rounded-md bg-muted/50">
+                    <File className="h-5 w-5 text-primary" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{resumeFile.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {(resumeFile.size / 1024).toFixed(1)} KB
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => setResumeFile(null)}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer hover:bg-muted/50 transition-colors">
+                    <div className="flex flex-col items-center justify-center pt-2 pb-3">
+                      <Upload className="h-6 w-6 text-muted-foreground mb-1" />
+                      <p className="text-sm text-muted-foreground">
+                        <span className="font-medium text-primary">Click to upload</span> CV/Resume
+                      </p>
+                      <p className="text-xs text-muted-foreground">PDF, DOC, DOCX (Max 5MB)</p>
+                    </div>
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      onChange={handleResumeFileChange}
+                    />
+                  </label>
+                )}
+              </div>
+            </div>
+              <div className="space-y-2">
+                <Label htmlFor="notes">Notes</Label>
+                <Textarea
+                  id="notes"
+                  value={newCandidate.notes}
+                  onChange={(e) => setNewCandidate({ ...newCandidate, notes: e.target.value })}
+                  placeholder="Additional notes about the candidate..."
+                  rows={3}
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="flex-shrink-0 border-t pt-4">
+            <Button variant="outline" onClick={() => { setAddCandidateOpen(false); setResumeFile(null); }}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleAddCandidate}
+              disabled={!newCandidate.firstName || !newCandidate.lastName || !newCandidate.email || uploadingResume}
+            >
+              {uploadingResume ? 'Adding...' : 'Add Candidate'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Job Description Form Dialog */}
+      {job && (
+        <JobDescriptionForm
+          open={editFormOpen}
+          onOpenChange={setEditFormOpen}
+          onSubmit={handleEditFormSubmit}
+          initialData={{
+            title: job.title,
+            department: job.department,
+            location: job.location,
+            employmentType: job.employmentType,
+            salaryMin: job.salaryRange.min,
+            salaryMax: job.salaryRange.max,
+            currency: job.salaryRange.currency,
+            openings: job.openings,
+            status: job.status,
+            closingDate: job.closingDate,
+            experienceMin: job.experience.min,
+            experienceMax: job.experience.max,
+            description: job.description || '',
+            requirements: job.requirements || [],
+            responsibilities: job.responsibilities || [],
+            benefits: job.benefits || [],
+            techStack: job.techStack || [],
+          }}
+          mode="edit"
+        />
+      )}
+
+      {/* Edit Candidate Dialog */}
+      <Dialog open={editCandidateOpen} onOpenChange={(open) => {
+        setEditCandidateOpen(open);
+        if (!open) {
+          setEditingCandidate(null);
+          setEditResumeFile(null);
+        }
+      }}>
+        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0 border-b pb-4">
+            <DialogTitle>Edit Candidate</DialogTitle>
+            <DialogDescription>
+              Update candidate information
+            </DialogDescription>
+          </DialogHeader>
+          {editingCandidate && (
+            <div className="flex-1 overflow-y-auto py-4">
+              <div className="grid gap-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="editFirstName">First Name *</Label>
+                    <Input
+                      id="editFirstName"
+                      value={editingCandidate.firstName}
+                      onChange={(e) => setEditingCandidate({ ...editingCandidate, firstName: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="editLastName">Last Name *</Label>
+                    <Input
+                      id="editLastName"
+                      value={editingCandidate.lastName}
+                      onChange={(e) => setEditingCandidate({ ...editingCandidate, lastName: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editEmail">Email *</Label>
+                  <Input
+                    id="editEmail"
+                    type="email"
+                    value={editingCandidate.email}
+                    onChange={(e) => setEditingCandidate({ ...editingCandidate, email: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editPhone">Phone</Label>
+                  <Input
+                    id="editPhone"
+                    value={editingCandidate.phone || ''}
+                    onChange={(e) => setEditingCandidate({ ...editingCandidate, phone: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editSource">Source</Label>
+                  <Select 
+                    value={editingCandidate.source || 'DIRECT'} 
+                    onValueChange={(value) => setEditingCandidate({ ...editingCandidate, source: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="DIRECT">Direct</SelectItem>
+                      <SelectItem value="LINKEDIN">LinkedIn</SelectItem>
+                      <SelectItem value="REFERRAL">Referral</SelectItem>
+                      <SelectItem value="JOB_PORTAL">Job Portal</SelectItem>
+                      <SelectItem value="CAREER_PAGE">Career Page</SelectItem>
+                      <SelectItem value="OTHER">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>CV/Resume</Label>
+                  {editResumeFile ? (
+                    <div className="flex items-center gap-2 p-3 border rounded-md bg-muted/50">
+                      <File className="h-5 w-5 text-primary" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{editResumeFile.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {(editResumeFile.size / 1024).toFixed(1)} KB (New)
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => setEditResumeFile(null)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : editingCandidate.resumeUrl ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 p-3 border rounded-md bg-muted/50">
+                        <File className="h-5 w-5 text-primary" />
+                        <button
+                          type="button"
+                          onClick={() => handleViewDocument(editingCandidate.resumeUrl!, `${editingCandidate.firstName} ${editingCandidate.lastName}`)}
+                          className="text-sm text-primary hover:underline truncate flex-1 text-left"
+                        >
+                          View Current Resume
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadDocument(editingCandidate.resumeUrl!, `${editingCandidate.firstName} ${editingCandidate.lastName}`)}
+                          className="text-muted-foreground hover:text-foreground"
+                          title="Download"
+                        >
+                          <Download className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <label className="flex items-center justify-center w-full h-10 border border-dashed rounded-lg cursor-pointer hover:bg-muted/50 transition-colors">
+                        <div className="flex items-center gap-2">
+                          <Upload className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-sm text-muted-foreground">
+                            <span className="font-medium text-primary">Click to replace</span> resume
+                          </span>
+                        </div>
+                        <input
+                          type="file"
+                          className="hidden"
+                          accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                          onChange={handleEditResumeFileChange}
+                        />
+                      </label>
+                    </div>
+                  ) : (
+                    <label className="flex flex-col items-center justify-center w-full h-20 border-2 border-dashed rounded-lg cursor-pointer hover:bg-muted/50 transition-colors">
+                      <div className="flex flex-col items-center justify-center">
+                        <Upload className="h-5 w-5 text-muted-foreground mb-1" />
+                        <p className="text-sm text-muted-foreground">
+                          <span className="font-medium text-primary">Click to upload</span> CV/Resume
+                        </p>
+                        <p className="text-xs text-muted-foreground">PDF, DOC, DOCX (Max 5MB)</p>
+                      </div>
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        onChange={handleEditResumeFileChange}
+                      />
+                    </label>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editNotes">Notes</Label>
+                  <Textarea
+                    id="editNotes"
+                    value={editingCandidate.notes || ''}
+                    onChange={(e) => setEditingCandidate({ ...editingCandidate, notes: e.target.value })}
+                    placeholder="Additional notes about the candidate..."
+                    rows={3}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="flex-shrink-0 border-t pt-4">
+            <Button variant="outline" onClick={() => { setEditCandidateOpen(false); setEditingCandidate(null); setEditResumeFile(null); }}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSaveCandidate}
+              disabled={!editingCandidate?.firstName || !editingCandidate?.lastName || !editingCandidate?.email || savingCandidate}
+            >
+              {savingCandidate ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Document Viewer Dialog */}
+      <Dialog open={documentViewerOpen} onOpenChange={(open) => {
+        setDocumentViewerOpen(open);
+        if (!open) setViewingDocument(null);
+      }}>
+        <DialogContent className="max-w-6xl w-[95vw] max-h-[95vh] flex flex-col p-0">
+          <DialogHeader className="flex-shrink-0 border-b p-4">
+            <div className="flex items-center gap-3">
+              <DialogTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                {viewingDocument?.name || 'Document Viewer'}
+              </DialogTitle>
+              {viewingDocument && (
+                <button
+                  type="button"
+                  onClick={() => handleDownloadDocument(viewingDocument.url, viewingDocument.name.replace("'s Resume", ''))}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                >
+                  <Download className="h-4 w-4" />
+                  Download
+                </button>
+              )}
+            </div>
+            <DialogDescription>
+              Preview document
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 bg-muted">
+            {viewingDocument && (() => {
+              const { type, viewUrl } = getDocumentViewerUrl(viewingDocument.url);
+              
+              if (type === 'unsupported') {
+                return (
+                  <div className="flex flex-col items-center justify-center h-full py-12">
+                    <FileText className="h-16 w-16 text-muted-foreground mb-4" />
+                    <p className="text-lg font-medium mb-2">Preview not available</p>
+                    <p className="text-muted-foreground mb-4">This file type cannot be previewed in the browser.</p>
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadDocument(viewingDocument.url, viewingDocument.name.replace("'s Resume", ''))}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                    >
+                      <Download className="h-4 w-4" />
+                      Download File
+                    </button>
+                  </div>
+                );
+              }
+              
+              return (
+                <iframe
+                  src={viewUrl}
+                  className="w-full h-[85vh] border-0"
+                  title="Document Preview"
+                />
+              );
+            })()}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

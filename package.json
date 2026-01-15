@@ -1,0 +1,49 @@
+{
+  "name": "office-management-system",
+  "version": "1.0.0",
+  "description": "Enterprise SaaS Office Management System for IT Industry",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "dev:local": "./scripts/dev-local.sh",
+    "dev:docker": "./scripts/dev-docker.sh",
+    "dev:stop": "./scripts/dev-stop.sh",
+    "build": "turbo run build",
+    "start": "turbo run start",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "db:generate": "turbo run db:generate",
+    "db:migrate": "turbo run db:migrate",
+    "db:seed": "turbo run db:seed",
+    "docker:dev": "docker-compose -f docker-compose.yml up -d",
+    "docker:down": "docker-compose -f docker-compose.yml down",
+    "docker:build": "docker-compose -f docker-compose.prod.yml build",
+    "services:dev": "turbo run dev --filter='./services/*'",
+    "apps:dev": "turbo run dev --filter='./apps/*'"
+  },
+  "devDependencies": {
+    "@types/chart.js": "^2.9.41",
+    "@types/node": "^20.10.0",
+    "turbo": "^2.0.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "packageManager": "npm@10.0.0",
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "chart.js": "^4.5.1",
+    "chartjs-node-canvas": "^5.0.0",
+    "compression": "^1.7.4",
+    "dotenv": "^17.2.3",
+    "helmet": "^7.1.0"
+  }
+}
