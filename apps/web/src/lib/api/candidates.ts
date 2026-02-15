@@ -154,6 +154,49 @@ export const candidateApi = {
   async deleteCandidate(jobId: string, candidateId: string): Promise<void> {
     await api.delete(`/api/v1/jobs/${jobId}/candidates/${candidateId}`);
   },
+
+  /**
+   * Bulk delete candidates
+   */
+  async bulkDeleteCandidates(candidates: { id: string; jobId: string }[]): Promise<{ deleted: number }> {
+    const response = await api.post('/api/v1/candidates/bulk-delete', { candidates });
+    return response.data;
+  },
+
+  /**
+   * Send offer to candidate
+   */
+  async sendOffer(jobId: string, candidateId: string, data: {
+    salary: number;
+    currency: string;
+    joiningDate: string;
+    designation?: string;
+    department?: string;
+  }): Promise<{ candidateId: string; status: string; offerUrl: string; expiresAt: string }> {
+    const response = await api.post(`/api/v1/jobs/${jobId}/candidates/${candidateId}/send-offer`, data);
+    return response.data;
+  },
+
+  /**
+   * Mark candidate as hired - creates employee record
+   * Should only be called after offer is accepted
+   */
+  async markAsHired(candidateId: string, joiningDate?: string): Promise<{
+    success: boolean;
+    message: string;
+    employee: {
+      id: string;
+      employeeCode: string;
+      name: string;
+      email: string;
+    };
+  }> {
+    const response = await api.post('/api/v1/onboarding/hire', {
+      candidateId,
+      joiningDate,
+    });
+    return response.data;
+  },
 };
 
 export default candidateApi;

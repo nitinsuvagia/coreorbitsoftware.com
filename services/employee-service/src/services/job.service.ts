@@ -34,7 +34,7 @@ export interface UpdateJobDto extends Partial<CreateJobDto> {
 
 export class JobService {
   /**
-   * Get all job descriptions for a tenant
+   * Get all job descriptions for a tenant with candidate statistics
    */
   static async getAllJobs(tenantSlug: string, filters?: {
     status?: string;
@@ -65,11 +65,39 @@ export class JobService {
 
     const jobs = await db.jobDescription.findMany({
       where,
+      include: {
+        _count: {
+          select: { candidates: true },
+        },
+        candidates: {
+          select: { status: true },
+        },
+      },
       orderBy: { postedDate: 'desc' },
     });
 
-    logger.debug({ count: jobs.length }, 'Retrieved jobs');
-    return jobs;
+    // Map jobs with calculated candidate statistics
+    const jobsWithStats = jobs.map((job: any) => {
+      const candidates = job.candidates || [];
+      const totalApplied = candidates.length;
+      const shortlisted = candidates.filter((c: any) => c.status === 'SHORTLISTED').length;
+      const interviewed = candidates.filter((c: any) => c.status === 'INTERVIEWED').length;
+      const hired = candidates.filter((c: any) => c.status === 'HIRED').length;
+      
+      // Remove candidates array from response, keep only stats
+      const { candidates: _, _count, ...jobData } = job;
+      
+      return {
+        ...jobData,
+        totalApplied,
+        shortlisted,
+        interviewed,
+        hired,
+      };
+    });
+
+    logger.debug({ count: jobsWithStats.length }, 'Retrieved jobs with stats');
+    return jobsWithStats;
   }
 
   /**

@@ -4,7 +4,7 @@
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { getTenantPrisma } from '@oms/tenant-db-manager';
+import { getTenantPrismaBySlug } from '../utils/database';
 import {
   checkIn,
   checkOut,
@@ -15,6 +15,7 @@ import {
   listAttendance,
   getMonthlyAttendanceSummary,
   getDepartmentAttendanceSummary,
+  getTodayAttendanceOverview,
 } from '../services/attendance.service';
 import { logger } from '../utils/logger';
 
@@ -133,8 +134,9 @@ router.post(
   validateBody(checkInSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
-      const { tenantId, tenantSlug } = req as any;
+      const tenantSlug = (req as any).tenantSlug;
+      const tenantId = (req as any).tenantId;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       
       const attendance = await checkIn(
         prisma,
@@ -165,8 +167,9 @@ router.post(
   validateBody(checkOutSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
-      const { tenantId, tenantSlug } = req as any;
+      const tenantSlug = (req as any).tenantSlug;
+      const tenantId = (req as any).tenantId;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       
       const attendance = await checkOut(
         prisma,
@@ -198,7 +201,8 @@ router.post(
   validateBody(breakSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       
       const result = await startBreak(prisma, req.body);
       
@@ -226,7 +230,8 @@ router.post(
   validateBody(endBreakSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       
       const result = await endBreak(prisma, req.body);
       
@@ -245,6 +250,30 @@ router.post(
 );
 
 /**
+ * GET /attendance/overview/today
+ * Get today's attendance overview for the entire company
+ */
+router.get(
+  '/overview/today',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
+      
+      const overview = await getTodayAttendanceOverview(prisma);
+      
+      res.json({
+        success: true,
+        data: overview,
+      });
+    } catch (error) {
+      logger.error({ error: (error as Error).message }, 'Failed to get today attendance overview');
+      next(error);
+    }
+  }
+);
+
+/**
  * GET /attendance/today/:employeeId
  * Get today's attendance for an employee
  */
@@ -252,7 +281,8 @@ router.get(
   '/today/:employeeId',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       const { employeeId } = req.params;
       
       const attendance = await getTodayAttendance(prisma, employeeId);
@@ -278,7 +308,8 @@ router.get(
   '/:id',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       const { id } = req.params;
       
       const attendance = await getAttendanceById(prisma, id);
@@ -305,7 +336,8 @@ router.get(
   validateQuery(listAttendanceSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       
       const result = await listAttendance(prisma, req.query as any);
       
@@ -325,7 +357,8 @@ router.get(
   validateQuery(monthlySummarySchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       const { employeeId, year, month } = req.query as any;
       
       const summary = await getMonthlyAttendanceSummary(
@@ -351,7 +384,8 @@ router.get(
   validateQuery(departmentSummarySchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       const { departmentId, date } = req.query as any;
       
       const summary = await getDepartmentAttendanceSummary(

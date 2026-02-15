@@ -2,7 +2,7 @@
  * Version Service - File versioning operations
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '.prisma/tenant-client';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
 import { config } from '../config';
@@ -215,7 +215,7 @@ export async function getVersionDownloadUrl(
 
   // If requesting current version, use file's storage key
   if (version === file.currentVersion) {
-    const url = await storageService.getSignedUrl(file.storageKey);
+    const url = await storageService.getSignedUrlForKey(file.storageKey);
     return { url, filename: file.name };
   }
 
@@ -230,7 +230,7 @@ export async function getVersionDownloadUrl(
     throw new Error(`Version ${version} not found`);
   }
 
-  const url = await storageService.getSignedUrl(fileVersion.storageKey);
+  const url = await storageService.getSignedUrlForKey(fileVersion.storageKey);
   const ext = file.name.split('.').pop();
   const filename = `${file.name.replace(/\.[^.]+$/, '')}-v${version}.${ext}`;
 
@@ -271,14 +271,31 @@ export async function restoreVersion(
   }
 
   // Download the old version content
-  const content = await storageService.downloadFile(fileVersion.storageKey);
+  const downloadResult = await storageService.downloadFile(fileVersion.storageKey);
+  
+  // Convert stream to buffer if needed
+  let contentBuffer: Buffer;
+  if (Buffer.isBuffer(downloadResult.body)) {
+    contentBuffer = downloadResult.body;
+  } else if (downloadResult.body && typeof downloadResult.body === 'object' && 'on' in downloadResult.body) {
+    // It's a stream, convert to buffer
+    const chunks: any[] = [];
+    await new Promise((resolve, reject) => {
+      (downloadResult.body as any).on('data', (chunk: any) => chunks.push(chunk));
+      (downloadResult.body as any).on('end', resolve);
+      (downloadResult.body as any).on('error', reject);
+    });
+    contentBuffer = Buffer.concat(chunks);
+  } else {
+    throw new Error('Invalid download result');
+  }
 
   // Create new version from the old content
   return createVersion(
     prisma,
     {
       fileId,
-      content,
+      content: contentBuffer,
       changeNote: `Restored from version ${version}`,
     },
     userId,
@@ -335,4 +352,32 @@ export async function compareVersions(
     sizeDiff: v2.size - v1.size,
     timeDiff: v2.createdAt.getTime() - v1.createdAt.getTime(),
   };
+}
+
+/**
+ * Get all versions of a file (alias for routes)
+ */
+export async function getFileVersions(
+  prisma: PrismaClient,
+  fileId: string
+): Promise<FileVersionInfo[]> {
+  return getVersions(prisma, fileId);
+}
+
+/**
+ * Create new version (interface for routes)
+ */
+export async function createNewVersion(
+  prisma: PrismaClient,
+  fileId: string,
+  fileData: { filename: string; content: Buffer; mimeType: string },
+  userId: string,
+  tenantSlug: string,
+  changeNote?: string
+): Promise<any> {
+  return createVersion(prisma, {
+    fileId,
+    content: fileData.content,
+    changeNote,
+  }, userId, tenantSlug);
 }

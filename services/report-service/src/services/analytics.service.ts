@@ -2,7 +2,7 @@
  * Analytics Service - Generate analytics and metrics
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '.prisma/tenant-client';
 import { DateTime } from 'luxon';
 import Decimal from 'decimal.js';
 import NodeCache from 'node-cache';

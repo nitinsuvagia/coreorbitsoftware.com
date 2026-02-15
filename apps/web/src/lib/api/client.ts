@@ -1,7 +1,16 @@
 import axios, { AxiosError, AxiosInstance } from 'axios';
-import { getCookie } from 'cookies-next';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+
+/**
+ * Custom cookie getter that reliably reads cookies from document.cookie
+ * Replaces cookies-next getCookie which can have issues in some environments
+ */
+function getCookie(name: string): string | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+  return match ? decodeURIComponent(match[2]) : null;
+}
 
 /**
  * Extract tenant slug from the current hostname
@@ -37,6 +46,40 @@ export const api: AxiosInstance = axios.create({
   withCredentials: true,
 });
 
+// Public API instance - no auth headers, for candidate-facing endpoints
+export const publicApi: AxiosInstance = axios.create({
+  baseURL: API_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Request interceptor for public API - only add tenant slug, no auth
+publicApi.interceptors.request.use(
+  (config) => {
+    // Add tenant slug header if on a tenant subdomain
+    const tenantSlug = getTenantSlugFromHost();
+    if (tenantSlug) {
+      config.headers['X-Tenant-Slug'] = tenantSlug;
+    }
+    
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// Response interceptor for public API
+publicApi.interceptors.response.use(
+  (response) => {
+    return response;
+  },
+  (error: AxiosError) => {
+    return Promise.reject(error);
+  }
+);
+
 // Request interceptor to add auth token and tenant context
 api.interceptors.request.use(
   (config) => {
@@ -53,12 +96,16 @@ api.interceptors.request.use(
     
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => {
+    return Promise.reject(error);
+  }
 );
 
 // Response interceptor for error handling
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    return response;
+  },
   async (error: AxiosError) => {
     const originalRequest = error.config as any;
     
@@ -145,6 +192,17 @@ export async function patch<T>(url: string, data?: any): Promise<T> {
 
 export async function del<T>(url: string): Promise<T> {
   const response = await api.delete<{ success: boolean; data: T }>(url);
+  return response.data.data;
+}
+
+// Public API helper functions (no auth required)
+export async function publicGet<T>(url: string, params?: Record<string, any>): Promise<T> {
+  const response = await publicApi.get<{ success: boolean; data: T }>(url, { params });
+  return response.data.data;
+}
+
+export async function publicPost<T>(url: string, data?: any): Promise<T> {
+  const response = await publicApi.post<{ success: boolean; data: T }>(url, data);
   return response.data.data;
 }
 

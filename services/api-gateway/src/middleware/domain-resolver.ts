@@ -71,13 +71,17 @@ export async function domainResolverMiddleware(
   const extReq = req as DomainResolvedRequest;
   
   try {
-    const hostname = req.hostname || req.headers.host || '';
+    // Check for X-Forwarded-Host first (set by proxies like Next.js rewrites)
+    // Then fall back to hostname or host header
+    const xForwardedHost = req.headers['x-forwarded-host']?.toString();
+    const hostname = xForwardedHost || req.hostname || req.headers.host || '';
     
     // Check for tenant slug from frontend header (for cases where API is on different port)
     const tenantSlugHeader = req.headers['x-tenant-slug']?.toString();
     
     logger.debug({ 
-      hostname, 
+      hostname,
+      xForwardedHost,
       originalUrl: req.originalUrl,
       ip: req.ip,
       tenantSlugHeader 
@@ -134,6 +138,10 @@ async function resolveTenantContext(
 ): Promise<void> {
   const dbManager = getTenantDbManager();
   
+  // Check if this is a reactivation route - these should bypass suspended check
+  const isReactivationRoute = req.originalUrl.includes('/auth/tenant/reactivate') ||
+                              req.originalUrl.includes('/auth/account/reactivate');
+  
   try {
     const tenant = await dbManager.getTenantBySlug(tenantSlug);
     
@@ -159,6 +167,18 @@ async function resolveTenantContext(
       throw error; // Will be handled by error handler
     }
     if (error instanceof TenantSuspendedError) {
+      // For reactivation routes, we still need to allow the request through
+      if (isReactivationRoute) {
+        logger.info({ tenantSlug, url: req.originalUrl }, 'Allowing reactivation request for suspended tenant');
+        // Set minimal tenant context for reactivation to work
+        req.tenantContext = {
+          tenantId: '',
+          tenantSlug: tenantSlug,
+          tenantName: '',
+          tenantStatus: 'SUSPENDED',
+        };
+        return; // Don't throw, let request proceed
+      }
       throw error;
     }
     throw error;
@@ -362,7 +382,27 @@ export function requireTenantContext(
     return;
   }
   
-  const extReq = req as DomainResolvedRequest;
+  const extReq = req as DomainResolvedRequest & { user?: any };
+
+  // Attempt to hydrate missing tenant context from headers or JWT claims
+  if (!extReq.tenantContext) {
+    const headerTenantId = req.headers['x-tenant-id']?.toString();
+    const headerTenantSlug = req.headers['x-tenant-slug']?.toString();
+    const userTenantId = extReq.user?.tenantId;
+    const userTenantSlug = extReq.user?.tenantSlug;
+
+    const tenantId = headerTenantId || userTenantId;
+    const tenantSlug = headerTenantSlug || userTenantSlug;
+
+    if (tenantId && tenantSlug) {
+      extReq.tenantContext = {
+        tenantId,
+        tenantSlug,
+        tenantName: extReq.tenantContext?.tenantName || tenantSlug,
+        tenantStatus: extReq.tenantContext?.tenantStatus || 'ACTIVE',
+      };
+    }
+  }
   
   if (!extReq.tenantContext) {
     res.status(400).json({

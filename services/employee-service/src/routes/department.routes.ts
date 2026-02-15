@@ -4,7 +4,7 @@
 
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '.prisma/tenant-client';
 
 import * as departmentService from '../services/department.service';
 import type { CreateDepartmentInput, CreateTeamInput } from '../services/department.service';
@@ -62,7 +62,7 @@ const listSchema = z.object({
   parentId: z.string().uuid().nullable().optional(),
   departmentId: z.string().uuid().optional(),
   page: z.coerce.number().min(1).optional(),
-  pageSize: z.coerce.number().min(1).max(100).optional(),
+  pageSize: z.coerce.number().min(1).max(1000).optional(),
 });
 
 // ============================================================================

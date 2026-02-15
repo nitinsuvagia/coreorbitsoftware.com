@@ -50,6 +50,7 @@ import {
   RefreshCw,
   Copy,
   Shield,
+  Loader2,
 } from 'lucide-react';
 import type { PasswordForm, ShowPasswords, ActiveSession } from '../types';
 
@@ -577,10 +578,13 @@ export function SecurityTab({
             </div>
           </div>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => {
-              onSetDeleteConfirmation('');
-              onSetDeletePassword?.('');
-            }}>
+            <AlertDialogCancel 
+              onClick={() => {
+                onSetDeleteConfirmation('');
+                onSetDeletePassword?.('');
+              }}
+              disabled={deletingAccount}
+            >
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction 
@@ -589,15 +593,35 @@ export function SecurityTab({
               disabled={deleteConfirmation !== 'DELETE' || !deletePassword || deletingAccount}
             >
               {deletingAccount ? (
-                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                  Processing...
+                </>
               ) : (
-                <Trash2 className="mr-2 h-4 w-4" />
+                <>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete Account
+                </>
               )}
-              Delete Account
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Full-page loading overlay when deleting account */}
+      {deletingAccount && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gray-900 rounded-lg p-8 shadow-2xl flex flex-col items-center space-y-4 max-w-sm mx-4">
+            <Loader2 className="h-12 w-12 animate-spin text-red-500" />
+            <div className="text-center">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Processing Account Deletion</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Please wait while we freeze your account...
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

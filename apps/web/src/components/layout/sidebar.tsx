@@ -6,7 +6,6 @@ import { cn } from '@/lib/utils';
 import {
   LayoutDashboard,
   Users,
-  Calendar,
   FolderKanban,
   FileText,
   BarChart3,
@@ -24,16 +23,6 @@ import {
   CalendarDays,
   Clock,
   File,
-  Building,
-  Landmark,
-  Wallet,
-  Receipt,
-  Package,
-  Monitor,
-  Armchair,
-  Cpu,
-  Users2,
-  Kanban,
   Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -68,43 +57,15 @@ const categories: NavCategory[] = [
     title: 'HR',
     icon: Users,
     items: [
-      { title: 'HR Dashboard', href: '/hr/dashboard', icon: LayoutDashboard },
+      { title: 'HR 360°', href: '/hr/dashboard', icon: LayoutDashboard },
       { title: 'Job Descriptions', href: '/hr/jobs', icon: Briefcase },
       { title: 'Candidates', href: '/hr/candidates', icon: UserCheck },
       { title: 'Interviews', href: '/hr/interviews', icon: Video },
-      { title: 'Online Tests', href: '/hr/tests', icon: ClipboardCheck },
+      { title: 'Assessment Tool', href: '/hr/assessments', icon: ClipboardCheck },
       { title: 'Employees', href: '/employees', icon: Users },
       { title: 'Holidays', href: '/hr/holidays', icon: CalendarDays },
-      { title: 'Leave Management', href: '/attendance', icon: Clock },
+      { title: 'Leave Management', href: '/hr/leave-management', icon: Clock },
       { title: 'Documents', href: '/documents', icon: File },
-    ],
-  },
-  {
-    title: 'Project',
-    icon: FolderKanban,
-    items: [
-      { title: 'Clients', href: '/clients', icon: Building },
-      { title: 'Projects', href: '/projects', icon: FolderKanban },
-      { title: 'Tasks', href: '/tasks', icon: Kanban },
-      { title: 'Workload', href: '/projects/workload', icon: Users2 },
-    ],
-  },
-  {
-    title: 'Backoffice',
-    icon: Landmark,
-    items: [
-      { title: 'Banks', href: '/backoffice/banks', icon: Landmark },
-      { title: 'Accounts', href: '/backoffice/accounts', icon: Wallet },
-      { title: 'Expenses', href: '/backoffice/expenses', icon: Receipt },
-    ],
-  },
-  {
-    title: 'Inventory',
-    icon: Package,
-    items: [
-      { title: 'Hardware', href: '/inventory/hardware', icon: Monitor },
-      { title: 'Furniture', href: '/inventory/furniture', icon: Armchair },
-      { title: 'Electronics', href: '/inventory/electronics', icon: Cpu },
     ],
   },
 ];
@@ -112,7 +73,6 @@ const categories: NavCategory[] = [
 // Items after categories
 const afterCategoryItems: NavItem[] = [
   { title: 'Reports', href: '/reports', icon: BarChart3 },
-  { title: 'Calendar', href: '/calendar', icon: Calendar },
 ];
 
 // Secondary navigation (below divider)
@@ -130,7 +90,7 @@ interface SidebarProps {
 export function Sidebar({ className }: SidebarProps) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
-  const [openCategories, setOpenCategories] = useState<string[]>(['HR', 'Project']);
+  const [openCategories, setOpenCategories] = useState<string[]>(['HR']);
 
   const toggleCategory = (category: string) => {
     setOpenCategories((prev) =>
@@ -151,7 +111,7 @@ export function Sidebar({ className }: SidebarProps) {
   return (
     <aside
       className={cn(
-        'relative flex flex-col h-screen border-r bg-background transition-all duration-300',
+        'relative flex flex-col h-screen border-r bg-background transition-all duration-300 print:hidden',
         collapsed ? 'w-16' : 'w-64',
         className
       )}

@@ -69,6 +69,8 @@ export function useOrganization() {
         email: orgForm.email,
         phone: orgForm.phone,
         website: orgForm.website,
+        logo: orgForm.logo,
+        reportLogo: orgForm.reportLogo,
         addressLine1: orgForm.address?.line1,
         addressLine2: orgForm.address?.line2,
         city: orgForm.address?.city,

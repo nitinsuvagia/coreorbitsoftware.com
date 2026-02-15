@@ -28,12 +28,15 @@ import {
   useTeamMembers,
   useBilling,
   useOrganizationSettings,
+  useIntegrations,
 } from './hooks';
+import type { OpenAISettings } from './types';
 
 // Navigation items
 const NAV_ITEMS = [
   { href: '/organization', label: 'General', exact: true },
   { href: '/organization/settings', label: 'Settings' },
+  { href: '/organization/email', label: 'Email' },
   { href: '/organization/departments', label: 'Departments' },
   { href: '/organization/designations', label: 'Designations' },
   { href: '/organization/team', label: 'Team' },
@@ -50,6 +53,7 @@ type DesignationsHookReturn = ReturnType<typeof useDesignations>;
 type TeamMembersHookReturn = ReturnType<typeof useTeamMembers>;
 type BillingHookReturn = ReturnType<typeof useBilling>;
 type OrganizationSettingsHookReturn = ReturnType<typeof useOrganizationSettings>;
+type IntegrationsHookReturn = ReturnType<typeof useIntegrations>;
 
 interface OrganizationContextType {
   // Organization
@@ -126,16 +130,28 @@ interface OrganizationContextType {
   loadingInvoices: boolean;
   loadingBilling: boolean;
   billingInfo: BillingHookReturn['billingInfo'];
-  integrations: BillingHookReturn['integrations'];
-  connectingIntegration: string | null;
   fetchInvoices: BillingHookReturn['fetchInvoices'];
   fetchBillingData: BillingHookReturn['fetchBillingData'];
-  connectIntegration: BillingHookReturn['connectIntegration'];
-  disconnectIntegration: BillingHookReturn['disconnectIntegration'];
   changePlan: BillingHookReturn['changePlan'];
   cancelSubscription: BillingHookReturn['cancelSubscription'];
   updatePaymentMethod: BillingHookReturn['updatePaymentMethod'];
   getSetupIntent: BillingHookReturn['getSetupIntent'];
+  
+  // Integrations
+  integrations: IntegrationsHookReturn['integrations'];
+  loadingIntegrations: boolean;
+  connectingIntegration: string | null;
+  fetchIntegrations: IntegrationsHookReturn['fetchIntegrations'];
+  connectIntegration: IntegrationsHookReturn['connectIntegration'];
+  disconnectIntegration: IntegrationsHookReturn['disconnectIntegration'];
+  openAISettings: OpenAISettings;
+  openAIDialogOpen: boolean;
+  savingOpenAI: boolean;
+  testingConnection: boolean;
+  saveOpenAISettings: IntegrationsHookReturn['saveOpenAISettings'];
+  testOpenAIConnection: IntegrationsHookReturn['testOpenAIConnection'];
+  openOpenAIDialog: IntegrationsHookReturn['openOpenAIDialog'];
+  closeOpenAIDialog: IntegrationsHookReturn['closeOpenAIDialog'];
   
   // Organization Settings
   orgSettings: OrganizationSettingsHookReturn['settings'];
@@ -145,8 +161,12 @@ interface OrganizationContextType {
   savingSettings: boolean;
   fetchOrgSettings: OrganizationSettingsHookReturn['fetchSettings'];
   saveOrgSettings: OrganizationSettingsHookReturn['saveSettings'];
+  saveRegionalSettings: OrganizationSettingsHookReturn['saveRegionalSettings'];
+  saveWorkingEnvironmentSettings: OrganizationSettingsHookReturn['saveWorkingEnvironmentSettings'];
   updateOrgSettingsField: OrganizationSettingsHookReturn['updateFormField'];
   resetOrgSettingsForm: OrganizationSettingsHookReturn['resetForm'];
+  resetRegionalSettings: OrganizationSettingsHookReturn['resetRegionalSettings'];
+  resetWorkingEnvironmentSettings: OrganizationSettingsHookReturn['resetWorkingEnvironmentSettings'];
 }
 
 const OrganizationContext = createContext<OrganizationContextType | null>(null);
@@ -174,6 +194,7 @@ export default function OrganizationLayout({
   const teamMembersHook = useTeamMembers();
   const billingHook = useBilling();
   const orgSettingsHook = useOrganizationSettings();
+  const integrationsHook = useIntegrations();
 
   const {
     org,
@@ -253,17 +274,30 @@ export default function OrganizationLayout({
     loadingInvoices,
     loadingBilling,
     billingInfo,
-    integrations,
-    connectingIntegration,
     fetchInvoices,
     fetchBillingData,
-    connectIntegration,
-    disconnectIntegration,
     changePlan,
     cancelSubscription,
     updatePaymentMethod,
     getSetupIntent,
   } = billingHook;
+
+  const {
+    integrations,
+    loadingIntegrations,
+    connectingIntegration,
+    fetchIntegrations,
+    connectIntegration,
+    disconnectIntegration,
+    openAISettings,
+    openAIDialogOpen,
+    savingOpenAI,
+    testingConnection,
+    saveOpenAISettings,
+    testOpenAIConnection,
+    openOpenAIDialog,
+    closeOpenAIDialog,
+  } = integrationsHook;
 
   const {
     settings: orgSettings,
@@ -273,8 +307,12 @@ export default function OrganizationLayout({
     saving: savingSettings,
     fetchSettings: fetchOrgSettings,
     saveSettings: saveOrgSettings,
+    saveRegionalSettings,
+    saveWorkingEnvironmentSettings,
     updateFormField: updateOrgSettingsField,
     resetForm: resetOrgSettingsForm,
+    resetRegionalSettings,
+    resetWorkingEnvironmentSettings,
   } = orgSettingsHook;
 
   // Fetch data on mount
@@ -354,16 +392,28 @@ export default function OrganizationLayout({
     loadingInvoices,
     loadingBilling,
     billingInfo,
-    integrations,
-    connectingIntegration,
     fetchInvoices,
     fetchBillingData,
-    connectIntegration,
-    disconnectIntegration,
     changePlan,
     cancelSubscription,
     updatePaymentMethod,
     getSetupIntent,
+    // Integrations
+    integrations,
+    loadingIntegrations,
+    connectingIntegration,
+    fetchIntegrations,
+    connectIntegration,
+    disconnectIntegration,
+    openAISettings,
+    openAIDialogOpen,
+    savingOpenAI,
+    testingConnection,
+    saveOpenAISettings,
+    testOpenAIConnection,
+    openOpenAIDialog,
+    closeOpenAIDialog,
+    // Organization Settings
     orgSettings,
     orgSettingsForm,
     orgSettingsErrors,
@@ -371,8 +421,12 @@ export default function OrganizationLayout({
     savingSettings,
     fetchOrgSettings,
     saveOrgSettings,
+    saveRegionalSettings,
+    saveWorkingEnvironmentSettings,
     updateOrgSettingsField,
     resetOrgSettingsForm,
+    resetRegionalSettings,
+    resetWorkingEnvironmentSettings,
   };
 
   // Loading skeleton
@@ -419,9 +473,9 @@ export default function OrganizationLayout({
 
   return (
     <OrganizationContext.Provider value={contextValue}>
-      <div className="space-y-6">
+      <div className="flex flex-col h-full">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-shrink-0">
           <div>
             <h2 className="text-3xl font-bold tracking-tight">Organization</h2>
             <p className="text-muted-foreground">
@@ -431,7 +485,7 @@ export default function OrganizationLayout({
         </div>
 
         {/* Org Overview */}
-        <Card>
+        <Card className="mt-6 flex-shrink-0">
           <CardContent className="pt-6">
             <div className="flex flex-col md:flex-row gap-6 items-start">
               <div className="relative">
@@ -482,7 +536,7 @@ export default function OrganizationLayout({
         </Card>
 
         {/* Navigation Tabs */}
-        <nav className="flex space-x-1 border-b">
+        <nav className="flex space-x-1 border-b mt-6 flex-shrink-0">
           {NAV_ITEMS.map((item) => {
             const isActive = item.exact 
               ? pathname === item.href 
@@ -506,7 +560,7 @@ export default function OrganizationLayout({
         </nav>
 
         {/* Page Content */}
-        <div className="mt-4">
+        <div className="mt-4 flex-1 min-h-0">
           {children}
         </div>
       </div>

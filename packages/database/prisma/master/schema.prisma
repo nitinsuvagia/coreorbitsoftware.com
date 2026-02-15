@@ -290,6 +290,17 @@ model TenantSettings {
   breakStartTime      String?   @map("break_start_time")
   breakEndTime        String?   @map("break_end_time")
   
+  // Weekly Working Hours (per-day configuration)
+  weeklyWorkingHours  Json?     @map("weekly_working_hours") // JSON object with sun-sat settings
+  
+  // Leave Calculation Settings
+  excludeHolidaysFromLeave  Boolean @default(true) @map("exclude_holidays_from_leave")
+  excludeWeekendsFromLeave  Boolean @default(true) @map("exclude_weekends_from_leave")
+  
+  // Holiday Types Configuration
+  enabledHolidayTypes       Json?   @default("{\"public\": true, \"optional\": true, \"restricted\": true}") @map("enabled_holiday_types")
+  optionalHolidayQuota      Int     @default(2) @map("optional_holiday_quota")  // Max optional holidays employee can opt for per year
+
   // Enabled Modules
   moduleEmployee      Boolean   @default(true) @map("module_employee")
   moduleAttendance    Boolean   @default(true) @map("module_attendance")
@@ -333,6 +344,24 @@ model TenantSettings {
   
   // Integrations
   integrations        String[]  @default([])
+  integrationSettings Json?     @default("{}") @map("integration_settings") // Stores all third-party integration configs (OpenAI, Anthropic, Google AI, etc.)
+  
+  // Email Settings (SMTP)
+  smtpHost            String?   @map("smtp_host")
+  smtpPort            Int       @default(587) @map("smtp_port")
+  smtpUsername        String?   @map("smtp_username")
+  smtpPassword        String?   @map("smtp_password")
+  smtpEncryption      String    @default("tls") @map("smtp_encryption") // none, tls, ssl
+  smtpFromEmail       String?   @map("smtp_from_email")
+  smtpFromName        String?   @map("smtp_from_name")
+  emailConfigured     Boolean   @default(false) @map("email_configured")
+  
+  // Employee Code Settings
+  employeeCodeAutoGenerate    Boolean   @default(true) @map("employee_code_auto_generate")
+  employeeCodePrefix          String    @default("EMP") @map("employee_code_prefix")
+  employeeCodeYearSeqDigits   Int       @default(5) @map("employee_code_year_seq_digits")
+  employeeCodeTotalSeqDigits  Int       @default(5) @map("employee_code_total_seq_digits")
+  employeeCodeSeparator       String    @default("-") @map("employee_code_separator")
   
   // Timestamps
   createdAt           DateTime  @default(now()) @map("created_at")

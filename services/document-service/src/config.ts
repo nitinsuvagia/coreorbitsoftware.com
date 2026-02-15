@@ -5,6 +5,7 @@
 export const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT || '3007', 10),
+  baseUrl: process.env.BASE_URL || 'http://localhost:3007',
   
   // CORS
   corsOrigins: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000'],
@@ -53,6 +54,24 @@ export const config = {
         'application/x-7z-compressed',
         'application/gzip',
       ],
+      videos: [
+        'video/mp4',
+        'video/quicktime',      // .mov
+        'video/x-msvideo',      // .avi
+        'video/x-ms-wmv',       // .wmv
+        'video/webm',
+        'video/mpeg',
+        'video/3gpp',
+        'video/x-matroska',     // .mkv
+      ],
+      audio: [
+        'audio/mpeg',           // .mp3
+        'audio/wav',
+        'audio/ogg',
+        'audio/aac',
+        'audio/x-m4a',          // .m4a
+        'audio/webm',
+      ],
     },
     
     // Image processing
@@ -72,6 +91,7 @@ export const config = {
   // Storage paths
   storage: {
     basePath: 'tenants', // tenants/{tenantSlug}/...
+    tenantLimitBytes: parseInt(process.env.TENANT_STORAGE_LIMIT_BYTES || String(10 * 1024 * 1024 * 1024), 10), // 10GB default
     folders: {
       documents: 'documents',
       attachments: 'attachments',

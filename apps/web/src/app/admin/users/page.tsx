@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PhoneInput } from '@/components/ui/phone-input';
 import {
   Card,
   CardContent,
@@ -800,11 +801,11 @@ export default function AdminUsersPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="phone">Phone</Label>
-                <Input
-                  id="phone"
+                <PhoneInput
                   value={addForm.phone}
-                  onChange={(e) => updateAddForm('phone', e.target.value)}
-                  placeholder="Optional"
+                  onChange={(value) => updateAddForm('phone', value)}
+                  defaultCountry="IN"
+                  placeholder="Enter phone number"
                 />
               </div>
             </div>

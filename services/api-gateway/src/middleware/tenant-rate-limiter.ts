@@ -14,10 +14,10 @@ let redis: Redis | null = null;
 
 // Rate limit tiers based on subscription plan
 export const RATE_LIMIT_TIERS: Record<string, { requestsPerMinute: number; burstLimit: number }> = {
-  free: { requestsPerMinute: 60, burstLimit: 10 },
-  starter: { requestsPerMinute: 300, burstLimit: 50 },
-  professional: { requestsPerMinute: 1000, burstLimit: 100 },
-  enterprise: { requestsPerMinute: 5000, burstLimit: 500 },
+  free: { requestsPerMinute: 1000, burstLimit: 100 },
+  starter: { requestsPerMinute: 3000, burstLimit: 500 },
+  professional: { requestsPerMinute: 10000, burstLimit: 1000 },
+  enterprise: { requestsPerMinute: 50000, burstLimit: 5000 },
   unlimited: { requestsPerMinute: Infinity, burstLimit: Infinity },
 };
 

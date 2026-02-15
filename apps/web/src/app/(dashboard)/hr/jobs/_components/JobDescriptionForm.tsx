@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { format, parseISO } from 'date-fns';
 import {
   Dialog,
   DialogContent,
@@ -21,9 +22,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { X } from 'lucide-react';
+import { Calendar } from '@/components/ui/calendar';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { X, CalendarIcon } from 'lucide-react';
 import { useOrgSettings } from '@/hooks/use-org-settings';
 import { CURRENCIES } from '@/lib/format';
+import { cn } from '@/lib/utils';
 
 interface JobDescriptionFormProps {
   open: boolean;
@@ -83,6 +91,7 @@ export function JobDescriptionForm({
   const orgSettings = useOrgSettings();
   const defaultFormData = getDefaultFormData(orgSettings.currency);
   const [formData, setFormData] = useState<JobFormData>(initialData || defaultFormData);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
 
   // Update form data when initialData changes (for edit mode)
   useEffect(() => {
@@ -399,14 +408,39 @@ export function JobDescriptionForm({
 
               <div className="space-y-2">
                 <Label htmlFor="closingDate">Closing Date *</Label>
-                <Input
-                  id="closingDate"
-                  type="date"
-                  required
-                  value={formData.closingDate}
-                  onChange={(e) => setFormData({ ...formData, closingDate: e.target.value })}
-                  className={errors.closingDate ? 'border-destructive' : ''}
-                />
+                <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        'w-full justify-start text-left font-normal',
+                        !formData.closingDate && 'text-muted-foreground',
+                        errors.closingDate && 'border-destructive'
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {formData.closingDate ? (
+                        format(parseISO(formData.closingDate), 'MMM dd, yyyy')
+                      ) : (
+                        <span>Pick a date</span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={formData.closingDate ? parseISO(formData.closingDate) : undefined}
+                      onSelect={(date) => {
+                        if (date) {
+                          setFormData({ ...formData, closingDate: format(date, 'yyyy-MM-dd') });
+                        }
+                        setDatePickerOpen(false);
+                      }}
+                      disabled={(date) => date < new Date()}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
                 {errors.closingDate && (
                   <p className="text-xs text-destructive mt-1">{errors.closingDate}</p>
                 )}

@@ -2,7 +2,7 @@
  * Attendance Service - Check-in, Check-out, and Time Tracking
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '.prisma/tenant-client';
 import { v4 as uuidv4 } from 'uuid';
 import {
   startOfDay,
@@ -419,9 +419,6 @@ export async function getTodayAttendance(
       employeeId,
       date: today,
     },
-    include: {
-      breaks: true,
-    },
   });
 }
 
@@ -442,7 +439,6 @@ export async function getAttendanceById(
           designation: { select: { name: true } },
         },
       },
-      breaks: true,
     },
   });
   
@@ -501,7 +497,6 @@ export async function listAttendance(
             department: { select: { name: true } },
           },
         },
-        breaks: true,
       },
     }),
     prisma.attendance.count({ where }),
@@ -684,5 +679,77 @@ export async function getDepartmentAttendanceSummary(
     onLeave,
     late,
     remote,
+  };
+}
+
+/**
+ * Get today's attendance overview for the entire company
+ */
+export async function getTodayAttendanceOverview(
+  prisma: PrismaClient
+): Promise<{
+  totalEmployees: number;
+  present: number;
+  absent: number;
+  onLeave: number;
+  late: number;
+  workFromHome: number;
+  presentRate: number;
+}> {
+  // For @db.Date fields, we need to use a date-only string in local timezone
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const todayDate = new Date(todayStr + 'T00:00:00.000Z'); // Use UTC midnight for date comparison
+  
+  // Get all active employees
+  const totalEmployees = await prisma.employee.count({
+    where: {
+      status: 'ACTIVE',
+      deletedAt: null,
+    },
+  });
+  
+  // Get today's attendance records using date range to handle timezone
+  const todayStart = new Date(todayStr + 'T00:00:00.000Z');
+  const todayEnd = new Date(todayStr + 'T23:59:59.999Z');
+  
+  const todayAttendance = await prisma.attendance.findMany({
+    where: {
+      date: {
+        gte: todayStart,
+        lte: todayEnd,
+      },
+    },
+  });
+  
+  // Get today's approved leaves
+  const todayLeaves = await prisma.leaveRequest.count({
+    where: {
+      status: { in: ['approved', 'APPROVED'] },
+      fromDate: { lte: todayEnd },
+      toDate: { gte: todayStart },
+    },
+  });
+  
+  const present = todayAttendance.filter(a => 
+    a.status === 'present' || a.status === 'half_day' || a.status === 'PRESENT' || a.status === 'HALF_DAY'
+  ).length;
+  const late = todayAttendance.filter(a => a.isLate).length;
+  const workFromHome = todayAttendance.filter(a => a.isRemote).length;
+  const onLeave = todayLeaves;
+  const absent = Math.max(0, totalEmployees - present - onLeave);
+  
+  const presentRate = totalEmployees > 0 
+    ? Math.round((present / totalEmployees) * 100) 
+    : 0;
+  
+  return {
+    totalEmployees,
+    present,
+    absent,
+    onLeave,
+    late,
+    workFromHome,
+    presentRate,
   };
 }

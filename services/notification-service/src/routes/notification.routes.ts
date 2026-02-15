@@ -442,6 +442,52 @@ router.post(
 );
 
 // ============================================================================
+// TENANT EMAIL ENDPOINT (for tenant-specific communications like job offers)
+// Uses organization's SMTP settings from database if configured
+// ============================================================================
+
+router.post(
+  '/tenant/email',
+  asyncHandler(async (req: Request, res: Response) => {
+    // Allow tenant context from header (no auth required for internal service calls)
+    const tenantSlug = req.headers['x-tenant-slug'] as string;
+    
+    if (!tenantSlug) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'X-Tenant-Slug header is required' 
+      });
+    }
+    
+    const input = sendPlatformEmailSchema.parse(req.body);
+    
+    // Import email service dynamically to avoid circular dependencies
+    const { sendTenantEmail } = await import('../services/email.service');
+    
+    logger.info({ tenantSlug, to: input.to, subject: input.subject }, 'Sending tenant email');
+    
+    // Use tenant's SMTP configuration from database
+    const result = await sendTenantEmail(tenantSlug, {
+      to: input.to,
+      subject: input.subject,
+      html: input.html || `<p>${input.message.replace(/\\n/g, '<br>')}</p>`,
+      text: input.message,
+    });
+    
+    logger.info({ tenantSlug, to: input.to, success: result.success, result }, 'Tenant email result');
+    
+    res.json({ 
+      success: result.success, 
+      data: { 
+        sent: result.success ? 1 : 0,
+        failed: result.success ? 0 : 1,
+        results: [result]
+      } 
+    });
+  })
+);
+
+// ============================================================================
 // PLATFORM EMAIL ENDPOINT (for platform admin communications)
 // ============================================================================
 

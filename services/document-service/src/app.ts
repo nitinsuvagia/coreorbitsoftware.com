@@ -12,6 +12,9 @@ import { ZodError } from 'zod';
 import { logger } from './utils/logger';
 import { config } from './config';
 import documentRoutes from './routes/document.routes';
+import onboardingRoutes from './routes/onboarding.routes';
+import tenantContextMiddleware from './middleware/tenant-context';
+import * as storageService from './services/storage.service';
 
 const app = express();
 
@@ -75,8 +78,62 @@ app.get('/ready', (req: Request, res: Response) => {
   });
 });
 
-// API routes
-app.use('/api/documents', documentRoutes);
+// ============================================================================
+// PUBLIC ROUTES (No tenant context required)
+// ============================================================================
+
+// Public file download by storage key (for local storage)
+// The storage key contains tenant info, so no tenant header needed
+app.get('/api/documents/files/download', async (req: Request, res: Response) => {
+  const key = req.query.key as string;
+  const inline = req.query.inline === 'true';
+  
+  if (!key) {
+    return res.status(400).json({ success: false, error: 'Storage key is required' });
+  }
+  
+  try {
+    const { body, contentType, contentLength, metadata } = await storageService.downloadFile(key);
+    
+    // Set appropriate headers
+    if (contentType) {
+      res.setHeader('Content-Type', contentType);
+    }
+    if (contentLength) {
+      res.setHeader('Content-Length', contentLength);
+    }
+    
+    // Set content disposition
+    const filename = metadata?.originalName || key.split('/').pop() || 'download';
+    res.setHeader(
+      'Content-Disposition',
+      inline ? `inline; filename="${filename}"` : `attachment; filename="${filename}"`
+    );
+    
+    // Enable caching for file content
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    
+    // Allow embedding in iframes (for preview)
+    res.removeHeader('X-Frame-Options');
+    res.removeHeader('Content-Security-Policy');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    
+    // Pipe the file stream to response
+    body.pipe(res);
+  } catch (error: any) {
+    logger.error({ error, key }, 'File download failed');
+    if (error.code === 'ENOENT') {
+      return res.status(404).json({ success: false, error: 'File not found' });
+    }
+    return res.status(500).json({ success: false, error: 'Failed to download file' });
+  }
+});
+
+// API routes (require tenant context)
+app.use('/api/documents', tenantContextMiddleware, documentRoutes);
+
+// Onboarding routes (require tenant context)
+app.use('/api/v1/onboarding', tenantContextMiddleware, onboardingRoutes);
 
 // ============================================================================
 // ERROR HANDLING

@@ -2,7 +2,7 @@
  * Leave Service - Leave requests, approvals, and balance management
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '.prisma/tenant-client';
 import { v4 as uuidv4 } from 'uuid';
 import {
   differenceInBusinessDays,
@@ -13,10 +13,79 @@ import {
   startOfYear,
   endOfYear,
   addDays,
+  getDay,
 } from 'date-fns';
 import { getEventBus, SQS_QUEUES } from '@oms/event-bus';
+import { getMasterPrisma } from '@oms/database';
 import { logger } from '../utils/logger';
 import { config } from '../config';
+import {
+  logLeaveRequested,
+  logLeaveApproved,
+  logLeaveRejected,
+  logLeaveCancelled,
+} from './activity.service';
+
+// ============================================================================
+// TENANT SETTINGS HELPER
+// ============================================================================
+
+interface TenantLeaveSettings {
+  excludeHolidaysFromLeave: boolean;
+  excludeWeekendsFromLeave: boolean;
+  weeklyWorkingHours: {
+    sunday?: { isWorkingDay: boolean };
+    monday?: { isWorkingDay: boolean };
+    tuesday?: { isWorkingDay: boolean };
+    wednesday?: { isWorkingDay: boolean };
+    thursday?: { isWorkingDay: boolean };
+    friday?: { isWorkingDay: boolean };
+    saturday?: { isWorkingDay: boolean };
+  } | null;
+  enabledHolidayTypes: {
+    public: boolean;
+    optional: boolean;
+    restricted: boolean;
+  };
+}
+
+async function getTenantLeaveSettings(tenantSlug: string): Promise<TenantLeaveSettings> {
+  try {
+    const masterPrisma = getMasterPrisma();
+    const tenant = await masterPrisma.tenant.findUnique({
+      where: { slug: tenantSlug },
+      include: { settings: true },
+    });
+    
+    if (tenant?.settings) {
+      // Parse enabledHolidayTypes from JSON
+      let enabledHolidayTypes = { public: true, optional: true, restricted: true };
+      if (tenant.settings.enabledHolidayTypes) {
+        const parsed = typeof tenant.settings.enabledHolidayTypes === 'string'
+          ? JSON.parse(tenant.settings.enabledHolidayTypes)
+          : tenant.settings.enabledHolidayTypes;
+        enabledHolidayTypes = { ...enabledHolidayTypes, ...parsed };
+      }
+      
+      return {
+        excludeHolidaysFromLeave: tenant.settings.excludeHolidaysFromLeave ?? true,
+        excludeWeekendsFromLeave: tenant.settings.excludeWeekendsFromLeave ?? true,
+        weeklyWorkingHours: tenant.settings.weeklyWorkingHours as any || null,
+        enabledHolidayTypes,
+      };
+    }
+  } catch (error) {
+    logger.warn({ error }, 'Failed to get tenant leave settings, using defaults');
+  }
+  
+  // Default settings
+  return {
+    excludeHolidaysFromLeave: true,
+    excludeWeekendsFromLeave: true,
+    weeklyWorkingHours: null,
+    enabledHolidayTypes: { public: true, optional: true, restricted: true },
+  };
+}
 
 // ============================================================================
 // TYPES
@@ -297,31 +366,119 @@ export async function adjustLeaveBalance(
 // ============================================================================
 
 /**
- * Calculate leave days excluding weekends and holidays
+ * Check if a day is a non-working day based on tenant settings
+ */
+function isNonWorkingDay(
+  day: Date,
+  settings: TenantLeaveSettings
+): boolean {
+  const dayOfWeek = getDay(day); // 0 = Sunday, 1 = Monday, ... 6 = Saturday
+  const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
+  const dayName = dayNames[dayOfWeek];
+  
+  // Check weekly working hours settings if available
+  if (settings.weeklyWorkingHours) {
+    const daySettings = settings.weeklyWorkingHours[dayName];
+    if (daySettings && !daySettings.isWorkingDay) {
+      return true; // It's a non-working day
+    }
+  } else if (settings.excludeWeekendsFromLeave) {
+    // Fallback to standard weekend check (Sat/Sun)
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+/**
+ * Calculate leave days based on tenant settings (holidays, weekends, working hours)
+ * - Public holidays: Always excluded if enabled in settings
+ * - Optional holidays: Only excluded if employee has opted for them
+ * - Restricted holidays: Always excluded if enabled in settings
  */
 async function calculateLeaveDays(
   prisma: PrismaClient,
   fromDate: Date,
   toDate: Date,
-  isHalfDay: boolean
+  isHalfDay: boolean,
+  tenantSlug?: string,
+  employeeId?: string
 ): Promise<number> {
   if (isHalfDay) {
     return 0.5;
   }
   
-  // Get holidays in range
-  const holidays = await prisma.holiday.findMany({
-    where: {
-      date: { gte: fromDate, lte: toDate },
-    },
-  });
-  const holidayDates = new Set(holidays.map(h => format(h.date, 'yyyy-MM-dd')));
+  // Get tenant settings
+  const settings = tenantSlug 
+    ? await getTenantLeaveSettings(tenantSlug)
+    : { 
+        excludeHolidaysFromLeave: true, 
+        excludeWeekendsFromLeave: true, 
+        weeklyWorkingHours: null,
+        enabledHolidayTypes: { public: true, optional: true, restricted: true }
+      };
   
-  // Count business days excluding holidays
+  // Get holidays in range if we need to exclude them
+  let holidayDates = new Set<string>();
+  if (settings.excludeHolidaysFromLeave) {
+    // Build type filter based on enabled holiday types
+    const enabledTypes: ('PUBLIC' | 'OPTIONAL' | 'RESTRICTED')[] = [];
+    if (settings.enabledHolidayTypes.public) enabledTypes.push('PUBLIC');
+    if (settings.enabledHolidayTypes.optional) enabledTypes.push('OPTIONAL');
+    if (settings.enabledHolidayTypes.restricted) enabledTypes.push('RESTRICTED');
+    
+    const holidays = await prisma.holiday.findMany({
+      where: {
+        date: { gte: fromDate, lte: toDate },
+        type: { in: enabledTypes },
+      },
+    });
+    
+    // For optional holidays, only exclude if employee has opted for them
+    for (const holiday of holidays) {
+      if (holiday.type === 'OPTIONAL') {
+        // If employeeId is provided, check if they've opted for this holiday
+        if (employeeId && settings.enabledHolidayTypes.optional) {
+          const year = holiday.date.getFullYear();
+          const opted = await prisma.employeeOptionalHoliday.findFirst({
+            where: {
+              employeeId,
+              holidayId: holiday.id,
+              year,
+              status: 'OPTED',
+            },
+          });
+          if (opted) {
+            holidayDates.add(format(holiday.date, 'yyyy-MM-dd'));
+          }
+        }
+        // If no employeeId, don't automatically exclude optional holidays
+      } else {
+        // Public and restricted holidays are always excluded if enabled
+        holidayDates.add(format(holiday.date, 'yyyy-MM-dd'));
+      }
+    }
+  }
+  
+  // Count working days
   const allDays = eachDayOfInterval({ start: fromDate, end: toDate });
-  const leaveDays = allDays.filter(day =>
-    !isWeekend(day) && !holidayDates.has(format(day, 'yyyy-MM-dd'))
-  ).length;
+  const leaveDays = allDays.filter(day => {
+    // Check if it's a non-working day
+    if (settings.excludeWeekendsFromLeave || settings.weeklyWorkingHours) {
+      if (isNonWorkingDay(day, settings)) {
+        return false; // Exclude non-working days
+      }
+    }
+    
+    // Check if it's a holiday
+    if (settings.excludeHolidaysFromLeave && holidayDates.has(format(day, 'yyyy-MM-dd'))) {
+      return false; // Exclude holidays
+    }
+    
+    return true; // Count this day
+  }).length;
   
   return leaveDays;
 }
@@ -366,8 +523,9 @@ export async function requestLeave(
     throw new Error('Leave type not found or inactive');
   }
   
-  // Calculate leave days
-  const leaveDays = await calculateLeaveDays(prisma, fromDate, toDate, input.isHalfDay || false);
+  // Calculate leave days based on tenant settings
+  // Pass employeeId to check optional holiday opt-ins
+  const leaveDays = await calculateLeaveDays(prisma, fromDate, toDate, input.isHalfDay || false, tenantContext.tenantSlug, input.employeeId);
   
   if (leaveDays === 0) {
     throw new Error('No valid leave days in the selected range');
@@ -377,13 +535,11 @@ export async function requestLeave(
   const employee = await prisma.employee.findUnique({
     where: { id: input.employeeId },
     include: {
-      reportingTo: {
-        include: { user: { select: { id: true, firstName: true, lastName: true } } },
-      },
+      reportingManager: true,
     },
   });
   
-  if (!employee || employee.status !== 'active') {
+  if (!employee || (employee.status !== 'active' && employee.status !== 'ACTIVE')) {
     throw new Error('Employee not found or inactive');
   }
   
@@ -403,11 +559,11 @@ export async function requestLeave(
     throw new Error('Leave balance not found');
   }
   
-  // Check available balance
+  // Check available balance (skip for unpaid leave types like LWP)
   const availableDays = balance.totalDays + balance.carryForwardDays + balance.adjustmentDays
     - balance.usedDays - balance.pendingDays;
   
-  if (leaveDays > availableDays && !config.leave.allowNegativeBalance) {
+  if (leaveType.isPaid && leaveDays > availableDays && !config.leave.allowNegativeBalance) {
     throw new Error(
       `Insufficient leave balance. Available: ${availableDays} days, Requested: ${leaveDays} days`
     );
@@ -442,9 +598,8 @@ export async function requestLeave(
       reason: input.reason,
       attachmentUrl: input.attachmentUrl,
       status: leaveType.requiresApproval ? 'pending' : 'approved',
-      approverId: employee.reportingToId ? employee.reportingTo?.userId : null,
-      createdBy: input.employeeId,
-      updatedBy: input.employeeId,
+      approvedBy: leaveType.requiresApproval ? null : input.employeeId,
+      approvedAt: leaveType.requiresApproval ? null : new Date(),
     },
     include: {
       leaveType: true,
@@ -479,6 +634,16 @@ export async function requestLeave(
       reason: input.reason,
     },
     tenantContext
+  );
+  
+  // Log activity
+  await logLeaveRequested(
+    prisma,
+    input.employeeId,
+    employee.displayName,
+    leaveType.name,
+    leaveDays,
+    leaveRequest.id
   );
   
   logger.info({
@@ -523,10 +688,9 @@ export async function approveLeave(
     where: { id: input.leaveRequestId },
     data: {
       status: 'approved',
+      approvedBy: input.approverId,
       approvedAt: new Date(),
       approverComments: input.comments,
-      updatedBy: input.approverId,
-      updatedAt: new Date(),
     },
     include: {
       leaveType: true,
@@ -550,6 +714,10 @@ export async function approveLeave(
     },
   });
   
+  // Note: Attendance record creation is disabled until the Attendance model is fully implemented
+  // with date, status, and leaveRequestId fields. For now, leave approval just updates the leave request.
+  
+  /*
   // Create attendance records for leave days
   const holidays = await prisma.holiday.findMany({
     where: {
@@ -577,17 +745,14 @@ export async function approveLeave(
         date: day,
         status: 'on_leave',
         leaveRequestId: leaveRequest.id,
-        createdBy: input.approverId,
-        updatedBy: input.approverId,
       },
       update: {
         status: 'on_leave',
         leaveRequestId: leaveRequest.id,
-        updatedBy: input.approverId,
-        updatedAt: new Date(),
       },
     });
   }
+  */
   
   // Emit event
   await eventBus.sendToQueue(
@@ -601,6 +766,20 @@ export async function approveLeave(
       comments: input.comments,
     },
     tenantContext
+  );
+  
+  // Log activity
+  const employeeName = leaveRequest.employee?.user
+    ? `${leaveRequest.employee.user.firstName} ${leaveRequest.employee.user.lastName}`
+    : leaveRequest.employee?.displayName || 'Unknown';
+  await logLeaveApproved(
+    prisma,
+    leaveRequest.employeeId,
+    employeeName,
+    leaveRequest.leaveType?.name || 'Leave',
+    Number(leaveRequest.totalDays),
+    input.leaveRequestId,
+    input.approverId
   );
   
   logger.info({
@@ -636,10 +815,9 @@ export async function rejectLeave(
     where: { id: input.leaveRequestId },
     data: {
       status: 'rejected',
-      rejectedAt: new Date(),
+      approvedBy: input.approverId,
+      approvedAt: new Date(),
       rejectionReason: input.reason,
-      updatedBy: input.approverId,
-      updatedAt: new Date(),
     },
     include: {
       leaveType: true,
@@ -662,6 +840,22 @@ export async function rejectLeave(
     },
   });
   
+  // Log activity
+  const employeeName = updated.employee?.user
+    ? `${updated.employee.user.firstName} ${updated.employee.user.lastName}`
+    : updated.employee?.displayName || 'Unknown';
+  await logLeaveRejected(
+    prisma,
+    leaveRequest.employeeId,
+    employeeName,
+    updated.leaveType?.name || 'Leave',
+    Number(leaveRequest.totalDays),
+    input.leaveRequestId,
+    input.approverId,
+    undefined,
+    input.reason
+  );
+  
   logger.info({
     leaveRequestId: input.leaveRequestId,
     rejectedBy: input.approverId,
@@ -673,39 +867,134 @@ export async function rejectLeave(
 
 /**
  * Cancel leave request
+ * 
+ * Business Rules:
+ * 1. Employee can cancel their own leave only if:
+ *    - Status is 'pending' OR 'approved'
+ *    - Leave hasn't started yet (fromDate > today)
+ * 
+ * 2. Manager/Admin can cancel any leave but:
+ *    - Must provide a reason
+ *    - Can cancel even approved leaves
+ *    - Cannot cancel leaves that have already passed completely
+ * 
+ * 3. Partial cancellation:
+ *    - If leave has started but not ended, cancel remaining days only
  */
+export interface CancelLeaveInput {
+  leaveRequestId: string;
+  cancelledByUserId: string;
+  cancelledByEmployeeId?: string;
+  userRole: string;
+  reason?: string;
+}
+
 export async function cancelLeave(
   prisma: PrismaClient,
-  leaveRequestId: string,
-  cancelledBy: string,
-  reason?: string
+  input: CancelLeaveInput
 ): Promise<any> {
+  const { leaveRequestId, cancelledByUserId, cancelledByEmployeeId, userRole, reason } = input;
+  
   const leaveRequest = await prisma.leaveRequest.findUnique({
     where: { id: leaveRequestId },
+    include: {
+      employee: true,
+      leaveType: true,
+    },
   });
   
   if (!leaveRequest) {
     throw new Error('Leave request not found');
   }
   
+  // Check if leave can be cancelled based on status
   if (!['pending', 'approved'].includes(leaveRequest.status)) {
     throw new Error(`Cannot cancel leave request with status: ${leaveRequest.status}`);
   }
   
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  const fromDate = new Date(leaveRequest.fromDate);
+  fromDate.setHours(0, 0, 0, 0);
+  
+  const toDate = new Date(leaveRequest.toDate);
+  toDate.setHours(0, 0, 0, 0);
+  
+  const isOwner = cancelledByEmployeeId === leaveRequest.employeeId;
+  const isManagerOrAdmin = ['ADMIN', 'SUPER_ADMIN', 'HR', 'MANAGER'].includes(userRole?.toUpperCase() || '');
+  
+  // Check if leave has completely passed
+  if (toDate < today) {
+    throw new Error('Cannot cancel leave that has already passed');
+  }
+  
+  // Check permissions
+  if (!isOwner && !isManagerOrAdmin) {
+    throw new Error('You do not have permission to cancel this leave request');
+  }
+  
+  // Employee-specific restrictions
+  if (isOwner && !isManagerOrAdmin) {
+    // Employee can only cancel if leave hasn't started
+    if (fromDate <= today && leaveRequest.status === 'approved') {
+      throw new Error('You cannot cancel approved leave that has already started. Please contact HR.');
+    }
+  }
+  
+  // Manager/Admin must provide reason for cancelling approved leaves
+  if (isManagerOrAdmin && !isOwner && leaveRequest.status === 'approved' && !reason) {
+    throw new Error('A reason is required when cancelling approved leave');
+  }
+  
   const wasPending = leaveRequest.status === 'pending';
+  let daysToRefund = Number(leaveRequest.totalDays);
+  let newStatus = 'cancelled';
+  let partialCancellation = false;
+  
+  // Handle partial cancellation (leave has started but not ended)
+  if (fromDate < today && today <= toDate && leaveRequest.status === 'approved') {
+    // Calculate remaining days to cancel
+    const remainingDays = eachDayOfInterval({ start: today, end: toDate }).length;
+    
+    if (remainingDays > 0 && remainingDays < Number(leaveRequest.totalDays)) {
+      daysToRefund = remainingDays;
+      partialCancellation = true;
+      newStatus = 'partially_cancelled';
+      
+      logger.info({
+        leaveRequestId,
+        originalDays: leaveRequest.totalDays,
+        daysToRefund,
+      }, 'Partial leave cancellation');
+    }
+  }
   
   // Update leave request
+  const updateData: any = {
+    status: newStatus,
+    cancelledBy: cancelledByUserId,
+    cancelledAt: new Date(),
+    cancellationReason: reason || (isOwner ? 'Cancelled by employee' : `Cancelled by ${userRole}`),
+    updatedBy: cancelledByUserId,
+    updatedAt: new Date(),
+  };
+  
+  // If partial cancellation, update the toDate and totalDays
+  if (partialCancellation) {
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    updateData.toDate = yesterday;
+    updateData.totalDays = Number(leaveRequest.totalDays) - daysToRefund;
+    updateData.status = 'approved'; // Keep as approved for the days already taken
+  }
+  
   const updated = await prisma.leaveRequest.update({
     where: { id: leaveRequestId },
-    data: {
-      status: 'cancelled',
-      cancelledAt: new Date(),
-      cancellationReason: reason,
-      updatedBy: cancelledBy,
-      updatedAt: new Date(),
-    },
+    data: updateData,
     include: {
       leaveType: true,
+      employee: true,
     },
   });
   
@@ -718,20 +1007,57 @@ export async function cancelLeave(
       year,
     },
     data: wasPending
-      ? { pendingDays: { decrement: leaveRequest.totalDays } }
-      : { usedDays: { decrement: leaveRequest.totalDays } },
+      ? { pendingDays: { decrement: daysToRefund } }
+      : { usedDays: { decrement: daysToRefund } },
   });
   
-  // Remove attendance records if was approved
+  // Remove future attendance records if was approved
   if (!wasPending) {
-    await prisma.attendance.deleteMany({
-      where: { leaveRequestId },
-    });
+    if (partialCancellation) {
+      // Only delete attendance records from today onwards
+      await prisma.attendance.deleteMany({
+        where: {
+          leaveRequestId,
+          date: { gte: today },
+        },
+      });
+    } else {
+      // Delete all attendance records for this leave
+      await prisma.attendance.deleteMany({
+        where: { leaveRequestId },
+      });
+    }
   }
   
-  logger.info({ leaveRequestId, cancelledBy }, 'Leave cancelled');
+  // Log activity
+  await logLeaveCancelled(
+    prisma,
+    leaveRequest.employeeId,
+    leaveRequest.employee?.displayName || 'Unknown',
+    leaveRequest.leaveType?.name || 'Leave',
+    daysToRefund,
+    leaveRequestId,
+    cancelledByUserId,
+    undefined,
+    reason
+  );
   
-  return updated;
+  logger.info({
+    leaveRequestId,
+    cancelledBy: cancelledByUserId,
+    isOwner,
+    isManagerOrAdmin,
+    wasPending,
+    daysRefunded: daysToRefund,
+    partialCancellation,
+  }, 'Leave cancelled');
+  
+  return {
+    ...updated,
+    daysRefunded: daysToRefund,
+    partialCancellation,
+    cancelledByRole: isOwner ? 'EMPLOYEE' : userRole,
+  };
 }
 
 /**
@@ -778,8 +1104,12 @@ export async function listLeaveRequests(
       include: {
         leaveType: true,
         employee: {
-          include: {
-            user: { select: { firstName: true, lastName: true } },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            employeeCode: true,
+            avatar: true,
             department: { select: { name: true } },
           },
         },
@@ -800,7 +1130,7 @@ export async function getPendingApprovals(
 ): Promise<any[]> {
   // Get employees reporting to this manager
   const directReports = await prisma.employee.findMany({
-    where: { reportingToId: managerId },
+    where: { reportingManagerId: managerId },
     select: { id: true },
   });
   
@@ -814,8 +1144,13 @@ export async function getPendingApprovals(
     include: {
       leaveType: true,
       employee: {
-        include: {
-          user: { select: { firstName: true, lastName: true, email: true } },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          employeeCode: true,
+          avatar: true,
+          email: true,
           department: { select: { name: true } },
           designation: { select: { name: true } },
         },

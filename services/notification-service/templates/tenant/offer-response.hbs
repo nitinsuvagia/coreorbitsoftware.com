@@ -1,0 +1,78 @@
+<h2>Offer {{#if accepted}}Accepted{{else}}Declined{{/if}}</h2>
+
+{{#if accepted}}
+<p>Great news! <strong>{{candidateName}}</strong> has accepted the job offer for the <strong>{{designation}}</strong> position.</p>
+
+<div class="info-box">
+  <p><strong>Candidate Details:</strong></p>
+  <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+    <tr>
+      <td style="padding: 8px 0; color: #718096; width: 140px;">Name:</td>
+      <td style="padding: 8px 0; color: #1a202c; font-weight: 600;">{{candidateName}}</td>
+    </tr>
+    <tr>
+      <td style="padding: 8px 0; color: #718096;">Email:</td>
+      <td style="padding: 8px 0; color: #1a202c;">{{candidateEmail}}</td>
+    </tr>
+    <tr>
+      <td style="padding: 8px 0; color: #718096;">Position:</td>
+      <td style="padding: 8px 0; color: #1a202c; font-weight: 600;">{{designation}}</td>
+    </tr>
+    <tr>
+      <td style="padding: 8px 0; color: #718096;">Department:</td>
+      <td style="padding: 8px 0; color: #1a202c; font-weight: 600;">{{department}}</td>
+    </tr>
+    <tr>
+      <td style="padding: 8px 0; color: #718096;">Salary:</td>
+      <td style="padding: 8px 0; color: #1a202c;">{{currency}} {{salary}}/year</td>
+    </tr>
+    <tr>
+      <td style="padding: 8px 0; color: #718096;">Start Date:</td>
+      <td style="padding: 8px 0; color: #1a202c; font-weight: 600;">{{joiningDate}}</td>
+    </tr>
+  </table>
+</div>
+
+<p><strong>Next Steps:</strong></p>
+<ul style="color: #4a5568; margin-left: 20px; margin-bottom: 20px;">
+  <li>An employee record has been automatically created</li>
+  <li>Begin the onboarding process for the new hire</li>
+  <li>Send welcome materials and first-day instructions</li>
+  <li>Prepare workstation and access credentials</li>
+</ul>
+
+<a href="{{employeeUrl}}" class="button">View Employee Record</a>
+
+{{else}}
+<p><strong>{{candidateName}}</strong> has declined the job offer for the <strong>{{designation}}</strong> position.</p>
+
+<div class="info-box">
+  <p><strong>Candidate Details:</strong></p>
+  <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+    <tr>
+      <td style="padding: 8px 0; color: #718096; width: 140px;">Name:</td>
+      <td style="padding: 8px 0; color: #1a202c; font-weight: 600;">{{candidateName}}</td>
+    </tr>
+    <tr>
+      <td style="padding: 8px 0; color: #718096;">Email:</td>
+      <td style="padding: 8px 0; color: #1a202c;">{{candidateEmail}}</td>
+    </tr>
+    <tr>
+      <td style="padding: 8px 0; color: #718096;">Position:</td>
+      <td style="padding: 8px 0; color: #1a202c;">{{designation}}</td>
+    </tr>
+    <tr>
+      <td style="padding: 8px 0; color: #718096;">Response Date:</td>
+      <td style="padding: 8px 0; color: #1a202c;">{{responseDate}}</td>
+    </tr>
+  </table>
+</div>
+
+<p>The candidate's status has been updated to WITHDRAWN. You may want to consider other candidates for this position.</p>
+
+<a href="{{jobUrl}}" class="button">View Other Candidates</a>
+{{/if}}
+
+<div class="divider"></div>
+
+<p style="font-size: 14px; color: #718096;">This is an automated notification from the recruitment system.</p>

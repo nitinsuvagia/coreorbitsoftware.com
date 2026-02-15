@@ -5,10 +5,12 @@
  */
 
 import { createServer } from 'http';
-import { initializeEventBus, shutdownEventBus } from '@oms/event-bus';
+import { initializeEventBus, shutdownEventBus, subscribeToEvent } from '@oms/event-bus';
+import { getTenantPrisma } from '@oms/tenant-db-manager';
 import app from './app';
 import { config } from './config';
 import { logger } from './utils/logger';
+import * as folderInitService from './services/folder-init.service';
 
 const server = createServer(app);
 
@@ -23,6 +25,27 @@ async function start(): Promise<void> {
     });
     
     logger.info('Event bus initialized');
+    
+    // Subscribe to employee.created event to auto-create folders
+    await subscribeToEvent('employee.created', async (data) => {
+      try {
+        const { employeeId, createdBy, tenantId } = data;
+        logger.info({ employeeId, tenantId }, 'Received employee.created event');
+        
+        // Set tenant context
+        process.env.TENANT_ID = tenantId;
+        const prisma = getTenantPrisma();
+        
+        // Create folders for the new employee
+        await folderInitService.createEmployeeFolders(prisma, employeeId, createdBy);
+        
+        logger.info({ employeeId }, 'Created folders for new employee');
+      } catch (error) {
+        logger.error({ error, employeeId: data.employeeId }, 'Failed to create employee folders');
+      }
+    });
+    
+    logger.info('Subscribed to employee.created events');
     
     // Start HTTP server
     server.listen(config.port, () => {

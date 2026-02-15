@@ -15,6 +15,10 @@ import {
   AlertCircle,
   TrendingUp,
   TrendingDown,
+  UserPlus,
+  Clock,
+  Target,
+  BarChart3,
 } from 'lucide-react';
 
 interface DashboardStats {
@@ -22,9 +26,15 @@ interface DashboardStats {
   activeTenants: number;
   trialTenants: number;
   suspendedTenants: number;
+  pendingTenants: number;
   activeSubscriptions: number;
   trialingSubscriptions: number;
+  cancelledSubscriptions: number;
   totalMRR: number;
+  totalARR: number;
+  avgRevenuePerTenant: number;
+  conversionRate: number;
+  newTenantsThisMonth: number;
   tenantGrowthPercent: number;
 }
 
@@ -156,7 +166,11 @@ export default function AdminDashboardPage() {
       }
     } catch (err: any) {
       console.error('Failed to fetch dashboard data:', err);
-      setError(err.response?.data?.error || 'Failed to load dashboard data');
+      const errorData = err.response?.data?.error;
+      const errorMessage = typeof errorData === 'object' && errorData?.message 
+        ? errorData.message 
+        : (typeof errorData === 'string' ? errorData : 'Failed to load dashboard data');
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -187,15 +201,60 @@ export default function AdminDashboardPage() {
         </Card>
       )}
 
-      {/* Stats Grid */}
+      {/* Stats Grid - Row 1 */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard
           title="Total Tenants"
           value={stats?.totalTenants || 0}
-          description={`${stats?.activeTenants || 0} active, ${stats?.trialTenants || 0} in trial`}
+          description={`${stats?.pendingTenants || 0} pending setup`}
           icon={Building2}
           iconColor="blue"
           trend={stats ? { value: stats.tenantGrowthPercent, isPositive: stats.tenantGrowthPercent >= 0 } : undefined}
+          loading={loading}
+        />
+        <StatCard
+          title="Active Tenants"
+          value={stats?.activeTenants || 0}
+          description="Paying customers"
+          icon={Users}
+          iconColor="green"
+          loading={loading}
+        />
+        <StatCard
+          title="Trial Tenants"
+          value={stats?.trialTenants || 0}
+          description={`${stats?.conversionRate || 0}% conversion rate`}
+          icon={Clock}
+          iconColor="orange"
+          loading={loading}
+        />
+        <StatCard
+          title="New This Month"
+          value={stats?.newTenantsThisMonth || 0}
+          description="Last 30 days"
+          icon={UserPlus}
+          iconColor="purple"
+          trend={stats ? { value: stats.tenantGrowthPercent, isPositive: stats.tenantGrowthPercent >= 0 } : undefined}
+          loading={loading}
+        />
+      </div>
+
+      {/* Stats Grid - Row 2 */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          title="Monthly Revenue"
+          value={formatCurrency(stats?.totalMRR || 0)}
+          description="MRR (recurring)"
+          icon={DollarSign}
+          iconColor="green"
+          loading={loading}
+        />
+        <StatCard
+          title="Annual Revenue"
+          value={formatCurrency(stats?.totalARR || 0)}
+          description="ARR projection"
+          icon={BarChart3}
+          iconColor="blue"
           loading={loading}
         />
         <StatCard
@@ -204,14 +263,6 @@ export default function AdminDashboardPage() {
           description={`${stats?.trialingSubscriptions || 0} in trial`}
           icon={CreditCard}
           iconColor="purple"
-          loading={loading}
-        />
-        <StatCard
-          title="Monthly Revenue"
-          value={formatCurrency(stats?.totalMRR || 0)}
-          description="Recurring revenue (MRR)"
-          icon={DollarSign}
-          iconColor="green"
           loading={loading}
         />
         <StatCard

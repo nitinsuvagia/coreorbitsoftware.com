@@ -2,7 +2,7 @@
  * File Service - File management operations
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '.prisma/tenant-client';
 import { v4 as uuidv4 } from 'uuid';
 import { lookup as getMimeType } from 'mime-types';
 import sharp from 'sharp';
@@ -10,6 +10,7 @@ import { Readable } from 'stream';
 import { logger } from '../utils/logger';
 import { config, ThumbnailSize } from '../config';
 import * as storageService from './storage.service';
+import * as thumbnailService from './thumbnail.service';
 
 // ============================================================================
 // TYPES
@@ -60,21 +61,6 @@ function generateFilename(originalName: string): string {
   return `${timestamp}-${randomPart}.${ext}`;
 }
 
-async function generateThumbnail(
-  buffer: Buffer,
-  size: ThumbnailSize
-): Promise<Buffer> {
-  const dimensions = config.file.thumbnailSizes[size];
-  
-  return sharp(buffer)
-    .resize(dimensions.width, dimensions.height, {
-      fit: 'cover',
-      position: 'center',
-    })
-    .jpeg({ quality: 80 })
-    .toBuffer();
-}
-
 // ============================================================================
 // FILE OPERATIONS
 // ============================================================================
@@ -100,6 +86,8 @@ export async function uploadFile(
     ...config.file.allowedTypes.documents,
     ...config.file.allowedTypes.images,
     ...config.file.allowedTypes.archives,
+    ...config.file.allowedTypes.videos,
+    ...config.file.allowedTypes.audio,
   ];
   
   if (!allAllowedTypes.includes(input.mimeType)) {
@@ -124,29 +112,33 @@ export async function uploadFile(
     },
   });
   
-  // Generate thumbnails for images
+  // Generate thumbnails for supported file types (images, PDFs, Office documents)
   let thumbnails: Record<string, string> = {};
-  if (isImage(input.mimeType)) {
+  
+  if (thumbnailService.canGenerateThumbnail(input.mimeType)) {
     const sizes: ThumbnailSize[] = ['small', 'medium', 'large'];
+    const generatedThumbnails = await thumbnailService.generateThumbnails(input.content, input.mimeType);
     
     for (const size of sizes) {
-      try {
-        const thumbnail = await generateThumbnail(input.content, size);
-        const thumbKey = storageService.buildKey(
-          tenantSlug,
-          `${folder}/thumbnails/${size}`,
-          storageName.replace(/\.[^.]+$/, '.jpg')
-        );
-        
-        await storageService.uploadFile({
-          key: thumbKey,
-          body: thumbnail,
-          contentType: 'image/jpeg',
-        });
-        
-        thumbnails[size] = thumbKey;
-      } catch (error) {
-        logger.warn({ size, error }, 'Failed to generate thumbnail');
+      const thumbnailBuffer = generatedThumbnails[size];
+      if (thumbnailBuffer) {
+        try {
+          const thumbKey = storageService.buildKey(
+            tenantSlug,
+            `${folder}/thumbnails/${size}`,
+            storageName.replace(/\.[^.]+$/, '.jpg')
+          );
+          
+          await storageService.uploadFile({
+            key: thumbKey,
+            body: thumbnailBuffer,
+            contentType: 'image/jpeg',
+          });
+          
+          thumbnails[size] = thumbKey;
+        } catch (error) {
+          logger.warn({ size, error }, 'Failed to upload thumbnail');
+        }
       }
     }
   }
@@ -295,26 +287,53 @@ export async function permanentlyDeleteFile(
   prisma: PrismaClient,
   id: string
 ): Promise<void> {
+  // Get file with versions
   const file = await prisma.file.findUnique({
     where: { id },
-    select: { storageKey: true, thumbnails: true },
+    select: { 
+      storageKey: true, 
+      thumbnails: true,
+      versions: {
+        select: { storageKey: true }
+      }
+    },
   });
   
   if (!file) return;
   
-  // Delete from S3
-  const keysToDelete = [file.storageKey];
-  const thumbnails = file.thumbnails as Record<string, string>;
-  for (const key of Object.values(thumbnails)) {
-    keysToDelete.push(key);
+  // Collect all storage keys to delete
+  const keysToDelete: string[] = [];
+  
+  // Main file
+  if (file.storageKey) {
+    keysToDelete.push(file.storageKey);
   }
   
-  await storageService.deleteFiles(keysToDelete);
+  // Thumbnails
+  const thumbnails = file.thumbnails as Record<string, string> | null;
+  if (thumbnails) {
+    for (const key of Object.values(thumbnails)) {
+      if (key) keysToDelete.push(key);
+    }
+  }
   
-  // Delete record
+  // File versions
+  for (const version of file.versions) {
+    if (version.storageKey) {
+      keysToDelete.push(version.storageKey);
+    }
+  }
+  
+  // Delete all files from storage
+  if (keysToDelete.length > 0) {
+    const result = await storageService.deleteFiles(keysToDelete);
+    logger.debug({ fileId: id, deleted: result.deleted, errors: result.errors }, 'Storage files deleted');
+  }
+  
+  // Delete record (cascades to versions via Prisma)
   await prisma.file.delete({ where: { id } });
   
-  logger.info({ fileId: id }, 'File permanently deleted');
+  logger.info({ fileId: id, filesDeleted: keysToDelete.length }, 'File permanently deleted');
 }
 
 /**
@@ -461,4 +480,124 @@ export async function copyFile(
   logger.info({ sourceId: id, newId }, 'File copied');
   
   return file;
+}
+
+/**
+ * Regenerate thumbnails for an existing file
+ * Useful for files that were uploaded before thumbnail support was added
+ */
+export async function regenerateThumbnails(
+  prisma: PrismaClient,
+  id: string,
+  tenantSlug: string
+): Promise<{ success: boolean; thumbnails: Record<string, string> }> {
+  const file = await prisma.file.findUnique({
+    where: { id },
+    select: { 
+      id: true, 
+      storageKey: true, 
+      storageName: true,
+      mimeType: true, 
+      thumbnails: true,
+      name: true
+    },
+  });
+  
+  if (!file) {
+    throw new Error('File not found');
+  }
+  
+  // Check if thumbnail generation is supported for this file type
+  if (!thumbnailService.canGenerateThumbnail(file.mimeType)) {
+    return { success: false, thumbnails: {} };
+  }
+  
+  // Download the original file from S3
+  const fileBuffer = await storageService.downloadFileAsBuffer(file.storageKey);
+  
+  if (!fileBuffer) {
+    throw new Error('Could not download file from storage');
+  }
+  
+  // Generate thumbnails
+  const generatedThumbnails = await thumbnailService.generateThumbnails(fileBuffer, file.mimeType);
+  
+  if (Object.keys(generatedThumbnails).length === 0) {
+    return { success: false, thumbnails: {} };
+  }
+  
+  // Upload thumbnails to S3
+  const thumbnails: Record<string, string> = {};
+  const folder = file.storageKey.includes('/attachments/') 
+    ? config.storage.folders.attachments 
+    : config.storage.folders.documents;
+  
+  const sizes: ThumbnailSize[] = ['small', 'medium', 'large'];
+  
+  for (const size of sizes) {
+    const thumbnailBuffer = generatedThumbnails[size];
+    if (thumbnailBuffer) {
+      try {
+        const thumbKey = storageService.buildKey(
+          tenantSlug,
+          `${folder}/thumbnails/${size}`,
+          file.storageName.replace(/\.[^.]+$/, '.jpg')
+        );
+        
+        await storageService.uploadFile({
+          key: thumbKey,
+          body: thumbnailBuffer,
+          contentType: 'image/jpeg',
+        });
+        
+        thumbnails[size] = thumbKey;
+      } catch (error) {
+        logger.warn({ size, fileId: id, error }, 'Failed to upload regenerated thumbnail');
+      }
+    }
+  }
+  
+  // Update file record with new thumbnails
+  await prisma.file.update({
+    where: { id },
+    data: { thumbnails },
+  });
+  
+  logger.info({ fileId: id, thumbnailCount: Object.keys(thumbnails).length }, 'Thumbnails regenerated');
+  
+  return { success: true, thumbnails };
+}
+
+/**
+ * Get files that need thumbnail regeneration
+ */
+export async function getFilesNeedingThumbnails(
+  prisma: PrismaClient,
+  limit: number = 50
+): Promise<any[]> {
+  // Get files that support thumbnails but don't have them
+  const supportedTypes = [
+    'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  ];
+  
+  return prisma.file.findMany({
+    where: {
+      isDeleted: false,
+      mimeType: { in: supportedTypes },
+      OR: [
+        { thumbnails: { equals: {} } },
+        { thumbnails: { equals: null } },
+      ],
+    },
+    take: limit,
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, name: true, mimeType: true },
+  });
 }

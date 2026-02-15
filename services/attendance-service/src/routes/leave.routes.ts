@@ -4,7 +4,7 @@
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { getTenantPrisma } from '@oms/tenant-db-manager';
+import { getTenantPrismaBySlug } from '../utils/database';
 import {
   createLeaveType,
   listLeaveTypes,
@@ -44,7 +44,7 @@ const updateLeaveTypeSchema = z.object({
   description: z.string().max(500).optional(),
   defaultDaysPerYear: z.number().min(0).max(365).optional(),
   carryForwardAllowed: z.boolean().optional(),
-  maxCarryForwardDays: z.number().min(0).max(100).optional(),
+  maxCarryForwardDays: z.number().min(0).max(100).optional().nullable(),
   requiresApproval: z.boolean().optional(),
   isPaid: z.boolean().optional(),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
@@ -52,7 +52,7 @@ const updateLeaveTypeSchema = z.object({
 });
 
 const requestLeaveSchema = z.object({
-  employeeId: z.string().uuid(),
+  employeeId: z.string().min(1),
   leaveTypeId: z.string().uuid(),
   fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   toDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -64,18 +64,18 @@ const requestLeaveSchema = z.object({
 
 const approveLeaveSchema = z.object({
   leaveRequestId: z.string().uuid(),
-  approverId: z.string().uuid(),
+  approverId: z.string().min(1),
   comments: z.string().max(500).optional(),
 });
 
 const rejectLeaveSchema = z.object({
   leaveRequestId: z.string().uuid(),
-  approverId: z.string().uuid(),
+  approverId: z.string().min(1),
   reason: z.string().min(5).max(500),
 });
 
 const adjustBalanceSchema = z.object({
-  employeeId: z.string().uuid(),
+  employeeId: z.string().min(1),
   leaveTypeId: z.string().uuid(),
   year: z.number().min(2020).max(2100),
   adjustmentDays: z.number().min(-100).max(100),
@@ -83,7 +83,7 @@ const adjustBalanceSchema = z.object({
 });
 
 const listLeaveRequestsSchema = z.object({
-  employeeId: z.string().uuid().optional(),
+  employeeId: z.string().min(1).optional(),
   leaveTypeId: z.string().uuid().optional(),
   status: z.enum(['pending', 'approved', 'rejected', 'cancelled']).optional(),
   dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -143,7 +143,8 @@ router.post(
   validateBody(createLeaveTypeSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       const userId = (req as any).userId;
       
       const leaveType = await createLeaveType(prisma, req.body, userId);
@@ -170,7 +171,8 @@ router.get(
   '/types',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       const activeOnly = req.query.activeOnly !== 'false';
       
       const leaveTypes = await listLeaveTypes(prisma, activeOnly);
@@ -191,7 +193,8 @@ router.put(
   validateBody(updateLeaveTypeSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       const { id } = req.params;
       const userId = (req as any).userId;
       
@@ -219,7 +222,8 @@ router.get(
   '/balances/:employeeId',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       const { employeeId } = req.params;
       const year = req.query.year ? parseInt(req.query.year as string) : undefined;
       
@@ -241,7 +245,8 @@ router.post(
   validateBody(adjustBalanceSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       const userId = (req as any).userId;
       const { employeeId, leaveTypeId, year, adjustmentDays, reason } = req.body;
       
@@ -279,8 +284,9 @@ router.post(
   validateBody(requestLeaveSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
-      const { tenantId, tenantSlug } = req as any;
+      const tenantSlug = (req as any).tenantSlug;
+      const tenantId = (req as any).tenantId;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       
       const leaveRequest = await requestLeave(
         prisma,
@@ -314,7 +320,8 @@ router.get(
   validateQuery(listLeaveRequestsSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       
       const result = await listLeaveRequests(prisma, req.query as any);
       
@@ -333,7 +340,8 @@ router.get(
   '/requests/pending',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       const managerId = req.query.managerId as string;
       
       if (!managerId) {
@@ -358,8 +366,9 @@ router.post(
   validateBody(approveLeaveSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
-      const { tenantId, tenantSlug } = req as any;
+      const tenantSlug = (req as any).tenantSlug;
+      const tenantId = (req as any).tenantId;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       
       const leaveRequest = await approveLeave(
         prisma,
@@ -391,8 +400,9 @@ router.post(
   validateBody(rejectLeaveSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
-      const { tenantId, tenantSlug } = req as any;
+      const tenantSlug = (req as any).tenantSlug;
+      const tenantId = (req as any).tenantId;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       
       const leaveRequest = await rejectLeave(
         prisma,
@@ -418,26 +428,52 @@ router.post(
 /**
  * POST /leaves/requests/:id/cancel
  * Cancel a leave request
+ * 
+ * Rules:
+ * - Employee can cancel their own pending/approved leave before it starts
+ * - Manager/Admin can cancel any leave with a reason
+ * - Partial cancellation for leaves already in progress
  */
 router.post(
   '/requests/:id/cancel',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       const { id } = req.params;
       const userId = (req as any).userId;
+      const userRole = (req as any).userRole;
       const reason = req.body.reason;
       
-      const leaveRequest = await cancelLeave(prisma, id, userId, reason);
+      // Get the user's employeeId
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { employeeId: true },
+      });
+      
+      const leaveRequest = await cancelLeave(prisma, {
+        leaveRequestId: id,
+        cancelledByUserId: userId,
+        cancelledByEmployeeId: user?.employeeId || undefined,
+        userRole: userRole || 'EMPLOYEE',
+        reason,
+      });
+      
+      const message = leaveRequest.partialCancellation
+        ? `Leave partially cancelled. ${leaveRequest.daysRefunded} day(s) refunded to your balance.`
+        : 'Leave request cancelled successfully';
       
       res.json({
-        message: 'Leave request cancelled',
+        message,
         data: leaveRequest,
       });
     } catch (error) {
       logger.error({ error: (error as Error).message }, 'Cancel leave failed');
       if ((error as Error).message.includes('Cannot cancel') ||
-          (error as Error).message.includes('not found')) {
+          (error as Error).message.includes('not found') ||
+          (error as Error).message.includes('permission') ||
+          (error as Error).message.includes('already') ||
+          (error as Error).message.includes('reason is required')) {
         return res.status(400).json({ error: (error as Error).message });
       }
       next(error);

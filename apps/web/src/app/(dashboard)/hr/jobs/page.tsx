@@ -42,6 +42,8 @@ import {
   MapPin,
   Filter,
   Download,
+  CheckCircle,
+  XCircle,
 } from 'lucide-react';
 import { JobDescriptionForm } from './_components/JobDescriptionForm';
 import type { JobFormData } from './_components/JobDescriptionForm';
@@ -161,6 +163,20 @@ export default function JobDescriptionsPage() {
   const handleEdit = (job: JobDescription) => {
     setEditingJob(job);
     setFormOpen(true);
+  };
+
+  // Status change handler
+  const handleStatusChange = async (jobId: string, newStatus: string) => {
+    try {
+      await jobApi.updateJob(jobId, { status: newStatus as any });
+      toast.success('Status Updated', {
+        description: `Job status changed to ${newStatus.replace('-', ' ')}.`,
+      });
+      loadJobs();
+    } catch (error) {
+      console.error('Failed to update job status:', error);
+      toast.error('Failed to Update Status');
+    }
   };
 
   // Delete handler
@@ -550,7 +566,11 @@ export default function JobDescriptionsPage() {
               </thead>
               <tbody>
                 {filteredJobs.map((job) => (
-                  <tr key={job.id} className="border-b hover:bg-muted/50">
+                  <tr 
+                    key={job.id} 
+                    className="border-b hover:bg-muted/50 cursor-pointer"
+                    onClick={() => handleViewDetails(job)}
+                  >
                     <td className="p-4">
                       <div className="space-y-1">
                         <div className="font-medium">{job.title}</div>
@@ -612,13 +632,13 @@ export default function JobDescriptionsPage() {
                     <td className="p-4">{getStatusBadge(job.status)}</td>
                     <td className="p-4">
                       <div className="space-y-1">
-                        <div className="text-sm">{job.postedDate}</div>
+                        <div className="text-sm">{formatDate(job.postedDate, orgSettings)}</div>
                         <div className="text-xs text-muted-foreground">
                           {calculateDaysOpen(job.postedDate)} days ago
                         </div>
                       </div>
                     </td>
-                    <td className="p-4 text-right">
+                    <td className="p-4 text-right" onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="sm">
@@ -636,6 +656,32 @@ export default function JobDescriptionsPage() {
                             <Edit className="h-4 w-4 mr-2" />
                             Edit
                           </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuLabel>Change Status</DropdownMenuLabel>
+                          {job.status !== 'open' && (
+                            <DropdownMenuItem onClick={() => handleStatusChange(job.id, 'open')}>
+                              <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
+                              Mark as Open
+                            </DropdownMenuItem>
+                          )}
+                          {job.status !== 'on-hold' && (
+                            <DropdownMenuItem onClick={() => handleStatusChange(job.id, 'on-hold')}>
+                              <Calendar className="h-4 w-4 mr-2 text-yellow-500" />
+                              Put On Hold
+                            </DropdownMenuItem>
+                          )}
+                          {job.status !== 'closed' && (
+                            <DropdownMenuItem onClick={() => handleStatusChange(job.id, 'closed')}>
+                              <XCircle className="h-4 w-4 mr-2 text-red-500" />
+                              Close Job
+                            </DropdownMenuItem>
+                          )}
+                          {job.status !== 'completed' && (
+                            <DropdownMenuItem onClick={() => handleStatusChange(job.id, 'completed')}>
+                              <Award className="h-4 w-4 mr-2 text-blue-500" />
+                              Mark Completed
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
                             className="text-destructive"

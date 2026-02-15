@@ -10,6 +10,7 @@ export interface DashboardStats {
   projectsDueThisWeek: number;
   pendingTasks: number;
   highPriorityTasks: number;
+  completedTasks: number;
   pendingLeaveRequests: number;
 }
 

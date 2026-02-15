@@ -96,6 +96,9 @@ export function UsageTab({
           </div>
         </CardContent>
       </Card>
+      
+      {/* Bottom spacing to prevent content touching screen bottom */}
+      <div className="h-4" />
     </div>
   );
 }

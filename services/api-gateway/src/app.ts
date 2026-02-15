@@ -9,7 +9,7 @@ const helmet = require('helmet');
 const compression = require('compression');
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
-import { createProxyMiddleware } from 'http-proxy-middleware';
+import { createProxyMiddleware, fixRequestBody } from 'http-proxy-middleware';
 import { v4 as uuidv4 } from 'uuid';
 import { getTenantDbManager } from '@oms/tenant-db-manager';
 
@@ -65,12 +65,15 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   const allowedOrigin = origin || 'http://localhost:3000';
   
   // Check if the origin is allowed
-  const isAllowed = config.corsOrigins.length === 1 && config.corsOrigins[0] === '*' 
-    ? true 
-    : config.corsOrigins.includes(allowedOrigin);
+  // Allow all localhost origins (including subdomains like softqube.localhost:3000)
+  const isLocalhost = allowedOrigin.includes('localhost') || allowedOrigin.includes('127.0.0.1');
+  const isWildcard = config.corsOrigins.length === 1 && config.corsOrigins[0] === '*';
+  const isExplicitlyAllowed = config.corsOrigins.includes(allowedOrigin);
   
-  if (isAllowed) {
-    res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+  const isAllowed = isWildcard || isLocalhost || isExplicitlyAllowed;
+  
+  if (isAllowed && origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
   }
   
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -90,9 +93,41 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // Compression
 app.use(compression());
 
-// Body parsing
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Body parsing - skip for proxy routes to allow direct streaming
+const skipBodyParserPaths = [
+  '/api/v1/assessments',
+  '/api/v1/interviews',
+  '/api/v1/candidates',
+  '/api/v1/jobs',
+  '/api/v1/employees',
+  '/api/v1/departments',
+  '/api/v1/designations',
+  '/api/v1/leaves',
+  '/api/v1/attendance',
+  '/api/v1/onboarding',
+  '/api/v1/documents',
+  '/api/v1/projects',
+  '/api/v1/tasks',
+  '/api/v1/billing',
+  '/api/v1/notifications',
+  '/api/v1/reports',
+];
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const shouldSkip = skipBodyParserPaths.some(path => req.path.startsWith(path));
+  if (shouldSkip) {
+    return next();
+  }
+  return express.json({ limit: '10mb' })(req, res, next);
+});
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const shouldSkip = skipBodyParserPaths.some(path => req.path.startsWith(path));
+  if (shouldSkip) {
+    return next();
+  }
+  return express.urlencoded({ extended: true, limit: '10mb' })(req, res, next);
+});
 
 // Logging
 app.use(morgan('combined', {
@@ -143,6 +178,30 @@ app.get('/ready', (req: Request, res: Response) => {
   });
 });
 
+// Internal endpoint to invalidate tenant cache (used by auth-service after reactivation)
+app.post('/internal/invalidate-tenant-cache', (req: Request, res: Response) => {
+  const { tenantSlug, internalSecret } = req.body;
+  
+  // Simple security check - only allow internal calls
+  if (internalSecret !== (process.env.INTERNAL_SECRET || 'internal-api-secret')) {
+    return res.status(403).json({ success: false, error: 'Forbidden' });
+  }
+  
+  if (!tenantSlug) {
+    return res.status(400).json({ success: false, error: 'tenantSlug required' });
+  }
+  
+  try {
+    const dbManager = getTenantDbManager();
+    dbManager.invalidateTenantCache(tenantSlug);
+    logger.info({ tenantSlug }, 'Tenant cache invalidated');
+    res.json({ success: true, message: `Cache invalidated for tenant: ${tenantSlug}` });
+  } catch (error) {
+    logger.error({ error, tenantSlug }, 'Failed to invalidate tenant cache');
+    res.status(500).json({ success: false, error: 'Failed to invalidate cache' });
+  }
+});
+
 // ============================================================================
 // AUTH MIDDLEWARE
 // ============================================================================
@@ -156,8 +215,8 @@ app.use(domainAccessGuard);
 // Set up tenant database context for tenant domains
 app.use(tenantContextMiddleware);
 
-// Apply tenant-aware rate limiting (uses subscription tier)
-app.use(tenantRateLimiter());
+// Rate limiting disabled - uncomment to enable
+// app.use(tenantRateLimiter());
 
 // Maintenance mode check (blocks tenant access during maintenance)
 app.use(maintenanceModeMiddleware);
@@ -297,6 +356,48 @@ app.post('/api/v1/tenants/register', async (req: Request, res: Response, next: N
 });
 
 // ============================================================================
+// PUBLIC OFFER ROUTES (No auth required)
+// Allows candidates to view and respond to job offers
+// ============================================================================
+
+app.use('/api/v1/public/offer',
+  createProxyMiddleware({
+    target: config.employeeServiceUrl,
+    changeOrigin: true,
+    pathRewrite: { '^/api/v1/public/offer': '/api/v1/public/offer' },
+    onProxyReq: fixRequestBody,
+    onError: (err, req, res) => {
+      logger.error({ error: err.message, path: req.url }, 'Public offer proxy error');
+      (res as Response).status(502).json({
+        success: false,
+        error: { code: 'PROXY_ERROR', message: 'Service unavailable' },
+      });
+    },
+  })
+);
+
+// ============================================================================
+// PUBLIC ONBOARDING ROUTES (No auth required)
+// Allows candidates to fill onboarding details with temp credentials
+// ============================================================================
+
+app.use('/api/v1/public/onboarding',
+  createProxyMiddleware({
+    target: config.employeeServiceUrl,
+    changeOrigin: true,
+    pathRewrite: { '^/api/v1/public/onboarding': '/api/v1/public/onboarding' },
+    onProxyReq: fixRequestBody,
+    onError: (err, req, res) => {
+      logger.error({ error: err.message, path: req.url }, 'Public onboarding proxy error');
+      (res as Response).status(502).json({
+        success: false,
+        error: { code: 'PROXY_ERROR', message: 'Service unavailable' },
+      });
+    },
+  })
+);
+
+// ============================================================================
 // GLOBAL SEARCH ENDPOINT
 // ============================================================================
 
@@ -343,6 +444,7 @@ app.get('/api/v1/search',
             ],
           },
           take: 5,
+          orderBy: { employeeCode: 'asc' },
           include: {
             department: { select: { name: true } },
             designation: { select: { name: true } },
@@ -920,11 +1022,203 @@ app.use('/api/v1/jobs',
   })
 );
 
+// Candidates service proxy (employee-service) - All candidates across jobs
+app.use('/api/v1/candidates',
+  requireAuth,
+  requireTenantContext,
+  createProxyMiddleware({
+    target: config.employeeServiceUrl,
+    changeOrigin: true,
+    pathRewrite: { '^/api/v1/candidates': '/api/v1/candidates' },
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+    },
+    onProxyRes: (proxyRes, req) => {
+      const origin = req.headers.origin;
+      if (origin) {
+        proxyRes.headers['access-control-allow-origin'] = origin;
+        proxyRes.headers['access-control-allow-credentials'] = 'true';
+      }
+    },
+  })
+);
+
+// Interviews service proxy (employee-service)
+app.use('/api/v1/interviews',
+  requireAuth,
+  requireTenantContext,
+  createProxyMiddleware({
+    target: config.employeeServiceUrl,
+    changeOrigin: true,
+    pathRewrite: { '^/api/v1/interviews': '/api/v1/interviews' },
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+    },
+    onProxyRes: (proxyRes, req) => {
+      const origin = req.headers.origin;
+      if (origin) {
+        proxyRes.headers['access-control-allow-origin'] = origin;
+        proxyRes.headers['access-control-allow-credentials'] = 'true';
+      }
+    },
+  })
+);
+
+// Onboarding service proxy (employee-service) - HR onboarding management
+app.use('/api/v1/onboarding',
+  requireAuth,
+  requireTenantContext,
+  createProxyMiddleware({
+    target: config.employeeServiceUrl,
+    changeOrigin: true,
+    pathRewrite: { '^/api/v1/onboarding': '/api/v1/onboarding' },
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+      fixRequestBody(proxyReq, req);
+    },
+    onProxyRes: (proxyRes, req) => {
+      const origin = req.headers.origin;
+      if (origin) {
+        proxyRes.headers['access-control-allow-origin'] = origin;
+        proxyRes.headers['access-control-allow-credentials'] = 'true';
+      }
+    },
+  })
+);
+
+// Assessments service proxy (employee-service)
+// Public routes for candidates (no auth required)
+app.use('/api/v1/assessments/invitations/code',
+  requireTenantContext,
+  createProxyMiddleware({
+    target: config.employeeServiceUrl,
+    changeOrigin: true,
+    timeout: 60000,
+    proxyTimeout: 60000,
+    pathRewrite: { '^/api/v1/assessments': '/api/v1/assessments' },
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+      // Body is streamed directly since body-parser is skipped for this route
+    },
+    onProxyRes: (proxyRes, req) => {
+      const origin = req.headers.origin;
+      if (origin) {
+        proxyRes.headers['access-control-allow-origin'] = origin;
+        proxyRes.headers['access-control-allow-credentials'] = 'true';
+      }
+    },
+  })
+);
+
+app.use('/api/v1/assessments/start',
+  requireTenantContext,
+  createProxyMiddleware({
+    target: config.employeeServiceUrl,
+    changeOrigin: true,
+    timeout: 60000,
+    proxyTimeout: 60000,
+    pathRewrite: { '^/api/v1/assessments': '/api/v1/assessments' },
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+      // Body is streamed directly since body-parser is skipped for this route
+    },
+    onProxyRes: (proxyRes, req) => {
+      const origin = req.headers.origin;
+      if (origin) {
+        proxyRes.headers['access-control-allow-origin'] = origin;
+        proxyRes.headers['access-control-allow-credentials'] = 'true';
+      }
+    },
+  })
+);
+
+app.use('/api/v1/assessments/results',
+  requireTenantContext,
+  createProxyMiddleware({
+    target: config.employeeServiceUrl,
+    changeOrigin: true,
+    timeout: 60000, // 60 second timeout
+    proxyTimeout: 60000,
+    pathRewrite: { '^/api/v1/assessments': '/api/v1/assessments' },
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+      // Body is streamed directly since body-parser is skipped for this route
+    },
+    onProxyRes: (proxyRes, req) => {
+      const origin = req.headers.origin;
+      if (origin) {
+        proxyRes.headers['access-control-allow-origin'] = origin;
+        proxyRes.headers['access-control-allow-credentials'] = 'true';
+      }
+    },
+    onError: (err, req, res) => {
+      logger.error({ error: err.message, url: req.url }, 'Proxy error for assessments/results');
+      (res as Response).status(502).json({
+        success: false,
+        error: 'Failed to connect to assessment service',
+      });
+    },
+  })
+);
+
+// Protected assessments routes (require auth)
+app.use('/api/v1/assessments',
+  requireAuth,
+  requireTenantContext,
+  createProxyMiddleware({
+    target: config.employeeServiceUrl,
+    changeOrigin: true,
+    timeout: 60000,
+    proxyTimeout: 60000,
+    pathRewrite: { '^/api/v1/assessments': '/api/v1/assessments' },
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+      // Fix request body for POST/PUT/PATCH
+      fixRequestBody(proxyReq, req);
+    },
+    onProxyRes: (proxyRes, req) => {
+      const origin = req.headers.origin;
+      if (origin) {
+        proxyRes.headers['access-control-allow-origin'] = origin;
+        proxyRes.headers['access-control-allow-credentials'] = 'true';
+      }
+    },
+    onError: (err, req, res) => {
+      logger.error({ error: err.message, path: req.url }, 'Error proxying to assessments service');
+      (res as any).status(502).json({
+        success: false,
+        error: 'Failed to connect to assessment service',
+      });
+    },
+  })
+);
+
 // Organization settings (current tenant) - handled locally
 app.use('/api/v1/organization',
   requireAuth,
   requireTenantContext,
   organizationRoutes
+);
+
+// Holidays proxy (attendance service)
+app.use('/api/v1/holidays',
+  requireAuth,
+  requireTenantContext,
+  createProxyMiddleware({
+    target: config.attendanceServiceUrl,
+    changeOrigin: true,
+    // No pathRewrite - attendance service expects /api/v1/holidays/...
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+    },
+    onProxyRes: (proxyRes, req) => {
+      const origin = req.headers.origin;
+      if (origin) {
+        proxyRes.headers['access-control-allow-origin'] = origin;
+        proxyRes.headers['access-control-allow-credentials'] = 'true';
+      }
+    },
+  })
 );
 
 // Attendance service proxy
@@ -934,9 +1228,39 @@ app.use('/api/v1/attendance',
   createProxyMiddleware({
     target: config.attendanceServiceUrl,
     changeOrigin: true,
-    pathRewrite: { '^/api/v1/attendance': '/api/v1' },
+    // No pathRewrite - attendance service expects /api/v1/attendance/...
     onProxyReq: (proxyReq, req) => {
       addTenantHeaders(proxyReq, req as TenantContextRequest);
+    },
+    onProxyRes: (proxyRes, req) => {
+      // Ensure CORS headers from gateway are preserved
+      const origin = req.headers.origin;
+      if (origin) {
+        proxyRes.headers['access-control-allow-origin'] = origin;
+        proxyRes.headers['access-control-allow-credentials'] = 'true';
+      }
+    },
+  })
+);
+
+// Leaves service proxy (also handled by attendance service)
+app.use('/api/v1/leaves',
+  requireAuth,
+  requireTenantContext,
+  createProxyMiddleware({
+    target: config.attendanceServiceUrl,
+    changeOrigin: true,
+    // No pathRewrite - attendance service expects /api/v1/leaves/...
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+    },
+    onProxyRes: (proxyRes, req) => {
+      // Ensure CORS headers from gateway are preserved
+      const origin = req.headers.origin;
+      if (origin) {
+        proxyRes.headers['access-control-allow-origin'] = origin;
+        proxyRes.headers['access-control-allow-credentials'] = 'true';
+      }
     },
   })
 );
@@ -954,6 +1278,34 @@ app.use('/api/v1/billing',
     },
     onProxyRes: (proxyRes, req) => {
       // Ensure CORS headers from gateway are preserved
+      const origin = req.headers.origin;
+      if (origin) {
+        proxyRes.headers['access-control-allow-origin'] = origin;
+        proxyRes.headers['access-control-allow-credentials'] = 'true';
+      }
+    },
+  })
+);
+
+// Notification service proxy
+app.use('/api/v1/notifications',
+  requireAuth,
+  requireTenantContext,
+  createProxyMiddleware({
+    target: config.notificationServiceUrl,
+    changeOrigin: true,
+    pathRewrite: { '^/api/v1/notifications': '/api/notifications' },
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+      // Re-stream body for POST/PUT/PATCH
+      if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
+        const bodyData = JSON.stringify((req as any).body);
+        proxyReq.setHeader('Content-Type', 'application/json');
+        proxyReq.setHeader('Content-Length', Buffer.byteLength(bodyData));
+        proxyReq.write(bodyData);
+      }
+    },
+    onProxyRes: (proxyRes, req) => {
       const origin = req.headers.origin;
       if (origin) {
         proxyRes.headers['access-control-allow-origin'] = origin;
@@ -999,6 +1351,20 @@ app.use('/api/v1/clients',
     target: config.clientServiceUrl,
     changeOrigin: true,
     pathRewrite: { '^/api/v1/clients': '/api/v1' },
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+    },
+  })
+);
+
+// Document service proxy
+app.use('/api/documents',
+  requireAuth,
+  requireTenantContext,
+  createProxyMiddleware({
+    target: config.documentServiceUrl || 'http://localhost:3007',
+    changeOrigin: true,
+    pathRewrite: { '^/api/documents': '/api/documents' },
     onProxyReq: (proxyReq, req) => {
       addTenantHeaders(proxyReq, req as TenantContextRequest);
     },
@@ -1097,6 +1463,14 @@ function addTenantHeaders(proxyReq: any, req: TenantContextRequest): void {
   if (req.tenantContext) {
     proxyReq.setHeader('X-Tenant-ID', req.tenantContext.tenantId);
     proxyReq.setHeader('X-Tenant-Slug', req.tenantContext.tenantSlug);
+  } else if (req.user?.tenantId || req.user?.tenantSlug) {
+    // Fall back to tenant claims from the token when context isn't populated (e.g. localhost)
+    if (req.user?.tenantId) {
+      proxyReq.setHeader('X-Tenant-ID', req.user.tenantId);
+    }
+    if (req.user?.tenantSlug) {
+      proxyReq.setHeader('X-Tenant-Slug', req.user.tenantSlug);
+    }
   } else if (req.domainResolution?.tenantSlug) {
     // Forward tenant slug from domain resolution even if full context not loaded
     proxyReq.setHeader('X-Tenant-Slug', req.domainResolution.tenantSlug);

@@ -11,6 +11,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { PhoneInput, PhoneDisplay } from '@/components/ui/phone-input';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -71,6 +72,7 @@ import { candidateApi, type JobCandidate, type CreateCandidateDto } from '@/lib/
 import { useOrgSettings } from '@/hooks/use-org-settings';
 import { formatSalaryRange, formatDate, getCurrencySymbol, getAvatarColor } from '@/lib/format';
 import { JobDescriptionForm, type JobFormData } from '../_components/JobDescriptionForm';
+import { ScheduleInterviewDialog } from '../../interviews/_components/ScheduleInterviewDialog';
 
 const statusColors: Record<string, string> = {
   open: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
@@ -150,6 +152,20 @@ export default function JobDetailPage() {
   const [savingCandidate, setSavingCandidate] = useState(false);
   const [documentViewerOpen, setDocumentViewerOpen] = useState(false);
   const [viewingDocument, setViewingDocument] = useState<{ url: string; name: string } | null>(null);
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [candidateToSchedule, setCandidateToSchedule] = useState<JobCandidate | null>(null);
+  
+  // Send offer dialog state
+  const [sendOfferOpen, setSendOfferOpen] = useState(false);
+  const [candidateForOffer, setCandidateForOffer] = useState<JobCandidate | null>(null);
+  const [offerData, setOfferData] = useState({
+    salary: 0,
+    currency: 'INR',
+    joiningDate: '',
+    designation: '',
+    department: '',
+  });
+  const [sendingOffer, setSendingOffer] = useState(false);
 
   // Form state for add candidate
   const [newCandidate, setNewCandidate] = useState<CreateCandidateDto>({
@@ -316,6 +332,37 @@ export default function JobDetailPage() {
     }
   };
 
+  const handleMarkAsHired = async (candidate: JobCandidate) => {
+    // Only allow hiring if candidate has been offered
+    if (candidate.status !== 'OFFERED') {
+      toast.error('Candidate must be in OFFERED status before being marked as hired');
+      return;
+    }
+    
+    try {
+      const result = await candidateApi.markAsHired(candidate.id);
+      toast.success(result.message || 'Employee created successfully!');
+      loadCandidates();
+    } catch (error: any) {
+      console.error('Failed to mark as hired:', error);
+      toast.error(error.response?.data?.error || 'Failed to mark as hired');
+    }
+  };
+
+  // Handle job status change
+  const handleJobStatusChange = async (newStatus: string) => {
+    try {
+      await jobApi.updateJob(jobId, { status: newStatus as any });
+      toast.success('Job Status Updated', {
+        description: `Job status changed to ${newStatus.replace('-', ' ')}.`,
+      });
+      loadJob();
+    } catch (error) {
+      console.error('Failed to update job status:', error);
+      toast.error('Failed to update job status');
+    }
+  };
+
   // Open edit candidate dialog
   const handleEditCandidate = (candidate: JobCandidate) => {
     setEditingCandidate(candidate);
@@ -327,6 +374,99 @@ export default function JobDetailPage() {
   const handleViewDocument = (url: string, candidateName: string) => {
     setViewingDocument({ url, name: `${candidateName}'s Resume` });
     setDocumentViewerOpen(true);
+  };
+
+  // Schedule interview for candidate
+  const handleScheduleInterview = (candidate: JobCandidate) => {
+    setCandidateToSchedule(candidate);
+    setScheduleDialogOpen(true);
+  };
+
+  // Handle interview scheduled callback
+  const handleInterviewScheduled = async (data?: { type: string; candidateId: string }) => {
+    if (!data || !candidateToSchedule) {
+      setScheduleDialogOpen(false);
+      setCandidateToSchedule(null);
+      return;
+    }
+
+    // Map interview type to candidate status
+    const statusMap: Record<string, string> = {
+      PHONE_SCREEN: 'SCREENING',
+      TECHNICAL: 'SHORTLISTED',
+      HR: 'INTERVIEWED',
+      MANAGER: 'INTERVIEWED',
+      FINAL: 'INTERVIEWED',
+      ASSIGNMENT: 'SHORTLISTED',
+    };
+
+    const newStatus = statusMap[data.type];
+    
+    if (newStatus) {
+      try {
+        await candidateApi.updateCandidate(jobId, candidateToSchedule.id, { status: newStatus });
+        toast.success(`Interview scheduled! Status updated to ${newStatus.replace('_', ' ').toLowerCase()}`);
+        loadCandidates();
+      } catch (error) {
+        console.error('Failed to update candidate status:', error);
+      }
+    }
+    
+    setScheduleDialogOpen(false);
+    setCandidateToSchedule(null);
+  };
+
+  // Open send offer dialog
+  const handleOpenSendOffer = (candidate: JobCandidate) => {
+    setCandidateForOffer(candidate);
+    setOfferData({
+      salary: candidate.expectedSalary || 0,
+      currency: orgSettings.currency || 'INR',
+      joiningDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 30 days from now
+      designation: job?.title || '',
+      department: job?.department || '',
+    });
+    setSendOfferOpen(true);
+  };
+
+  // Send offer to candidate
+  const handleSendOffer = async () => {
+    if (!candidateForOffer || !job) return;
+    
+    if (!offerData.salary || offerData.salary <= 0) {
+      toast.error('Please enter a valid salary');
+      return;
+    }
+    if (!offerData.joiningDate) {
+      toast.error('Please select a joining date');
+      return;
+    }
+
+    try {
+      setSendingOffer(true);
+      const result = await candidateApi.sendOffer(job.id, candidateForOffer.id, {
+        salary: offerData.salary,
+        currency: offerData.currency,
+        joiningDate: offerData.joiningDate,
+        designation: offerData.designation,
+        department: offerData.department,
+      });
+      
+      toast.success('Offer Sent Successfully!', {
+        description: `Offer email has been sent to ${candidateForOffer.email}. Valid until ${new Date(result.expiresAt).toLocaleDateString()}.`,
+      });
+      
+      setSendOfferOpen(false);
+      setCandidateForOffer(null);
+      loadCandidates();
+    } catch (error: any) {
+      console.error('Failed to send offer:', error);
+      toast.error('Failed to send offer', {
+        description: error.message || 'Please try again',
+      });
+    } finally {
+      setSendingOffer(false);
+    }
   };
 
   // Download document
@@ -745,6 +885,41 @@ ${filteredCandidates.map(candidate =>
             <Badge className={statusColors[job.status]}>
               {job.status.replace('-', ' ').toUpperCase()}
             </Badge>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-7 w-7 focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuLabel>Change Status</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {job.status !== 'open' && (
+                  <DropdownMenuItem onClick={() => handleJobStatusChange('open')}>
+                    <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
+                    Open
+                  </DropdownMenuItem>
+                )}
+                {job.status !== 'on-hold' && (
+                  <DropdownMenuItem onClick={() => handleJobStatusChange('on-hold')}>
+                    <Calendar className="h-4 w-4 mr-2 text-yellow-500" />
+                    On Hold
+                  </DropdownMenuItem>
+                )}
+                {job.status !== 'closed' && (
+                  <DropdownMenuItem onClick={() => handleJobStatusChange('closed')}>
+                    <XCircle className="h-4 w-4 mr-2 text-red-500" />
+                    Closed
+                  </DropdownMenuItem>
+                )}
+                {job.status !== 'completed' && (
+                  <DropdownMenuItem onClick={() => handleJobStatusChange('completed')}>
+                    <Award className="h-4 w-4 mr-2 text-blue-500" />
+                    Completed
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
           <div className="flex items-center gap-4 text-muted-foreground mt-2">
             <span className="flex items-center gap-1">
@@ -1013,7 +1188,7 @@ ${filteredCandidates.map(candidate =>
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex items-start gap-3 flex-1 min-w-0">
                             <Avatar className="h-11 w-11 flex-shrink-0">
-                              <AvatarFallback className={`${getAvatarColor(candidate.email || candidate.firstName + candidate.lastName).className} font-semibold`}>
+                              <AvatarFallback className={`${getAvatarColor((candidate.email || '') + candidate.firstName + candidate.lastName).className} font-semibold`}>
                                 {candidate.firstName[0]}{candidate.lastName[0]}
                               </AvatarFallback>
                             </Avatar>
@@ -1034,7 +1209,7 @@ ${filteredCandidates.map(candidate =>
                                 {candidate.phone && (
                                   <div className="flex items-center gap-1.5">
                                     <Phone className="h-3.5 w-3.5" />
-                                    <span>{candidate.phone}</span>
+                                    <PhoneDisplay value={candidate.phone} />
                                   </div>
                                 )}
                               </div>
@@ -1068,25 +1243,28 @@ ${filteredCandidates.map(candidate =>
                                 <Edit className="h-4 w-4 mr-2" />
                                 Edit Candidate
                               </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => router.push(`/hr/candidates/${job.id}/${candidate.id}`)}>
+                                <Eye className="h-4 w-4 mr-2" />
+                                View Details
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleScheduleInterview(candidate)}>
+                                <Video className="h-4 w-4 mr-2" />
+                                Schedule Interview
+                              </DropdownMenuItem>
                               <DropdownMenuSeparator />
-                              <DropdownMenuLabel>Change Status</DropdownMenuLabel>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, 'SCREENING')}>
-                                Move to Screening
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, 'SHORTLISTED')}>
-                                Shortlist
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, 'INTERVIEWED')}>
-                                Mark as Interviewed
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, 'OFFERED')}>
+                              <DropdownMenuLabel>Final Decision</DropdownMenuLabel>
+                              <DropdownMenuItem onClick={() => handleOpenSendOffer(candidate)}>
+                                <Award className="h-4 w-4 mr-2 text-amber-500" />
                                 Send Offer
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, 'HIRED')}>
-                                <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
-                                Mark as Hired
-                              </DropdownMenuItem>
+                              {candidate.status === 'OFFERED' && (
+                                <DropdownMenuItem 
+                                  onClick={() => handleMarkAsHired(candidate)}
+                                >
+                                  <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
+                                  Mark as Hired
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuSeparator />
                               <DropdownMenuItem 
                                 onClick={() => handleUpdateStatus(candidate.id, 'REJECTED')}
@@ -1166,11 +1344,11 @@ ${filteredCandidates.map(candidate =>
             </div>
             <div className="space-y-2">
               <Label htmlFor="phone">Phone</Label>
-              <Input
-                id="phone"
+              <PhoneInput
                 value={newCandidate.phone}
-                onChange={(e) => setNewCandidate({ ...newCandidate, phone: e.target.value })}
-                placeholder="+91 9876543210"
+                onChange={(value) => setNewCandidate({ ...newCandidate, phone: value })}
+                defaultCountry="IN"
+                placeholder="Enter phone number"
               />
             </div>
             <div className="space-y-2">
@@ -1344,10 +1522,11 @@ ${filteredCandidates.map(candidate =>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="editPhone">Phone</Label>
-                  <Input
-                    id="editPhone"
+                  <PhoneInput
                     value={editingCandidate.phone || ''}
-                    onChange={(e) => setEditingCandidate({ ...editingCandidate, phone: e.target.value })}
+                    onChange={(value) => setEditingCandidate({ ...editingCandidate, phone: value })}
+                    defaultCountry="IN"
+                    placeholder="Enter phone number"
                   />
                 </div>
                 <div className="space-y-2">
@@ -1528,6 +1707,131 @@ ${filteredCandidates.map(candidate =>
               );
             })()}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Schedule Interview Dialog */}
+      {candidateToSchedule && job && (
+        <ScheduleInterviewDialog
+          open={scheduleDialogOpen}
+          onOpenChange={(open) => {
+            setScheduleDialogOpen(open);
+            if (!open) setCandidateToSchedule(null);
+          }}
+          onSuccess={handleInterviewScheduled}
+          preSelectedCandidate={{
+            id: candidateToSchedule.id,
+            name: `${candidateToSchedule.firstName} ${candidateToSchedule.lastName}`,
+            email: candidateToSchedule.email,
+            jobId: job.id,
+            jobTitle: job.title,
+          }}
+        />
+      )}
+
+      {/* Send Offer Dialog */}
+      <Dialog open={sendOfferOpen} onOpenChange={setSendOfferOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Award className="h-5 w-5 text-amber-500" />
+              Send Job Offer
+            </DialogTitle>
+            <DialogDescription>
+              Send an offer letter to {candidateForOffer?.firstName} {candidateForOffer?.lastName}. 
+              They will receive an email with a link to accept or decline.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="offer-salary">Annual Salary *</Label>
+                <Input
+                  id="offer-salary"
+                  type="number"
+                  value={offerData.salary || ''}
+                  onChange={(e) => setOfferData({ ...offerData, salary: Number(e.target.value) })}
+                  placeholder="e.g. 1200000"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="offer-currency">Currency</Label>
+                <Select 
+                  value={offerData.currency} 
+                  onValueChange={(value) => setOfferData({ ...offerData, currency: value })}
+                >
+                  <SelectTrigger id="offer-currency">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="INR">INR (₹)</SelectItem>
+                    <SelectItem value="USD">USD ($)</SelectItem>
+                    <SelectItem value="EUR">EUR (€)</SelectItem>
+                    <SelectItem value="GBP">GBP (£)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="offer-joining-date">Joining Date *</Label>
+              <Input
+                id="offer-joining-date"
+                type="date"
+                value={offerData.joiningDate}
+                onChange={(e) => setOfferData({ ...offerData, joiningDate: e.target.value })}
+                min={new Date().toISOString().split('T')[0]}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="offer-designation">Designation</Label>
+              <Input
+                id="offer-designation"
+                value={offerData.designation}
+                onChange={(e) => setOfferData({ ...offerData, designation: e.target.value })}
+                placeholder="e.g. Senior Software Engineer"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="offer-department">Department</Label>
+              <Input
+                id="offer-department"
+                value={offerData.department}
+                onChange={(e) => setOfferData({ ...offerData, department: e.target.value })}
+                placeholder="e.g. Engineering"
+              />
+            </div>
+            <div className="p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg text-sm text-amber-800 dark:text-amber-200">
+              <p className="font-medium mb-1">📧 What happens next?</p>
+              <ul className="space-y-1 text-amber-700 dark:text-amber-300">
+                <li>• Candidate receives an email with offer details</li>
+                <li>• They can accept or decline via a secure link</li>
+                <li>• The offer is valid for 7 days</li>
+                <li>• If accepted, an employee record is automatically created</li>
+              </ul>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSendOfferOpen(false)} disabled={sendingOffer}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSendOffer} 
+              disabled={sendingOffer || !offerData.salary || !offerData.joiningDate}
+              className="bg-amber-600 hover:bg-amber-700"
+            >
+              {sendingOffer ? (
+                <>
+                  <span className="animate-spin mr-2">⏳</span>
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Mail className="h-4 w-4 mr-2" />
+                  Send Offer
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

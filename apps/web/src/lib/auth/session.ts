@@ -20,17 +20,14 @@ export async function getSession(): Promise<Session | null> {
   const cookieStore = cookies();
   const token = cookieStore.get('accessToken')?.value;
 
-  console.log('[Session] Checking session, token exists:', !!token);
   
   if (!token) {
-    console.log('[Session] No token found, returning null');
     return null;
   }
 
   try {
     const { payload } = await jwtVerify(token, JWT_SECRET);
     
-    console.log('[Session] JWT verified, payload type:', payload.type);
     
     // Handle platform admin tokens (type: 'platform_admin')
     const isPlatformAdmin = payload.type === 'platform_admin';
@@ -46,11 +43,9 @@ export async function getSession(): Promise<Session | null> {
       isPlatformAdmin,
     };
     
-    console.log('[Session] Session created:', { email: session.email, isPlatformAdmin: session.isPlatformAdmin });
     
     return session;
   } catch (err) {
-    console.log('[Session] JWT verification failed:', err);
     return null;
   }
 }

@@ -9,6 +9,15 @@ export default function IntegrationsPage() {
     connectingIntegration,
     connectIntegration,
     disconnectIntegration,
+    // OpenAI specific
+    openAISettings,
+    openAIDialogOpen,
+    savingOpenAI,
+    testingConnection,
+    saveOpenAISettings,
+    testOpenAIConnection,
+    openOpenAIDialog,
+    closeOpenAIDialog,
   } = useOrganizationContext();
 
   return (
@@ -17,6 +26,14 @@ export default function IntegrationsPage() {
       connectingIntegration={connectingIntegration}
       onConnect={connectIntegration}
       onDisconnect={disconnectIntegration}
+      openAISettings={openAISettings}
+      openAIDialogOpen={openAIDialogOpen}
+      savingOpenAI={savingOpenAI}
+      testingConnection={testingConnection}
+      onSaveOpenAI={saveOpenAISettings}
+      onTestOpenAI={testOpenAIConnection}
+      onOpenOpenAIDialog={openOpenAIDialog}
+      onCloseOpenAIDialog={closeOpenAIDialog}
     />
   );
 }

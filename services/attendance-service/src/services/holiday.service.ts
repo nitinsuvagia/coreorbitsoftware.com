@@ -2,7 +2,7 @@
  * Holiday Service - Holiday calendar management
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '.prisma/tenant-client';
 import { v4 as uuidv4 } from 'uuid';
 import {
   format,
@@ -19,6 +19,16 @@ import { logger } from '../utils/logger';
 // ============================================================================
 // TYPES
 // ============================================================================
+
+// Helper to convert lowercase type to uppercase for database enum
+const toDbHolidayType = (type: 'public' | 'optional' | 'restricted'): 'PUBLIC' | 'OPTIONAL' | 'RESTRICTED' => {
+  return type.toUpperCase() as 'PUBLIC' | 'OPTIONAL' | 'RESTRICTED';
+};
+
+// Helper to convert database enum to lowercase for API response
+const fromDbHolidayType = (type: string): 'public' | 'optional' | 'restricted' => {
+  return type.toLowerCase() as 'public' | 'optional' | 'restricted';
+};
 
 export interface CreateHolidayInput {
   name: string;
@@ -84,7 +94,7 @@ export async function createHoliday(
       id,
       name: input.name,
       date,
-      type: input.type,
+      type: toDbHolidayType(input.type),
       description: input.description,
       isRecurring: input.isRecurring ?? false,
       appliesToAll: input.appliesToAll ?? true,
@@ -155,7 +165,7 @@ export async function updateHoliday(
   
   if (input.name) data.name = input.name;
   if (input.date) data.date = parseISO(input.date);
-  if (input.type) data.type = input.type;
+  if (input.type) data.type = toDbHolidayType(input.type);
   if (input.description !== undefined) data.description = input.description;
   if (input.isRecurring !== undefined) data.isRecurring = input.isRecurring;
   if (input.appliesToAll !== undefined) data.appliesToAll = input.appliesToAll;
@@ -215,7 +225,7 @@ export async function getHolidayById(
   prisma: PrismaClient,
   id: string
 ): Promise<any | null> {
-  return prisma.holiday.findUnique({
+  const holiday = await prisma.holiday.findUnique({
     where: { id },
     include: {
       holidayDepartments: {
@@ -225,6 +235,13 @@ export async function getHolidayById(
       },
     },
   });
+  
+  if (!holiday) return null;
+  
+  return {
+    ...holiday,
+    type: fromDbHolidayType(holiday.type),
+  };
 }
 
 /**
@@ -243,7 +260,7 @@ export async function listHolidays(
   };
   
   if (filters.type) {
-    where.type = filters.type;
+    where.type = toDbHolidayType(filters.type);
   }
   
   if (filters.month) {
@@ -272,7 +289,11 @@ export async function listHolidays(
     );
   }
   
-  return holidays;
+  // Convert type to lowercase for API response
+  return holidays.map(h => ({
+    ...h,
+    type: fromDbHolidayType(h.type),
+  }));
 }
 
 /**
@@ -303,7 +324,11 @@ export async function getHolidaysInRange(
     );
   }
   
-  return holidays;
+  // Convert type to lowercase for API response
+  return holidays.map(h => ({
+    ...h,
+    type: fromDbHolidayType(h.type),
+  }));
 }
 
 /**
@@ -350,7 +375,11 @@ export async function getUpcomingHolidays(
     );
   }
   
-  return holidays.slice(0, limit);
+  // Convert type to lowercase for API response
+  return holidays.slice(0, limit).map(h => ({
+    ...h,
+    type: fromDbHolidayType(h.type),
+  }));
 }
 
 /**

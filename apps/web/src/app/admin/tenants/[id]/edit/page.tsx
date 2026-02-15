@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PhoneInput } from '@/components/ui/phone-input';
 import {
   Select,
   SelectContent,
@@ -277,10 +278,11 @@ export default function EditTenantPage() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="phone">Phone</Label>
-            <Input
-              id="phone"
+            <PhoneInput
               value={formData.phone}
-              onChange={(e) => updateField('phone', e.target.value)}
+              onChange={(value) => updateField('phone', value)}
+              defaultCountry="IN"
+              placeholder="Enter phone number"
             />
           </div>
           <div className="space-y-2">

@@ -10,6 +10,11 @@ const JWT_SECRET = new TextEncoder().encode(
 const publicPaths = [
   '/verify-email',
   '/resend-verification',
+  '/assessment',
+  '/offer',  // Public offer response page
+  '/reactivate-tenant',  // Tenant reactivation page
+  '/reactivate-account', // User account reactivation page
+  '/resend-reactivation', // Resend reactivation link page
   '/_next',
   '/api',
   '/favicon.ico',
@@ -28,12 +33,9 @@ const authPages = ['/login', '/signup', '/forgot-password', '/reset-password'];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  
-  console.log('[Middleware] Processing path:', pathname);
 
   // Get token from cookie
   const token = request.cookies.get('accessToken')?.value;
-  console.log('[Middleware] Token exists:', !!token);
 
   // Check if user is on auth pages while logged in - redirect to dashboard
   if (authPages.some(path => pathname.startsWith(path))) {
@@ -42,43 +44,35 @@ export async function middleware(request: NextRequest) {
         const { payload } = await jwtVerify(token, JWT_SECRET);
         const isPlatformAdmin = payload.type === 'platform_admin';
         const redirectUrl = isPlatformAdmin ? '/admin/dashboard' : '/dashboard';
-        console.log('[Middleware] Authenticated user on auth page, redirecting to:', redirectUrl);
         return NextResponse.redirect(new URL(redirectUrl, request.url));
       } catch (error) {
         // Invalid token, allow access to login page and clear bad cookies
-        console.log('[Middleware] Invalid token on auth page, allowing access');
         const response = NextResponse.next();
         response.cookies.delete('accessToken');
         response.cookies.delete('refreshToken');
         return response;
       }
     }
-    console.log('[Middleware] Auth page, no token, allowing');
     return NextResponse.next();
   }
 
   // Allow other public paths
   if (publicPaths.some(path => pathname.startsWith(path))) {
-    console.log('[Middleware] Public path, allowing');
     return NextResponse.next();
   }
 
   if (!token) {
-    console.log('[Middleware] No token, redirecting to login');
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
   try {
     const { payload } = await jwtVerify(token, JWT_SECRET);
-    console.log('[Middleware] JWT verified, type:', payload.type);
-
     const isPlatformAdmin = payload.type === 'platform_admin';
 
     // Check admin paths - require platform admin
     // Use exact match or path with trailing slash to avoid matching /admin-360
     if (adminPaths.some(path => pathname === path || pathname.startsWith(path + '/'))) {
       if (!isPlatformAdmin) {
-        console.log('[Middleware] Non-admin accessing admin path, redirecting to dashboard');
         return NextResponse.redirect(new URL('/dashboard', request.url));
       }
     }
@@ -86,15 +80,12 @@ export async function middleware(request: NextRequest) {
     // Check tenant paths - require tenant user
     if (tenantPaths.some(path => pathname.startsWith(path))) {
       if (isPlatformAdmin) {
-        console.log('[Middleware] Platform admin accessing tenant path, redirecting to admin dashboard');
         return NextResponse.redirect(new URL('/admin/dashboard', request.url));
       }
     }
 
-    console.log('[Middleware] Access granted');
     return NextResponse.next();
   } catch (error) {
-    console.log('[Middleware] JWT verification failed:', error);
     // Clear invalid token and redirect to login
     const response = NextResponse.redirect(new URL('/login', request.url));
     response.cookies.delete('accessToken');

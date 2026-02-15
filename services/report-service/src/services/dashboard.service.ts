@@ -2,7 +2,7 @@
  * Dashboard Service - Dashboard configurations and widgets
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '.prisma/tenant-client';
 import { v4 as uuid } from 'uuid';
 import { getTenantPrisma } from '@oms/database';
 import { logger } from '../utils/logger';

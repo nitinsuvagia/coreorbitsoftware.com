@@ -35,7 +35,8 @@ router.get('/', async (req: Request, res: Response) => {
       page = '1', 
       limit = '20',
       sortBy = 'createdAt',
-      sortOrder = 'desc'
+      sortOrder = 'desc',
+      includeTerminated = 'false', // By default, exclude terminated tenants
     } = req.query;
     
     const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
@@ -43,6 +44,16 @@ router.get('/', async (req: Request, res: Response) => {
     
     // Build where clause
     const where: any = {};
+    
+    // Filter out subscriptions for terminated/deleted tenants unless explicitly requested
+    if (includeTerminated !== 'true') {
+      where.tenant = {
+        AND: [
+          { status: { not: 'TERMINATED' } },
+          { deletedAt: null },
+        ],
+      };
+    }
     
     if (status) {
       where.status = status;
@@ -53,7 +64,10 @@ router.get('/', async (req: Request, res: Response) => {
     }
     
     if (search) {
+      // Merge search with existing tenant filter
+      const existingTenantFilter = where.tenant || {};
       where.tenant = {
+        ...existingTenantFilter,
         OR: [
           { name: { contains: search, mode: 'insensitive' } },
           { slug: { contains: search, mode: 'insensitive' } },

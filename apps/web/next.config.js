@@ -2,8 +2,43 @@
 const nextConfig = {
   reactStrictMode: true,
   
-  // Enable standalone output for Docker
-  output: 'standalone',
+  // Enable standalone output for Docker (commented out for local development)
+  // output: 'standalone',
+  
+  // Optimize file watching to prevent EMFILE errors
+  webpack: (config, { dev }) => {
+    if (dev) {
+      config.watchOptions = {
+        poll: 1000, // Check for changes every second
+        aggregateTimeout: 300, // Delay rebuild after change
+        ignored: [
+          '**/node_modules/**',
+          '**/.next/**',
+          '**/.git/**',
+          '**/logs/**',
+          '**/coverage/**',
+          '**/dist/**',
+          '**/.turbo/**',
+          '**/build/**',
+        ],
+      };
+      
+      // Reduce number of file watchers
+      config.snapshot = {
+        managedPaths: [],
+        buildDependencies: {
+          hash: true,
+          timestamp: false,
+        },
+        module: {
+          hash: true,
+          timestamp: false,
+        },
+      };
+    }
+    
+    return config;
+  },
   
   // Image optimization
   images: {

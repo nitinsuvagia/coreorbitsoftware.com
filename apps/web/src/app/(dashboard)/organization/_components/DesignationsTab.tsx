@@ -1,12 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Card,
   CardContent,
@@ -39,8 +46,33 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Briefcase, Plus, MoreHorizontal, Edit, Trash2, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Briefcase, Plus, MoreHorizontal, Edit, Trash2, RefreshCw, AlertTriangle, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import type { Designation, DesignationFormData, DesigFormErrors } from '../types';
+
+// Unique colors for each level (1-10+)
+const LEVEL_COLORS: Record<number, string> = {
+  1: 'bg-slate-100 text-slate-700 border-slate-300',
+  2: 'bg-zinc-100 text-zinc-700 border-zinc-300',
+  3: 'bg-stone-100 text-stone-700 border-stone-300',
+  4: 'bg-amber-100 text-amber-700 border-amber-300',
+  5: 'bg-yellow-100 text-yellow-700 border-yellow-300',
+  6: 'bg-lime-100 text-lime-700 border-lime-300',
+  7: 'bg-emerald-100 text-emerald-700 border-emerald-300',
+  8: 'bg-cyan-100 text-cyan-700 border-cyan-300',
+  9: 'bg-blue-100 text-blue-700 border-blue-300',
+  10: 'bg-violet-100 text-violet-700 border-violet-300',
+};
+
+// Get color for level (handles levels > 10)
+const getLevelColor = (level: number): string => {
+  if (level <= 10) return LEVEL_COLORS[level] || LEVEL_COLORS[1];
+  // For levels > 10, use premium colors
+  if (level <= 15) return 'bg-purple-100 text-purple-700 border-purple-300';
+  return 'bg-rose-100 text-rose-700 border-rose-300';
+};
+
+// Page size options
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 
 interface DesignationsTabProps {
   designations: Designation[];
@@ -81,6 +113,27 @@ export function DesignationsTab({
 }: DesignationsTabProps) {
   const [permanentDeleteId, setPermanentDeleteId] = useState<string | null>(null);
   const [isPermanentDeleting, setIsPermanentDeleting] = useState(false);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+
+  // Calculate paginated data
+  const { paginatedDesignations, totalPages, startIndex, endIndex } = useMemo(() => {
+    const total = designations.length;
+    const totalPages = Math.ceil(total / pageSize);
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = Math.min(startIndex + pageSize, total);
+    const paginatedDesignations = designations.slice(startIndex, endIndex);
+    
+    return { paginatedDesignations, totalPages, startIndex, endIndex };
+  }, [designations, currentPage, pageSize]);
+
+  // Reset to page 1 when page size changes
+  const handlePageSizeChange = (newSize: string) => {
+    setPageSize(parseInt(newSize));
+    setCurrentPage(1);
+  };
 
   const handlePermanentDelete = async () => {
     if (!permanentDeleteId) return;
@@ -128,36 +181,37 @@ export function DesignationsTab({
               </Button>
             </div>
           ) : (
-            <table className="w-full">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left p-3 font-medium">Designation</th>
-                  <th className="text-left p-3 font-medium">Code</th>
-                  <th className="text-left p-3 font-medium">Level</th>
-                  <th className="text-left p-3 font-medium">Employees</th>
-                  <th className="text-left p-3 font-medium">Status</th>
-                  <th className="text-left p-3 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {designations.map((desig) => (
-                  <tr key={desig.id} className="border-b hover:bg-muted/50">
-                    <td className="p-3">
-                      <div>
-                        <span className="font-medium">{desig.name}</span>
-                        {desig.description && (
-                          <p className="text-sm text-muted-foreground truncate max-w-xs">{desig.description}</p>
-                        )}
+            <>
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left p-3 font-medium">Designation</th>
+                    <th className="text-left p-3 font-medium">Code</th>
+                    <th className="text-left p-3 font-medium">Level</th>
+                    <th className="text-left p-3 font-medium">Employees</th>
+                    <th className="text-left p-3 font-medium">Status</th>
+                    <th className="text-left p-3 font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedDesignations.map((desig) => (
+                    <tr key={desig.id} className="border-b hover:bg-muted/50">
+                      <td className="p-3">
+                        <div>
+                          <span className="font-medium">{desig.name}</span>
+                          {desig.description && (
+                            <p className="text-sm text-muted-foreground truncate max-w-xs">{desig.description}</p>
+                          )}
                       </div>
                     </td>
-                    <td className="p-3">
-                      <code className="text-sm bg-muted px-2 py-1 rounded">{desig.code}</code>
-                    </td>
-                    <td className="p-3">
-                      <Badge variant={desig.level >= 5 ? 'default' : desig.level >= 3 ? 'secondary' : 'outline'}>
-                        Level {desig.level}
-                      </Badge>
-                    </td>
+                      <td className="p-3">
+                        <code className="text-sm bg-muted px-2 py-1 rounded">{desig.code}</code>
+                      </td>
+                      <td className="p-3">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getLevelColor(desig.level)}`}>
+                          Level {desig.level}
+                        </span>
+                      </td>
                     <td className="p-3">{desig._count?.employees || 0}</td>
                     <td className="p-3">
                       <Badge variant={desig.isActive ? 'default' : 'outline'}>
@@ -202,6 +256,74 @@ export function DesignationsTab({
                 ))}
               </tbody>
             </table>
+
+              {/* Pagination Controls */}
+              <div className="flex items-center justify-between px-2 py-4 border-t">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span>Rows per page:</span>
+                  <Select value={pageSize.toString()} onValueChange={handlePageSizeChange}>
+                    <SelectTrigger className="w-[70px] h-8">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PAGE_SIZE_OPTIONS.map((size) => (
+                        <SelectItem key={size} value={size.toString()}>
+                          {size}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <span className="text-sm text-muted-foreground">
+                    {startIndex + 1}-{endIndex} of {designations.length}
+                  </span>
+                  
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => setCurrentPage(1)}
+                      disabled={currentPage === 1}
+                    >
+                      <ChevronsLeft className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <span className="text-sm px-2">
+                      Page {currentPage} of {totalPages || 1}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={currentPage >= totalPages}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => setCurrentPage(totalPages)}
+                      disabled={currentPage >= totalPages}
+                    >
+                      <ChevronsRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
@@ -343,6 +465,9 @@ export function DesignationsTab({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      
+      {/* Bottom spacing to prevent content touching screen bottom */}
+      <div className="h-6" />
     </>
   );
 }

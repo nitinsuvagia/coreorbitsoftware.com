@@ -2,7 +2,7 @@
  * Designation Service - CRUD operations for job titles and designations
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '.prisma/tenant-client';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
 
@@ -106,7 +106,7 @@ export async function listDesignations(
   filters: DesignationFilters
 ): Promise<{ data: any[]; total: number; page: number; pageSize: number }> {
   const page = filters.page || 1;
-  const pageSize = Math.min(filters.pageSize || 20, 100);
+  const pageSize = Math.min(filters.pageSize || 20, 1000);
   const skip = (page - 1) * pageSize;
   
   const where: any = {};

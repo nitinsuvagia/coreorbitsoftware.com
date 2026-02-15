@@ -49,7 +49,7 @@ export async function exportEmployeesToExcel(
       designation: true,
       team: true,
     },
-    orderBy: { lastName: 'asc' },
+    orderBy: { employeeCode: 'asc' },
   });
   
   const workbook = new Workbook();

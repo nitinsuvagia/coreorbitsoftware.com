@@ -2,7 +2,7 @@
  * Employee Service - Employee lifecycle management
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '.prisma/tenant-client';
 import { v4 as uuidv4 } from 'uuid';
 import { getEventBus, SQS_QUEUES, SNS_TOPICS } from '@oms/event-bus';
 import { logger } from '../utils/logger';
@@ -361,39 +361,34 @@ export async function getEmployeeById(
 
 /**
  * Get employee by user ID
+ * The User model has employeeId that references Employee
+ * So we need to find the user first, then get the employee through the relation
  */
 export async function getEmployeeByUserId(
   prisma: PrismaClient,
   userId: string
 ): Promise<any> {
-  const employee = await prisma.employee.findFirst({
-    where: { userId },
+  // First find the user, then get their linked employee
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
     include: {
-      user: {
-        select: { 
-          id: true, 
-          email: true, 
-          firstName: true, 
-          lastName: true, 
-          phone: true,
-        },
-      },
-      department: { select: { id: true, name: true, code: true } },
-      designation: { select: { id: true, name: true, code: true, level: true } },
-      team: { select: { id: true, name: true, code: true } },
-      reportingTo: {
+      employee: {
         include: {
-          user: { select: { firstName: true, lastName: true } },
+          department: { select: { id: true, name: true, code: true } },
+          designation: { select: { id: true, name: true, code: true, level: true } },
+          reportingManager: {
+            select: { id: true, firstName: true, lastName: true },
+          },
         },
       },
     },
   });
   
-  if (!employee) {
-    throw new Error('Employee not found');
+  if (!user || !user.employee) {
+    return null; // Return null instead of throwing to allow graceful handling
   }
   
-  return employee;
+  return user.employee;
 }
 
 /**
@@ -461,7 +456,7 @@ export async function listEmployees(
       where,
       skip,
       take: pageSize,
-      orderBy: [{ user: { firstName: 'asc' } }, { user: { lastName: 'asc' } }],
+      orderBy: [{ employeeCode: 'asc' }],
       include: {
         user: {
           select: { id: true, email: true, firstName: true, lastName: true, avatar: true },
@@ -701,7 +696,7 @@ export async function getDirectReports(
       designation: { select: { id: true, name: true } },
       department: { select: { id: true, name: true } },
     },
-    orderBy: { user: { firstName: 'asc' } },
+    orderBy: { employeeCode: 'asc' },
   });
 }
 

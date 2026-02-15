@@ -2,7 +2,7 @@
  * Preference Service - User notification preferences
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '.prisma/tenant-client';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
 import { config, NotificationType } from '../config';

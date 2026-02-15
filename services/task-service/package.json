@@ -4,7 +4,7 @@
   "description": "Office Management System - Task Service (Tasks, Subtasks, Comments, Activity)",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "lint": "eslint src --ext .ts",

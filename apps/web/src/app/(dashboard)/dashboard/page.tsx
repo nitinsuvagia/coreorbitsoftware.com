@@ -7,8 +7,10 @@ import {
   ErrorAlert,
   StatsGrid,
   TodaySchedule,
+  TodoList,
   AlertsCard,
   RecentActivity,
+  CalendarSection,
 } from './_components';
 
 export default function DashboardPage() {
@@ -26,17 +28,26 @@ export default function DashboardPage() {
       {/* Stats Grid */}
       <StatsGrid stats={stats} limits={limits} loading={loading} />
 
-      {/* Content Grid */}
+      {/* Content Grid - Schedule and Tasks */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-        {/* Today's Schedule */}
+        {/* Today's Schedule - spans 4 columns */}
         <TodaySchedule loading={loading} />
 
-        {/* Quick Actions / Alerts */}
-        <AlertsCard stats={stats} tenant={tenant} loading={loading} />
+        {/* My Tasks / Todo List - spans 3 columns */}
+        <TodoList loading={loading} />
       </div>
 
-      {/* Recent Activity */}
-      <RecentActivity />
+      {/* Alerts and Recent Activity */}
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* Alerts & Reminders */}
+        <AlertsCard stats={stats} tenant={tenant} loading={loading} />
+
+        {/* Recent Activity */}
+        <RecentActivity />
+      </div>
+
+      {/* HR Calendar Section - Full Calendar with Legend, Events, Stats */}
+      <CalendarSection loading={loading} />
     </div>
   );
 }

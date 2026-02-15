@@ -2,7 +2,7 @@
  * Comment Service - Task comments with mentions
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '.prisma/tenant-client';
 import { v4 as uuidv4 } from 'uuid';
 import { differenceInMinutes } from 'date-fns';
 import { getEventBus, SQS_QUEUES } from '@oms/event-bus';

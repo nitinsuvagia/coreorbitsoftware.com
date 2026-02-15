@@ -10,6 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/lib/auth/auth-context';
+import { api } from '@/lib/api/client';
 import { 
   Users, 
   Building2, 
@@ -74,12 +75,28 @@ interface AttendanceMetrics {
   onTimePercentage: number;
 }
 
+interface DepartmentSalary {
+  name: string;
+  annualSalary: number;
+  monthlySalary: number;
+}
+
 interface FinancialMetrics {
   totalPayroll: number;
+  totalAnnualPayroll?: number;
   pendingPayments: number;
   monthlyExpenses: number;
-  revenueByDept: { name: string; revenue: number }[];
+  departmentSalaries?: DepartmentSalary[];
   budgetAlerts: number;
+}
+
+interface ActiveProject {
+  id: string;
+  name: string;
+  status: 'on-track' | 'at-risk' | 'delayed';
+  completion: number;
+  teamSize: number;
+  daysRemaining: number;
 }
 
 interface ProjectMetrics {
@@ -89,6 +106,7 @@ interface ProjectMetrics {
   resourceUtilization: number;
   avgCompletion: number;
   upcomingDeadlines: number;
+  activeProjectsList?: ActiveProject[];
 }
 
 interface TaskMetrics {
@@ -101,9 +119,14 @@ interface TaskMetrics {
 
 interface PerformanceMetrics {
   avgTeamScore: number;
-  topPerformers: { name: string; score: number; avatar: string }[];
+  topPerformers: { name: string; score: number; department: string }[];
   improvementNeeded: number;
   departmentScores: { dept: string; score: number }[];
+}
+
+interface DepartmentEmployeeCount {
+  name: string;
+  count: number;
 }
 
 interface DashboardData {
@@ -113,8 +136,22 @@ interface DashboardData {
   projects: ProjectMetrics;
   tasks: TaskMetrics;
   performance: PerformanceMetrics;
+  employeesByDepartment: DepartmentEmployeeCount[];
   recentActivities: Activity[];
   alerts: Alert[];
+  quickStats?: QuickStats;
+  settings?: DashboardSettings;
+}
+
+interface DashboardSettings {
+  currency: string;
+}
+
+interface QuickStats {
+  pendingApprovals: number;
+  documentsExpiring: number;
+  newHireOnboarding: number;
+  exitInterviews: number;
 }
 
 interface Activity {
@@ -217,10 +254,11 @@ interface ChartCardProps {
   title: string;
   data: { label: string; value: number; color?: string }[];
   type: 'bar' | 'pie';
+  maxValue?: number; // Optional: if provided, bars scale relative to this value
 }
 
-function ChartCard({ title, data, type }: ChartCardProps) {
-  const maxValue = Math.max(...data.map(d => d.value));
+function ChartCard({ title, data, type, maxValue: propMaxValue }: ChartCardProps) {
+  const maxValue = propMaxValue || Math.max(...data.map(d => d.value));
 
   return (
     <Card>
@@ -275,18 +313,63 @@ export default function TenantAdmin360Page() {
   const [isDownloading, setIsDownloading] = useState(false);
   const pageRef = useRef<HTMLDivElement>(null);
   const [data, setData] = useState<DashboardData | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // Mock data - Replace with actual API calls
+  // Currency formatter based on organization settings
+  const formatCurrency = (amount: number, compact: boolean = false) => {
+    const currency = data?.settings?.currency || 'INR';
+    const currencySymbols: Record<string, string> = {
+      INR: '₹',
+      USD: '$',
+      EUR: '€',
+      GBP: '£',
+      AED: 'د.إ',
+      SAR: '﷼',
+      JPY: '¥',
+      CNY: '¥',
+      AUD: 'A$',
+      CAD: 'C$',
+    };
+    const symbol = currencySymbols[currency] || currency + ' ';
+    
+    if (compact) {
+      if (amount >= 10000000) { // 1 Crore for INR or 10M for others
+        return `${symbol}${(amount / (currency === 'INR' ? 10000000 : 1000000)).toFixed(2)}${currency === 'INR' ? 'Cr' : 'M'}`;
+      } else if (amount >= 100000) { // 1 Lakh for INR or 100K for others  
+        return `${symbol}${(amount / (currency === 'INR' ? 100000 : 1000)).toFixed(currency === 'INR' ? 2 : 0)}${currency === 'INR' ? 'L' : 'K'}`;
+      } else if (amount >= 1000) {
+        return `${symbol}${(amount / 1000).toFixed(0)}K`;
+      }
+    }
+    return `${symbol}${amount.toLocaleString()}`;
+  };
+
+  // Fetch real data from API
   useEffect(() => {
     loadDashboardData();
   }, []);
 
   const loadDashboardData = async () => {
     setLoading(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    setError(null);
     
-    // Mock data
+    try {
+      const response = await api.get('/api/v1/organization/dashboard/admin-360');
+      if (response.data.success) {
+        setData(response.data.data);
+      } else {
+        console.error('[Admin-360] API returned error:', response.data.error);
+        setError(response.data.error?.message || 'Failed to load dashboard data');
+      }
+    } catch (err: any) {
+      console.error('[Admin-360] API call failed:', err.response?.data || err.message);
+      setError(err.response?.data?.error?.message || err.message || 'Failed to load dashboard data');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const setMockDataFallback = () => {
     setData({
       organization: {
         totalEmployees: 247,
@@ -313,12 +396,12 @@ export default function TenantAdmin360Page() {
         totalPayroll: 1850000,
         pendingPayments: 45000,
         monthlyExpenses: 380000,
-        revenueByDept: [
-          { name: 'Engineering', revenue: 850000 },
-          { name: 'Sales', revenue: 620000 },
-          { name: 'Marketing', revenue: 380000 },
-          { name: 'Support', revenue: 290000 },
-          { name: 'HR', revenue: 180000 },
+        departmentSalaries: [
+          { name: 'Engineering', annualSalary: 850000, monthlySalary: 70833 },
+          { name: 'Sales', annualSalary: 620000, monthlySalary: 51667 },
+          { name: 'Marketing', annualSalary: 380000, monthlySalary: 31667 },
+          { name: 'Support', annualSalary: 290000, monthlySalary: 24167 },
+          { name: 'HR', annualSalary: 180000, monthlySalary: 15000 },
         ],
         budgetAlerts: 3,
       },
@@ -340,11 +423,11 @@ export default function TenantAdmin360Page() {
       performance: {
         avgTeamScore: 8.2,
         topPerformers: [
-          { name: 'Sarah Johnson', score: 9.5, avatar: '' },
-          { name: 'Michael Chen', score: 9.3, avatar: '' },
-          { name: 'Emily Davis', score: 9.1, avatar: '' },
-          { name: 'David Miller', score: 8.9, avatar: '' },
-          { name: 'Jessica Lee', score: 8.7, avatar: '' },
+          { name: 'Sarah Johnson', score: 9.5, department: 'Engineering' },
+          { name: 'Michael Chen', score: 9.3, department: 'Sales' },
+          { name: 'Emily Davis', score: 9.1, department: 'Marketing' },
+          { name: 'David Miller', score: 8.9, department: 'Support' },
+          { name: 'Jessica Lee', score: 8.7, department: 'HR' },
         ],
         improvementNeeded: 18,
         departmentScores: [
@@ -370,8 +453,6 @@ export default function TenantAdmin360Page() {
         { id: '4', type: 'warning', title: 'Document Expiring', message: '12 documents expiring this month', timestamp: '4 hours ago' },
       ],
     });
-    
-    setLoading(false);
   };
 
   const handleDownloadPDF = async () => {
@@ -496,12 +577,27 @@ export default function TenantAdmin360Page() {
     );
   }
 
-  const org = data?.organization!;
-  const attendance = data?.attendance!;
-  const financial = data?.financial!;
-  const projects = data?.projects!;
-  const tasks = data?.tasks!;
-  const performance = data?.performance!;
+  // Show error state if no data
+  if (!data) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
+        <AlertCircle className="h-16 w-16 text-destructive" />
+        <h2 className="text-xl font-semibold">Failed to Load Dashboard</h2>
+        <p className="text-muted-foreground">{error || 'Unable to fetch dashboard data'}</p>
+        <Button onClick={loadDashboardData}>
+          <RefreshCw className="mr-2 h-4 w-4" />
+          Try Again
+        </Button>
+      </div>
+    );
+  }
+
+  const org = data.organization;
+  const attendance = data.attendance;
+  const financial = data.financial;
+  const projects = data.projects;
+  const tasks = data.tasks;
+  const performance = data.performance;
 
   return (
     <div className="space-y-6 pb-8" ref={pageRef}>
@@ -556,7 +652,7 @@ export default function TenantAdmin360Page() {
         />
         <MetricCard
           title="Total Revenue"
-          value={`$${(org.totalRevenue / 1000000).toFixed(2)}M`}
+          value={formatCurrency(org.totalRevenue, true)}
           change={15.3}
           icon={DollarSign}
           color="green"
@@ -567,7 +663,7 @@ export default function TenantAdmin360Page() {
           value={`${org.budgetUtilized}%`}
           icon={Activity}
           color="orange"
-          subtitle={`$${(org.monthlyBudget / 1000).toFixed(0)}K monthly budget`}
+          subtitle={`${formatCurrency(org.monthlyBudget, true)} monthly budget`}
         />
       </div>
 
@@ -655,15 +751,15 @@ export default function TenantAdmin360Page() {
             <ChartCard
               title="Employees by Department"
               type="bar"
-              data={[
-                { label: 'Engineering', value: 87, color: '#3b82f6' },
-                { label: 'Sales', value: 54, color: '#10b981' },
-                { label: 'Marketing', value: 32, color: '#f59e0b' },
-                { label: 'Support', value: 28, color: '#8b5cf6' },
-                { label: 'HR', value: 18, color: '#ec4899' },
-                { label: 'Finance', value: 15, color: '#06b6d4' },
-                { label: 'Operations', value: 13, color: '#84cc16' },
-              ]}
+              maxValue={org.totalEmployees || org.activeEmployees}
+              data={(data.employeesByDepartment || []).slice(0, 7).map((dept, index) => {
+                const colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
+                return {
+                  label: dept.name,
+                  value: dept.count,
+                  color: colors[index % colors.length],
+                };
+              })}
             />
 
             {/* Task Completion */}
@@ -724,12 +820,12 @@ export default function TenantAdmin360Page() {
           {/* Revenue & Performance */}
           <div className="grid gap-4 md:grid-cols-2">
             <ChartCard
-              title="Revenue by Department (YTD)"
+              title="Salaries by Department (Annual)"
               type="bar"
-              data={financial.revenueByDept.map((dept, idx) => ({
+              data={(financial.departmentSalaries || []).map((dept, idx) => ({
                 label: dept.name,
-                value: dept.revenue / 1000,
-                color: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'][idx],
+                value: dept.annualSalary / 1000,
+                color: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'][idx % 5],
               }))}
             />
 
@@ -817,45 +913,57 @@ export default function TenantAdmin360Page() {
               <CardDescription>Detailed status of ongoing projects</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {[
-                  { name: 'Product Redesign', status: 'on-track', completion: 78, team: 12, deadline: '15 days' },
-                  { name: 'Mobile App v2.0', status: 'on-track', completion: 65, team: 8, deadline: '22 days' },
-                  { name: 'API Integration', status: 'at-risk', completion: 45, team: 5, deadline: '8 days' },
-                  { name: 'Marketing Campaign', status: 'on-track', completion: 82, team: 6, deadline: '12 days' },
-                  { name: 'Data Migration', status: 'delayed', completion: 30, team: 4, deadline: '-3 days' },
-                ].map((project, idx) => (
-                  <div key={idx} className="border rounded-lg p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-semibold">{project.name}</h4>
-                      <Badge variant={
-                        project.status === 'on-track' ? 'default' : 
-                        project.status === 'at-risk' ? 'secondary' : 
-                        'destructive'
-                      }>
-                        {project.status === 'on-track' ? 'On Track' : 
-                         project.status === 'at-risk' ? 'At Risk' : 
-                         'Delayed'}
-                      </Badge>
+              {(projects.activeProjectsList && projects.activeProjectsList.length > 0) ? (
+                <div className="space-y-3">
+                  {projects.activeProjectsList.map((project, idx) => (
+                    <div key={project.id || idx} className="border rounded-lg p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-semibold">{project.name}</h4>
+                        <Badge variant={
+                          project.status === 'on-track' ? 'default' : 
+                          project.status === 'at-risk' ? 'secondary' : 
+                          'destructive'
+                        }>
+                          {project.status === 'on-track' ? 'On Track' : 
+                           project.status === 'at-risk' ? 'At Risk' : 
+                           'Delayed'}
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-3 gap-4 text-sm">
+                        <div>
+                          <p className="text-muted-foreground">Team</p>
+                          <p className="font-medium">{project.teamSize} members</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Deadline</p>
+                          <p className="font-medium">
+                            {project.daysRemaining >= 0 
+                              ? `${project.daysRemaining} days` 
+                              : `${Math.abs(project.daysRemaining)} days overdue`}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Progress</p>
+                          <p className="font-medium">{project.completion}%</p>
+                        </div>
+                      </div>
+                      <Progress value={project.completion} className="h-1.5" />
                     </div>
-                    <div className="grid grid-cols-3 gap-4 text-sm">
-                      <div>
-                        <p className="text-muted-foreground">Team</p>
-                        <p className="font-medium">{project.team} members</p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Deadline</p>
-                        <p className="font-medium">{project.deadline}</p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Progress</p>
-                        <p className="font-medium">{project.completion}%</p>
-                      </div>
-                    </div>
-                    <Progress value={project.completion} className="h-1.5" />
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <Folder className="h-12 w-12 text-muted-foreground/50 mb-4" />
+                  <h4 className="font-semibold text-lg">No Active Projects</h4>
+                  <p className="text-muted-foreground text-sm mt-1">
+                    Projects will appear here once created in the system.
+                  </p>
+                  <Button variant="outline" className="mt-4" size="sm">
+                    <Briefcase className="mr-2 h-4 w-4" />
+                    Create Project
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -864,25 +972,31 @@ export default function TenantAdmin360Page() {
         <TabsContent value="financial" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-4">
             <MetricCard
-              title="Total Payroll"
-              value={`$${(financial.totalPayroll / 1000000).toFixed(2)}M`}
+              title="Monthly Payroll"
+              value={financial.totalPayroll > 0 
+                ? formatCurrency(financial.totalPayroll, true)
+                : formatCurrency(0)}
               icon={DollarSign}
               color="green"
-              subtitle="Monthly payroll costs"
+              subtitle="Monthly salary costs"
+            />
+            <MetricCard
+              title="Annual Payroll"
+              value={financial.totalAnnualPayroll 
+                ? formatCurrency(financial.totalAnnualPayroll, true)
+                : formatCurrency(0)}
+              icon={Briefcase}
+              color="blue"
+              subtitle="Yearly salary budget"
             />
             <MetricCard
               title="Pending Payments"
-              value={`$${(financial.pendingPayments / 1000).toFixed(0)}K`}
+              value={financial.pendingPayments > 0 
+                ? formatCurrency(financial.pendingPayments, true)
+                : formatCurrency(0)}
               icon={Clock}
               color="orange"
               subtitle="Awaiting processing"
-            />
-            <MetricCard
-              title="Monthly Expenses"
-              value={`$${(financial.monthlyExpenses / 1000).toFixed(0)}K`}
-              icon={Activity}
-              color="red"
-              subtitle="Operational costs"
             />
             <MetricCard
               title="Budget Alerts"
@@ -894,104 +1008,111 @@ export default function TenantAdmin360Page() {
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
-            {/* Budget Utilization by Department */}
+            {/* Salary by Department */}
             <Card>
               <CardHeader>
-                <CardTitle>Budget Utilization by Department</CardTitle>
+                <CardTitle>Payroll by Department</CardTitle>
+                <CardDescription>Monthly salary distribution across departments</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {[
-                  { dept: 'Engineering', allocated: 180000, used: 153000, percent: 85 },
-                  { dept: 'Sales', allocated: 120000, used: 84000, percent: 70 },
-                  { dept: 'Marketing', allocated: 90000, used: 72000, percent: 80 },
-                  { dept: 'Support', allocated: 60000, used: 39000, percent: 65 },
-                ].map((item, idx) => (
-                  <div key={idx} className="space-y-2">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="font-medium">{item.dept}</span>
-                      <span className="text-muted-foreground">
-                        ${(item.used / 1000).toFixed(0)}K / ${(item.allocated / 1000).toFixed(0)}K
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Progress value={item.percent} className="h-2 flex-1" />
-                      <span className={`text-xs font-medium ${item.percent > 80 ? 'text-red-600' : 'text-muted-foreground'}`}>
-                        {item.percent}%
-                      </span>
-                    </div>
+              <CardContent>
+                {(financial.departmentSalaries && financial.departmentSalaries.length > 0) ? (
+                  <div className="space-y-4">
+                    {financial.departmentSalaries.slice(0, 6).map((dept, idx) => {
+                      const maxSalary = Math.max(...(financial.departmentSalaries || []).map(d => d.monthlySalary));
+                      const percent = maxSalary > 0 ? (dept.monthlySalary / maxSalary) * 100 : 0;
+                      return (
+                        <div key={idx} className="space-y-2">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="font-medium">{dept.name}</span>
+                            <span className="text-muted-foreground">
+                              {formatCurrency(dept.monthlySalary, true)}/mo
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Progress value={percent} className="h-2 flex-1" />
+                            <span className="text-xs text-muted-foreground w-20 text-right">
+                              {formatCurrency(dept.annualSalary, true)}/yr
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                ))}
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-8 text-center">
+                    <DollarSign className="h-12 w-12 text-muted-foreground/50 mb-4" />
+                    <p className="text-muted-foreground">No salary data available</p>
+                    <p className="text-xs text-muted-foreground mt-1">Add employee salaries to see payroll breakdown</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
-            {/* Expense Breakdown */}
+            {/* Financial Summary */}
             <Card>
               <CardHeader>
-                <CardTitle>Monthly Expense Breakdown</CardTitle>
+                <CardTitle>Financial Summary</CardTitle>
+                <CardDescription>Overview of payroll and workforce costs</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {[
-                    { category: 'Salaries & Benefits', amount: 280000, color: '#3b82f6' },
-                    { category: 'Office & Infrastructure', amount: 45000, color: '#10b981' },
-                    { category: 'Software & Tools', amount: 28000, color: '#f59e0b' },
-                    { category: 'Marketing & Sales', amount: 18000, color: '#8b5cf6' },
-                    { category: 'Training & Development', amount: 9000, color: '#ec4899' },
-                  ].map((expense, idx) => (
-                    <div key={idx} className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: expense.color }} />
-                        <span className="text-sm font-medium">{expense.category}</span>
-                      </div>
-                      <span className="text-sm text-muted-foreground font-medium">
-                        ${(expense.amount / 1000).toFixed(0)}K
-                      </span>
+                  <div className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-950/20 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="w-3 h-3 rounded-full bg-green-500" />
+                      <span className="text-sm font-medium">Total Monthly Payroll</span>
                     </div>
-                  ))}
+                    <span className="text-sm font-bold text-green-600">
+                      {formatCurrency(financial.totalPayroll, true)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="w-3 h-3 rounded-full bg-blue-500" />
+                      <span className="text-sm font-medium">Total Annual Payroll</span>
+                    </div>
+                    <span className="text-sm font-bold text-blue-600">
+                      {formatCurrency(financial.totalAnnualPayroll || 0, true)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-purple-50 dark:bg-purple-950/20 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="w-3 h-3 rounded-full bg-purple-500" />
+                      <span className="text-sm font-medium">Departments with Payroll</span>
+                    </div>
+                    <span className="text-sm font-bold text-purple-600">
+                      {financial.departmentSalaries?.length || 0}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-orange-50 dark:bg-orange-950/20 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="w-3 h-3 rounded-full bg-orange-500" />
+                      <span className="text-sm font-medium">Avg Salary per Employee</span>
+                    </div>
+                    <span className="text-sm font-bold text-orange-600">
+                      ${org.activeEmployees > 0 
+                        ? ((financial.totalAnnualPayroll || 0) / org.activeEmployees / 1000).toFixed(0) 
+                        : 0}K/yr
+                    </span>
+                  </div>
                 </div>
               </CardContent>
             </Card>
           </div>
 
-          {/* Revenue Trends */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Revenue vs Expenses Trend</CardTitle>
-              <CardDescription>Last 6 months comparison</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {[
-                  { month: 'Aug 2025', revenue: 410000, expenses: 320000 },
-                  { month: 'Sep 2025', revenue: 425000, expenses: 335000 },
-                  { month: 'Oct 2025', revenue: 398000, expenses: 342000 },
-                  { month: 'Nov 2025', revenue: 445000, expenses: 358000 },
-                  { month: 'Dec 2025', revenue: 480000, expenses: 375000 },
-                  { month: 'Jan 2026', revenue: 450000, expenses: 380000 },
-                ].map((item, idx) => (
-                  <div key={idx} className="space-y-2">
-                    <div className="flex items-center justify-between text-sm font-medium">
-                      <span>{item.month}</span>
-                      <span className="text-muted-foreground">
-                        Net: ${((item.revenue - item.expenses) / 1000).toFixed(0)}K
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <div className="text-xs text-green-600 mb-1">Revenue: ${(item.revenue / 1000).toFixed(0)}K</div>
-                        <div className="w-full bg-muted rounded-full h-2">
-                          <div className="h-2 rounded-full bg-green-500" style={{ width: '100%' }} />
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-red-600 mb-1">Expenses: ${(item.expenses / 1000).toFixed(0)}K</div>
-                        <div className="w-full bg-muted rounded-full h-2">
-                          <div className="h-2 rounded-full bg-red-500" style={{ width: `${(item.expenses / item.revenue) * 100}%` }} />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+          {/* Info Card about missing data */}
+          <Card className="border-dashed">
+            <CardContent className="pt-6">
+              <div className="flex items-start gap-4">
+                <div className="rounded-full bg-muted p-2">
+                  <Activity className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <div>
+                  <h4 className="font-semibold">Additional Financial Data</h4>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Budget utilization, expense tracking, and revenue trends require additional setup. 
+                    Currently showing payroll data based on employee salary records.
+                  </p>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -1065,34 +1186,41 @@ export default function TenantAdmin360Page() {
               <CardDescription>Highest rated employees this quarter</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {performance.topPerformers.map((performer, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold">
-                        #{idx + 1}
+              {performance.topPerformers.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Star className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                  <p>No performance reviews available yet</p>
+                  <p className="text-xs mt-1">Performance data will appear after reviews are completed</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {performance.topPerformers.map((performer, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-3 border rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold">
+                          #{idx + 1}
+                        </div>
+                        <Avatar className="h-10 w-10">
+                          <AvatarFallback>{performer.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="font-semibold">{performer.name}</p>
+                          <p className="text-xs text-muted-foreground">{performer.department}</p>
+                        </div>
                       </div>
-                      <Avatar className="h-10 w-10">
-                        <AvatarImage src={performer.avatar} />
-                        <AvatarFallback>{performer.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="font-semibold">{performer.name}</p>
-                        <p className="text-xs text-muted-foreground">Top Contributor</p>
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1">
+                          <Star className="h-4 w-4 fill-yellow-500 text-yellow-500" />
+                          <span className="font-bold">{performer.score}</span>
+                        </div>
+                        <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-600/20">
+                          Excellent
+                        </Badge>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-1">
-                        <Star className="h-4 w-4 fill-yellow-500 text-yellow-500" />
-                        <span className="font-bold">{performer.score}</span>
-                      </div>
-                      <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-600/20">
-                        Excellent
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -1102,20 +1230,27 @@ export default function TenantAdmin360Page() {
               <CardTitle>Department Performance Comparison</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {performance.departmentScores.map((dept, idx) => (
-                <div key={idx} className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium">{dept.dept}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground">{dept.score}/10</span>
-                      <Badge variant={dept.score >= 8.5 ? 'default' : dept.score >= 7.5 ? 'secondary' : 'outline'}>
-                        {dept.score >= 8.5 ? 'Excellent' : dept.score >= 7.5 ? 'Good' : 'Average'}
-                      </Badge>
-                    </div>
-                  </div>
-                  <Progress value={dept.score * 10} className="h-2" />
+              {performance.departmentScores.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <BarChart3 className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                  <p>No department scores available</p>
                 </div>
-              ))}
+              ) : (
+                performance.departmentScores.map((dept, idx) => (
+                  <div key={idx} className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium">{dept.dept}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">{dept.score}/10</span>
+                        <Badge variant={dept.score >= 8.5 ? 'default' : dept.score >= 7.5 ? 'secondary' : 'outline'}>
+                          {dept.score >= 8.5 ? 'Excellent' : dept.score >= 7.5 ? 'Good' : 'Average'}
+                        </Badge>
+                      </div>
+                    </div>
+                    <Progress value={dept.score * 10} className="h-2" />
+                  </div>
+                ))
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1195,7 +1330,7 @@ export default function TenantAdmin360Page() {
                   <div className="flex-1">
                     <p className="text-sm font-medium text-muted-foreground">Pending Approvals</p>
                     <div className="flex items-baseline gap-2 mt-2">
-                      <h3 className="text-3xl font-bold">18</h3>
+                      <h3 className="text-3xl font-bold">{data?.quickStats?.pendingApprovals || 0}</h3>
                     </div>
                   </div>
                   <div className="p-4 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400">
@@ -1211,7 +1346,7 @@ export default function TenantAdmin360Page() {
                   <div className="flex-1">
                     <p className="text-sm font-medium text-muted-foreground">Documents Expiring</p>
                     <div className="flex items-baseline gap-2 mt-2">
-                      <h3 className="text-3xl font-bold">12</h3>
+                      <h3 className="text-3xl font-bold">{data?.quickStats?.documentsExpiring || 0}</h3>
                     </div>
                   </div>
                   <div className="p-4 rounded-full bg-orange-500/10 text-orange-600 dark:text-orange-400">
@@ -1227,7 +1362,7 @@ export default function TenantAdmin360Page() {
                   <div className="flex-1">
                     <p className="text-sm font-medium text-muted-foreground">New Hire Onboarding</p>
                     <div className="flex items-baseline gap-2 mt-2">
-                      <h3 className="text-3xl font-bold">3</h3>
+                      <h3 className="text-3xl font-bold">{data?.quickStats?.newHireOnboarding || 0}</h3>
                     </div>
                   </div>
                   <div className="p-4 rounded-full bg-green-500/10 text-green-600 dark:text-green-400">
@@ -1243,7 +1378,7 @@ export default function TenantAdmin360Page() {
                   <div className="flex-1">
                     <p className="text-sm font-medium text-muted-foreground">Exit Interviews</p>
                     <div className="flex items-baseline gap-2 mt-2">
-                      <h3 className="text-3xl font-bold">1</h3>
+                      <h3 className="text-3xl font-bold">{data?.quickStats?.exitInterviews || 0}</h3>
                     </div>
                   </div>
                   <div className="p-4 rounded-full bg-red-500/10 text-red-600 dark:text-red-400">

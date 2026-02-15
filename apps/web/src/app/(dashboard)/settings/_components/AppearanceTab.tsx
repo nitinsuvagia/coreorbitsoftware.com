@@ -114,13 +114,13 @@ export function AppearanceTab({
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="flex flex-wrap gap-4">
             {THEME_OPTIONS.map((option) => (
               <button
                 key={option.value}
                 onClick={() => onUpdatePreference('theme', option.value)}
                 className={cn(
-                  'group relative flex flex-col items-center gap-3 p-4 border-2 rounded-xl transition-all duration-200',
+                  'group relative flex flex-col items-center gap-2 p-3 border-2 rounded-xl transition-all duration-200 w-[150px]',
                   preferences.theme === option.value
                     ? 'border-primary bg-primary/5 shadow-md'
                     : 'border-border hover:border-primary/50 hover:bg-accent/50'
@@ -129,7 +129,7 @@ export function AppearanceTab({
                 {/* Theme Preview */}
                 <div
                   className={cn(
-                    'w-full aspect-video rounded-lg flex items-center justify-center overflow-hidden relative',
+                    'w-16 h-16 rounded-lg flex items-center justify-center overflow-hidden relative',
                     option.value === 'light' && 'bg-white border shadow-sm',
                     option.value === 'dark' && 'bg-gray-900 border border-gray-800',
                     option.value === 'system' && 'bg-gradient-to-r from-white via-gray-300 to-gray-900'
@@ -137,15 +137,15 @@ export function AppearanceTab({
                 >
                   <option.icon
                     className={cn(
-                      'h-8 w-8 transition-transform group-hover:scale-110',
+                      'h-6 w-6 transition-transform group-hover:scale-110',
                       option.value === 'light' && 'text-amber-500',
                       option.value === 'dark' && 'text-blue-400',
                       option.value === 'system' && 'text-gray-500'
                     )}
                   />
                   {preferences.theme === option.value && (
-                    <div className="absolute top-2 right-2 h-5 w-5 bg-primary rounded-full flex items-center justify-center">
-                      <Check className="h-3 w-3 text-primary-foreground" />
+                    <div className="absolute top-1 right-1 h-4 w-4 bg-primary rounded-full flex items-center justify-center">
+                      <Check className="h-2.5 w-2.5 text-primary-foreground" />
                     </div>
                   )}
                 </div>

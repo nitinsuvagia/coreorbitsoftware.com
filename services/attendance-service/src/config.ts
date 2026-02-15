@@ -100,7 +100,7 @@ export const config: AttendanceServiceConfig = {
   
   leave: {
     maxCarryForwardDays: parseInt(process.env.MAX_CARRY_FORWARD_DAYS || '5', 10),
-    minAdvanceNoticeDays: parseInt(process.env.MIN_ADVANCE_NOTICE_DAYS || '1', 10),
+    minAdvanceNoticeDays: parseInt(process.env.MIN_ADVANCE_NOTICE_DAYS || '0', 10), // 0 = same-day/next-day leave allowed
     allowHalfDay: process.env.ALLOW_HALF_DAY !== 'false',
     allowNegativeBalance: process.env.ALLOW_NEGATIVE_BALANCE === 'true',
   },

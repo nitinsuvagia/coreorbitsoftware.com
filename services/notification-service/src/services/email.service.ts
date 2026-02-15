@@ -10,6 +10,7 @@ import { join } from 'path';
 import { logger } from '../utils/logger';
 import { config, NotificationType } from '../config';
 import { renderTemplate as renderEmailTemplate, EmailTemplateName } from './template.service';
+import { getMasterPrisma } from '@oms/database';
 
 // ============================================================================
 // TYPES
@@ -470,4 +471,132 @@ export async function sendTemplatedEmail(
     priority: options.priority,
     useQueue: options.useQueue,
   });
+}
+
+// ============================================================================
+// TENANT-SPECIFIC EMAIL (uses organization's SMTP settings from database)
+// ============================================================================
+
+export interface TenantEmailInput {
+  to: string;
+  subject: string;
+  html: string;
+  text?: string;
+  fromEmail?: string;
+  fromName?: string;
+}
+
+export interface TenantSmtpSettings {
+  smtpHost: string | null;
+  smtpPort: number;
+  smtpUsername: string | null;
+  smtpPassword: string | null;
+  smtpEncryption: string;
+  smtpFromEmail: string | null;
+  smtpFromName: string | null;
+  emailConfigured: boolean;
+}
+
+/**
+ * Send email using tenant's configured SMTP settings from the database
+ */
+export async function sendTenantEmail(
+  tenantSlug: string,
+  input: TenantEmailInput
+): Promise<EmailResult> {
+  try {
+    // Get master prisma to get tenant settings
+    const masterPrisma = await getMasterPrisma();
+    
+    // Get tenant and their settings
+    const tenant = await masterPrisma.tenant.findUnique({
+      where: { slug: tenantSlug },
+      include: {
+        settings: true,
+      },
+    });
+    
+    if (!tenant) {
+      logger.error({ tenantSlug }, 'Tenant not found');
+      return { success: false, error: 'Tenant not found' };
+    }
+    
+    const settings = tenant.settings;
+    
+    if (!settings) {
+      logger.warn({ tenantSlug }, 'Tenant settings not found, using default SMTP');
+      // Fall back to default SMTP
+      return sendWithDefaultSmtp(input);
+    }
+    
+    // Check if tenant has configured their own SMTP
+    if (!settings.emailConfigured || !settings.smtpHost) {
+      logger.info({ tenantSlug }, 'Tenant SMTP not configured, using default SMTP');
+      return sendWithDefaultSmtp(input);
+    }
+    
+    // Create a transporter with tenant's SMTP settings
+    const transport = nodemailer.createTransport({
+      host: settings.smtpHost,
+      port: settings.smtpPort,
+      secure: settings.smtpEncryption === 'ssl',
+      auth: settings.smtpUsername ? {
+        user: settings.smtpUsername,
+        pass: settings.smtpPassword || '',
+      } : undefined,
+      tls: settings.smtpEncryption === 'tls' ? {
+        rejectUnauthorized: false,
+      } : undefined,
+    });
+    
+    const fromEmail = input.fromEmail || settings.smtpFromEmail || config.email.tenant.fromEmail;
+    const fromName = input.fromName || settings.smtpFromName || settings.smtpFromEmail?.split('@')[0] || config.email.tenant.fromName;
+    
+    logger.info({ 
+      tenantSlug, 
+      to: input.to, 
+      subject: input.subject,
+      smtpHost: settings.smtpHost,
+      fromEmail,
+    }, 'Sending email using tenant SMTP configuration');
+    
+    const info = await transport.sendMail({
+      from: `"${fromName}" <${fromEmail}>`,
+      to: input.to,
+      subject: input.subject,
+      html: input.html,
+      text: input.text,
+    });
+    
+    logger.info({ tenantSlug, to: input.to, messageId: info.messageId }, 'Tenant email sent successfully');
+    
+    return { success: true, messageId: info.messageId };
+  } catch (error: any) {
+    logger.error({ tenantSlug, to: input.to, error: error.message }, 'Failed to send tenant email');
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Send email using default SMTP configuration (from env variables)
+ */
+async function sendWithDefaultSmtp(input: TenantEmailInput): Promise<EmailResult> {
+  try {
+    const transport = getSMTPTransport('tenant');
+    const fromEmail = input.fromEmail || config.email.tenant.fromEmail;
+    const fromName = input.fromName || config.email.tenant.fromName;
+    
+    const info = await transport.sendMail({
+      from: `"${fromName}" <${fromEmail}>`,
+      to: input.to,
+      subject: input.subject,
+      html: input.html,
+      text: input.text,
+    });
+    
+    return { success: true, messageId: info.messageId };
+  } catch (error: any) {
+    logger.error({ to: input.to, error: error.message }, 'Failed to send email with default SMTP');
+    return { success: false, error: error.message };
+  }
 }

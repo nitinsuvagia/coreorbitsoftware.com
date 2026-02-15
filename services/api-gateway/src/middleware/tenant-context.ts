@@ -48,6 +48,17 @@ export async function tenantContextMiddleware(
     return;
   }
   
+  // Check if this is a reactivation route - skip tenant context setup
+  const isReactivationRoute = req.originalUrl.includes('/auth/tenant/reactivate') ||
+                              req.originalUrl.includes('/auth/account/reactivate');
+  if (isReactivationRoute) {
+    // For reactivation routes, we don't need full tenant context since the
+    // endpoint handles it directly with skipStatusCheck
+    logger.info({ url: req.originalUrl }, 'Bypassing tenant context for reactivation route');
+    next();
+    return;
+  }
+  
   try {
     const dbManager = getTenantDbManager();
     const { tenantSlug, tenantId, tenantName, tenantStatus } = ctxReq.tenantContext;

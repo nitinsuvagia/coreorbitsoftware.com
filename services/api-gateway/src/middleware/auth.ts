@@ -119,6 +119,20 @@ export async function authMiddleware(
       roles: payload.roles,
       permissions: payload.permissions,
     };
+
+    // Enforce tenant identifiers for tenant users to avoid downstream header gaps
+    if (payload.type === 'tenant_user') {
+      if (!payload.tenantId || !payload.tenantSlug) {
+        res.status(401).json({
+          success: false,
+          error: {
+            code: 'TENANT_CONTEXT_REQUIRED',
+            message: 'Tenant user token must include tenantId and tenantSlug.',
+          },
+        });
+        return;
+      }
+    }
     
     logger.debug({
       userId: payload.sub,

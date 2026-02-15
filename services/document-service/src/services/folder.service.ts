@@ -2,10 +2,69 @@
  * Folder Service - Folder management for documents
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '.prisma/tenant-client';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
 import { config } from '../config';
+import * as storageService from './storage.service';
+
+// ============================================================================
+// PROTECTED FOLDER CONSTANTS
+// ============================================================================
+
+// Root folders that are protected
+const PROTECTED_ROOT_FOLDERS = ['Company Master', 'Employee Documents', 'On-Boarding'];
+
+// Default subfolder names under Company Master
+const COMPANY_MASTER_SUBFOLDERS = [
+  'Policies',
+  'Forms',
+  'Templates',
+  'Certifications',
+  'Legal Documents',
+  'Training Materials',
+  'Company Assets',
+];
+
+// Default subfolder names under Employee folders
+const EMPLOYEE_DOCUMENT_SUBFOLDERS = [
+  'Personal Documents',
+  'Joining Documents',
+  'Payroll',
+  'Performance Reviews',
+  'Training Certificates',
+  'Leave & Attendance',
+  'Exit Documents',
+];
+
+/**
+ * Check if a folder is a protected default folder
+ */
+export function isProtectedFolder(folder: { name: string; path?: string | null }): boolean {
+  const folderName = folder.name;
+  
+  // Root folders are protected
+  if (PROTECTED_ROOT_FOLDERS.includes(folderName)) {
+    return true;
+  }
+  
+  // Default subfolders under Company Master
+  if (COMPANY_MASTER_SUBFOLDERS.includes(folderName)) {
+    return true;
+  }
+  
+  // Default subfolders under Employee folders
+  if (EMPLOYEE_DOCUMENT_SUBFOLDERS.includes(folderName)) {
+    return true;
+  }
+  
+  // Employee folders (path contains /Employee Documents/ and folder name matches employee code pattern)
+  if (folder.path?.includes('/Employee Documents/') && /^[A-Z]{2,5}\d{3,5}\s*-\s*.+$/.test(folderName)) {
+    return true;
+  }
+  
+  return false;
+}
 
 // ============================================================================
 // TYPES
@@ -15,11 +74,13 @@ export interface CreateFolderInput {
   parentId?: string;
   name: string;
   description?: string;
+  color?: string;
 }
 
 export interface UpdateFolderInput {
   name?: string;
   description?: string;
+  color?: string;
 }
 
 export interface FolderTree {
@@ -107,7 +168,7 @@ export async function createFolder(
   
   // Check for duplicate name in same parent
   const existing = await prisma.folder.findFirst({
-    where: { parentId: input.parentId || null, name: input.name, isDeleted: false },
+    where: { parentId: input.parentId || null, name: input.name },
   });
   
   if (existing) {
@@ -122,6 +183,7 @@ export async function createFolder(
       path,
       depth,
       description: input.description,
+      color: input.color,
       createdBy: userId,
     },
   });
@@ -163,7 +225,7 @@ export async function getFolderByPath(
   path: string
 ): Promise<any | null> {
   return prisma.folder.findFirst({
-    where: { path, isDeleted: false },
+    where: { path },
     include: {
       parent: { select: { id: true, name: true, path: true } },
     },
@@ -187,6 +249,11 @@ export async function updateFolder(
     throw new Error('Folder not found');
   }
   
+  // Check if folder is protected and trying to rename
+  if (input.name && input.name !== existing.name && isProtectedFolder(existing)) {
+    throw new Error(`PROTECTED_FOLDER: The folder "${existing.name}" is a system default folder and cannot be renamed.`);
+  }
+  
   const data: any = { updatedAt: new Date() };
   
   if (input.name && input.name !== existing.name) {
@@ -200,7 +267,6 @@ export async function updateFolder(
       where: {
         parentId: existing.parentId,
         name: input.name,
-        isDeleted: false,
         id: { not: id },
       },
     });
@@ -224,6 +290,10 @@ export async function updateFolder(
     data.description = input.description;
   }
   
+  if (input.color !== undefined) {
+    data.color = input.color;
+  }
+  
   return prisma.folder.update({ where: { id }, data });
 }
 
@@ -242,6 +312,11 @@ export async function moveFolder(
   
   if (!folder) {
     throw new Error('Folder not found');
+  }
+  
+  // Check if folder is protected
+  if (isProtectedFolder(folder)) {
+    throw new Error(`PROTECTED_FOLDER: The folder "${folder.name}" is a system default folder and cannot be moved.`);
   }
   
   if (folder.parentId === targetParentId) {
@@ -281,7 +356,6 @@ export async function moveFolder(
     where: {
       parentId: targetParentId,
       name: folder.name,
-      isDeleted: false,
       id: { not: id },
     },
   });
@@ -346,6 +420,11 @@ export async function deleteFolder(
     throw new Error('Folder not found');
   }
   
+  // Check if folder is protected
+  if (isProtectedFolder(folder)) {
+    throw new Error(`PROTECTED_FOLDER: The folder "${folder.name}" is a system default folder and cannot be deleted.`);
+  }
+  
   if (!recursive && (folder._count.children > 0 || folder._count.files > 0)) {
     throw new Error('Folder is not empty. Use recursive delete to delete with contents.');
   }
@@ -361,6 +440,96 @@ export async function deleteFolder(
   });
   
   logger.info({ folderId: id, recursive }, 'Folder deleted');
+}
+
+/**
+ * Restore deleted folder
+ */
+export async function restoreFolder(
+  prisma: PrismaClient,
+  id: string
+): Promise<any> {
+  return prisma.folder.update({
+    where: { id },
+    data: {
+      isDeleted: false,
+      deletedAt: null,
+    },
+  });
+}
+
+/**
+ * Permanently delete folder
+ */
+export async function permanentlyDeleteFolder(
+  prisma: PrismaClient,
+  id: string
+): Promise<void> {
+  // Check if folder is protected
+  const folder = await prisma.folder.findUnique({ where: { id } });
+  if (folder && isProtectedFolder(folder)) {
+    throw new Error(`PROTECTED_FOLDER: The folder "${folder.name}" is a system default folder and cannot be permanently deleted.`);
+  }
+  
+  // First delete all files in the folder permanently (including versions)
+  const files = await prisma.file.findMany({
+    where: { folderId: id },
+    select: { 
+      id: true, 
+      storageKey: true, 
+      thumbnails: true,
+      versions: {
+        select: { storageKey: true }
+      }
+    },
+  });
+  
+  // Import storage service
+  const storageService = await import('./storage.service');
+  
+  for (const file of files) {
+    const keysToDelete: string[] = [];
+    
+    // Main file
+    if (file.storageKey) {
+      keysToDelete.push(file.storageKey);
+    }
+    
+    // Thumbnails
+    const thumbnails = file.thumbnails as Record<string, string> | null;
+    if (thumbnails) {
+      for (const key of Object.values(thumbnails)) {
+        if (key) keysToDelete.push(key);
+      }
+    }
+    
+    // File versions
+    for (const version of file.versions) {
+      if (version.storageKey) {
+        keysToDelete.push(version.storageKey);
+      }
+    }
+    
+    if (keysToDelete.length > 0) {
+      await storageService.deleteFiles(keysToDelete);
+    }
+    await prisma.file.delete({ where: { id: file.id } });
+  }
+  
+  // Delete child folders recursively
+  const children = await prisma.folder.findMany({
+    where: { parentId: id },
+    select: { id: true },
+  });
+  
+  for (const child of children) {
+    await permanentlyDeleteFolder(prisma, child.id);
+  }
+  
+  // Delete the folder itself
+  await prisma.folder.delete({ where: { id } });
+  
+  logger.info({ folderId: id }, 'Folder permanently deleted');
 }
 
 async function softDeleteRecursive(prisma: PrismaClient, folderId: string): Promise<void> {
@@ -405,24 +574,102 @@ export async function listRootFolders(
  */
 export async function listFolderContents(
   prisma: PrismaClient,
-  folderId: string
+  folderId: string | null
 ): Promise<{ folders: any[]; files: any[] }> {
+  // Check if the parent folder is "Employee Documents"
+  let isEmployeeDocumentsFolder = false;
+  if (folderId) {
+    const parentFolder = await prisma.folder.findUnique({
+      where: { id: folderId },
+      select: { name: true },
+    });
+    isEmployeeDocumentsFolder = parentFolder?.name === 'Employee Documents';
+  }
+  
   const [folders, files] = await Promise.all([
     prisma.folder.findMany({
       where: { parentId: folderId, isDeleted: false },
       orderBy: { name: 'asc' },
-      include: { _count: { select: { children: true, files: true } } },
+      include: { 
+        _count: { select: { children: true, files: true } },
+        creator: { select: { id: true, firstName: true, lastName: true } },
+      },
     }),
     prisma.file.findMany({
-      where: { folderId, isDeleted: false },
+      where: { folderId: folderId, isDeleted: false },
       orderBy: { name: 'asc' },
       include: {
-        uploader: { select: { id: true, firstName: true, lastName: true } },
+        uploader: { select: { id: true, firstName: true, lastName: true, avatar: true } },
       },
     }),
   ]);
   
-  return { folders, files };
+  // If parent is "Employee Documents", fetch employee info for each folder
+  let employeeMap: Map<string, { id: string; firstName: string; lastName: string; avatar?: string }> = new Map();
+  
+  if (isEmployeeDocumentsFolder) {
+    // Extract employee codes from folder names (format: "SQT001 - John Doe")
+    const employeeCodes = folders
+      .map(f => f.name.split(' - ')[0])
+      .filter(code => code);
+    
+    if (employeeCodes.length > 0) {
+      const employees = await prisma.employee.findMany({
+        where: { employeeCode: { in: employeeCodes } },
+        select: { id: true, employeeCode: true, firstName: true, lastName: true, avatar: true },
+      });
+      
+      employees.forEach(emp => {
+        employeeMap.set(emp.employeeCode, {
+          id: emp.id,
+          firstName: emp.firstName,
+          lastName: emp.lastName,
+          avatar: emp.avatar || undefined,
+        });
+      });
+    }
+  }
+  
+  // Transform folders to include counts and map relation names for frontend
+  const foldersWithCounts = folders.map(f => {
+    const employeeCode = f.name.split(' - ')[0];
+    const employee = isEmployeeDocumentsFolder ? employeeMap.get(employeeCode) : undefined;
+    
+    return {
+      ...f,
+      createdBy: f.creator,
+      fileCount: f._count.files,
+      subfolderCount: f._count.children,
+      employee,
+    };
+  });
+  
+  // Map uploader to uploadedBy for frontend and convert thumbnail keys to URLs
+  const mappedFiles = await Promise.all(files.map(async (f) => {
+    const thumbnailKeys = f.thumbnails as Record<string, string> | null;
+    let thumbnailUrls: Record<string, string> = {};
+    
+    if (thumbnailKeys) {
+      const sizes = ['small', 'medium', 'large'] as const;
+      for (const size of sizes) {
+        if (thumbnailKeys[size]) {
+          try {
+            thumbnailUrls[size] = await storageService.getDownloadUrl({ key: thumbnailKeys[size] });
+          } catch (error) {
+            // Skip if thumbnail URL generation fails
+          }
+        }
+      }
+    }
+    
+    return {
+      ...f,
+      uploadedBy: f.uploader,
+      thumbnails: Object.keys(thumbnailUrls).length > 0 ? thumbnailUrls : undefined,
+    };
+  }));
+  
+  return { folders: foldersWithCounts, files: mappedFiles };
 }
 
 /**
@@ -430,24 +677,70 @@ export async function listFolderContents(
  */
 export async function getFolderTree(
   prisma: PrismaClient,
-  parentId?: string
-): Promise<FolderTree[]> {
+  parentId?: string,
+  parentName?: string
+): Promise<any[]> {
   const folders = await prisma.folder.findMany({
     where: { parentId: parentId || null, isDeleted: false },
     orderBy: { name: 'asc' },
-    include: { _count: { select: { files: true } } },
+    include: { 
+      _count: { select: { files: true, children: true } },
+      creator: { select: { id: true, firstName: true, lastName: true } },
+      parent: { select: { id: true, name: true } },
+    },
   });
   
-  const tree: FolderTree[] = [];
+  const tree: any[] = [];
+  
+  // If parent is "Employee Documents", fetch employee info for each folder
+  const isEmployeeDocumentsParent = parentName === 'Employee Documents';
+  let employeeMap: Map<string, { id: string; firstName: string; lastName: string; avatar?: string }> = new Map();
+  
+  if (isEmployeeDocumentsParent) {
+    // Extract employee codes from folder names (format: "SQT001 - John Doe")
+    const employeeCodes = folders
+      .map(f => f.name.split(' - ')[0])
+      .filter(code => code);
+    
+    if (employeeCodes.length > 0) {
+      const employees = await prisma.employee.findMany({
+        where: { employeeCode: { in: employeeCodes } },
+        select: { id: true, employeeCode: true, firstName: true, lastName: true, avatar: true },
+      });
+      
+      employees.forEach(emp => {
+        employeeMap.set(emp.employeeCode, {
+          id: emp.id,
+          firstName: emp.firstName,
+          lastName: emp.lastName,
+          avatar: emp.avatar || undefined,
+        });
+      });
+    }
+  }
   
   for (const folder of folders) {
-    const children = await getFolderTree(prisma, folder.id);
+    const children = await getFolderTree(prisma, folder.id, folder.name);
+    
+    // Check if this folder represents an employee
+    let employee = undefined;
+    if (isEmployeeDocumentsParent) {
+      const employeeCode = folder.name.split(' - ')[0];
+      employee = employeeMap.get(employeeCode);
+    }
+    
     tree.push({
       id: folder.id,
       name: folder.name,
       path: folder.path,
+      color: folder.color,
       children,
       fileCount: folder._count.files,
+      subfolderCount: folder._count.children,
+      createdBy: folder.creator,
+      createdAt: folder.createdAt,
+      updatedAt: folder.updatedAt,
+      employee,
     });
   }
   

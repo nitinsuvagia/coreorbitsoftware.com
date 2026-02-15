@@ -78,7 +78,9 @@ export async function loginTenantUser(
   
   try {
     // Get tenant info and prisma client
-    const tenantInfo = await dbManager.getTenantBySlug(request.tenantSlug);
+    // Use verifyIfSuspended to check database if cached status shows suspended
+    // This prevents stale cache from blocking logins after reactivation
+    const tenantInfo = await dbManager.getTenantBySlug(request.tenantSlug, { verifyIfSuspended: true });
     
     // Check tenant status
     if (tenantInfo.status === 'SUSPENDED' || tenantInfo.status === 'TERMINATED') {

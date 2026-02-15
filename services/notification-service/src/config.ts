@@ -2,6 +2,11 @@
  * Notification Service Configuration
  */
 
+// Load environment variables from root .env file first
+import dotenv from 'dotenv';
+import path from 'path';
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+
 export const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.NOTIFICATION_SERVICE_PORT || process.env.PORT || '3008', 10),

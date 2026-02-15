@@ -99,7 +99,7 @@ function transformJobToBackend(data: CreateJobDto): any {
     title: data.title,
     department: data.department,
     location: data.location,
-    employmentType: data.employmentType.toUpperCase().replace('-', '_'),
+    employmentType: data.employmentType?.toUpperCase().replace('-', '_'),
     salaryMin: data.salaryMin,
     salaryMax: data.salaryMax,
     currency: data.currency || 'USD',
@@ -114,6 +114,31 @@ function transformJobToBackend(data: CreateJobDto): any {
     techStack: data.techStack || [],
     closingDate: data.closingDate,
   };
+}
+
+// Transform partial update data for backend
+function transformPartialJobToBackend(data: Partial<CreateJobDto>): any {
+  const result: any = {};
+  
+  if (data.title !== undefined) result.title = data.title;
+  if (data.department !== undefined) result.department = data.department;
+  if (data.location !== undefined) result.location = data.location;
+  if (data.employmentType !== undefined) result.employmentType = data.employmentType.toUpperCase().replace('-', '_');
+  if (data.salaryMin !== undefined) result.salaryMin = data.salaryMin;
+  if (data.salaryMax !== undefined) result.salaryMax = data.salaryMax;
+  if (data.currency !== undefined) result.currency = data.currency;
+  if (data.status !== undefined) result.status = data.status.toUpperCase().replace('-', '_');
+  if (data.openings !== undefined) result.openings = data.openings;
+  if (data.experienceMin !== undefined) result.experienceMin = data.experienceMin;
+  if (data.experienceMax !== undefined) result.experienceMax = data.experienceMax;
+  if (data.description !== undefined) result.description = data.description;
+  if (data.requirements !== undefined) result.requirements = data.requirements;
+  if (data.responsibilities !== undefined) result.responsibilities = data.responsibilities;
+  if (data.benefits !== undefined) result.benefits = data.benefits;
+  if (data.techStack !== undefined) result.techStack = data.techStack;
+  if (data.closingDate !== undefined) result.closingDate = data.closingDate;
+  
+  return result;
 }
 
 export const jobApi = {
@@ -155,7 +180,7 @@ export const jobApi = {
    * Update job
    */
   async updateJob(id: string, data: Partial<CreateJobDto>): Promise<JobDescription> {
-    const response = await api.put(`/api/v1/jobs/${id}`, transformJobToBackend(data as CreateJobDto));
+    const response = await api.put(`/api/v1/jobs/${id}`, transformPartialJobToBackend(data));
     return transformJobFromBackend(response.data);
   },
 

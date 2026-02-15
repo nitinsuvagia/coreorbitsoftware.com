@@ -4,6 +4,7 @@
 
 import express, { Request, Response } from 'express';
 import { CandidateService } from '../services/candidate.service';
+import { OfferService } from '../services/offer.service';
 import { logger } from '../utils/logger';
 
 const router = express.Router({ mergeParams: true }); // mergeParams to access jobId from parent route
@@ -126,6 +127,104 @@ router.delete('/:candidateId', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Candidate not found' });
     }
     res.status(500).json({ error: 'Failed to delete candidate' });
+  }
+});
+
+/**
+ * PATCH /candidates/:candidateId/status - Update candidate status only
+ */
+router.patch('/:candidateId/status', async (req: Request, res: Response) => {
+  try {
+    const tenantSlug = req.headers['x-tenant-slug'] as string;
+    if (!tenantSlug) {
+      return res.status(400).json({ error: 'Tenant slug required' });
+    }
+
+    const { candidateId } = req.params;
+    const { status } = req.body;
+
+    if (!status) {
+      return res.status(400).json({ error: 'Status is required' });
+    }
+
+    const validStatuses = ['APPLIED', 'SCREENING', 'SHORTLISTED', 'INTERVIEWED', 'OFFERED', 'HIRED', 'REJECTED', 'WITHDRAWN'];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
+    }
+
+    const candidate = await CandidateService.updateCandidateStatus(tenantSlug, candidateId, status);
+    res.json(candidate);
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Error updating candidate status');
+    if (error.message === 'Candidate not found') {
+      return res.status(404).json({ error: 'Candidate not found' });
+    }
+    res.status(500).json({ error: 'Failed to update candidate status' });
+  }
+});
+
+/**
+ * POST /candidates/bulk-delete - Bulk delete candidates
+ */
+router.post('/bulk-delete', async (req: Request, res: Response) => {
+  try {
+    const tenantSlug = req.headers['x-tenant-slug'] as string;
+    if (!tenantSlug) {
+      return res.status(400).json({ error: 'Tenant slug required' });
+    }
+
+    const { candidates } = req.body;
+    if (!candidates || !Array.isArray(candidates) || candidates.length === 0) {
+      return res.status(400).json({ error: 'Candidates array required' });
+    }
+
+    const result = await CandidateService.bulkDeleteCandidates(tenantSlug, candidates);
+    res.json(result);
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Error bulk deleting candidates');
+    res.status(500).json({ error: 'Failed to bulk delete candidates' });
+  }
+});
+
+/**
+ * POST /jobs/:jobId/candidates/:candidateId/send-offer - Send offer to candidate
+ */
+router.post('/:candidateId/send-offer', async (req: Request, res: Response) => {
+  try {
+    const tenantSlug = req.headers['x-tenant-slug'] as string;
+    if (!tenantSlug) {
+      return res.status(400).json({ error: 'Tenant slug required' });
+    }
+
+    const { jobId, candidateId } = req.params;
+    const { salary, currency, joiningDate, designation, department, additionalTerms } = req.body;
+
+    if (!salary || !joiningDate) {
+      return res.status(400).json({ error: 'Salary and joining date are required' });
+    }
+
+    const result = await OfferService.sendOffer(tenantSlug, {
+      candidateId,
+      jobId,
+      salary,
+      currency: currency || 'INR',
+      joiningDate: new Date(joiningDate),
+      designation,
+      department,
+      additionalTerms,
+    });
+
+    res.json({
+      success: true,
+      message: 'Offer sent successfully',
+      data: result,
+    });
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Error sending offer');
+    if (error.message === 'Candidate not found') {
+      return res.status(404).json({ error: 'Candidate not found' });
+    }
+    res.status(500).json({ error: error.message || 'Failed to send offer' });
   }
 });
 

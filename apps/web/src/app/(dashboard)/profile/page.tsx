@@ -16,7 +16,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { formatDate, getInitials } from '@/lib/utils';
+import { formatDate, getInitials, getAvatarColor } from '@/lib/utils';
 import {
   User,
   Mail,
@@ -133,7 +133,7 @@ export default function ProfilePage() {
             <div className="relative">
               <Avatar className="h-24 w-24">
                 <AvatarImage src={avatarPreview || profile?.avatar || ''} />
-                <AvatarFallback className="text-2xl">
+                <AvatarFallback className={`${getAvatarColor((profile?.email || '') + displayName).className} text-2xl font-semibold`}>
                   {displayName ? getInitials(displayName) : 'U'}
                 </AvatarFallback>
               </Avatar>

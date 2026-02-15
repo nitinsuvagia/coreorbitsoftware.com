@@ -1,7 +1,8 @@
 'use client';
 
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useEmployee } from '@/hooks/use-employees';
+import { useOrgFormatters } from '@/hooks/use-org-settings';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -14,7 +15,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { getInitials, getStatusColor } from '@/lib/utils';
+import { PhoneDisplay } from '@/components/ui/phone-input';
+import { getInitials, getStatusColor, getAvatarColor } from '@/lib/utils';
 import {
   ArrowLeft,
   Edit,
@@ -34,7 +36,9 @@ import Link from 'next/link';
 
 export default function EmployeeDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const employeeId = params.id as string;
+  const { formatDate } = useOrgFormatters();
 
   const { data: employee, isLoading, error } = useEmployee(employeeId);
 
@@ -89,11 +93,14 @@ export default function EmployeeDetailPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" asChild>
-            <Link href="/employees">
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
+        <div>
+          <Button
+            variant="ghost"
+            className="mb-2 -ml-2 text-muted-foreground hover:text-foreground"
+            onClick={() => router.push('/employees')}
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Employees
           </Button>
           <div>
             <h2 className="text-3xl font-bold tracking-tight">
@@ -128,7 +135,7 @@ export default function EmployeeDetailPage() {
             <div className="flex flex-col items-center gap-4">
               <Avatar className="h-24 w-24">
                 <AvatarImage src={employee.avatar} />
-                <AvatarFallback className="text-2xl">
+                <AvatarFallback className={`${getAvatarColor((employee.email || '') + employee.firstName + employee.lastName).className} text-2xl font-semibold`}>
                   {getInitials(`${employee.firstName} ${employee.lastName}`)}
                 </AvatarFallback>
               </Avatar>
@@ -151,7 +158,7 @@ export default function EmployeeDetailPage() {
               {employee.phone && (
                 <div className="flex items-center gap-3">
                   <Phone className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm">{employee.phone}</span>
+                  <PhoneDisplay value={employee.phone} className="text-sm" />
                 </div>
               )}
               {employee.department && (
@@ -163,7 +170,7 @@ export default function EmployeeDetailPage() {
               <div className="flex items-center gap-3">
                 <Calendar className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm">
-                  Joined {new Date(employee.joinDate).toLocaleDateString()}
+                  Joined {formatDate(employee.joinDate)}
                 </span>
               </div>
             </div>
@@ -208,7 +215,9 @@ export default function EmployeeDetailPage() {
                     <label className="text-sm font-medium text-muted-foreground">
                       Mobile
                     </label>
-                    <p className="text-sm">{employee.mobile || '-'}</p>
+                    <p className="text-sm">
+                      <PhoneDisplay value={employee.mobile} />
+                    </p>
                   </div>
                   <div>
                     <label className="text-sm font-medium text-muted-foreground">
@@ -216,7 +225,7 @@ export default function EmployeeDetailPage() {
                     </label>
                     <p className="text-sm">
                       {employee.dateOfBirth
-                        ? new Date(employee.dateOfBirth).toLocaleDateString()
+                        ? formatDate(employee.dateOfBirth)
                         : '-'}
                     </p>
                   </div>
@@ -283,7 +292,7 @@ export default function EmployeeDetailPage() {
                       Join Date
                     </label>
                     <p className="text-sm">
-                      {new Date(employee.joinDate).toLocaleDateString()}
+                      {formatDate(employee.joinDate)}
                     </p>
                   </div>
                   <div>
@@ -319,44 +328,56 @@ export default function EmployeeDetailPage() {
 
               {/* Address Tab */}
               <TabsContent value="address" className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="col-span-2">
-                    <label className="text-sm font-medium text-muted-foreground">
-                      Address Line 1
-                    </label>
-                    <p className="text-sm">{employee.addressLine1 || '-'}</p>
+                {employee.addressLine1 || employee.city || employee.state || employee.country ? (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="col-span-2">
+                      <label className="text-sm font-medium text-muted-foreground">
+                        Address Line 1
+                      </label>
+                      <p className="text-sm">{employee.addressLine1 || '-'}</p>
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-sm font-medium text-muted-foreground">
+                        Address Line 2
+                      </label>
+                      <p className="text-sm">{employee.addressLine2 || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">
+                        City
+                      </label>
+                      <p className="text-sm">{employee.city || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">
+                        State
+                      </label>
+                      <p className="text-sm">{employee.state || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">
+                        Country
+                      </label>
+                      <p className="text-sm">{employee.country || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">
+                        Postal Code
+                      </label>
+                      <p className="text-sm">{employee.postalCode || '-'}</p>
+                    </div>
                   </div>
-                  <div className="col-span-2">
-                    <label className="text-sm font-medium text-muted-foreground">
-                      Address Line 2
-                    </label>
-                    <p className="text-sm">{employee.addressLine2 || '-'}</p>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12">
+                    <div className="rounded-full bg-muted p-4 mb-4">
+                      <MapPin className="h-8 w-8 text-muted-foreground" />
+                    </div>
+                    <h4 className="font-medium text-muted-foreground mb-1">No Address Information</h4>
+                    <p className="text-sm text-muted-foreground text-center">
+                      Address details have not been added yet.
+                    </p>
                   </div>
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">
-                      City
-                    </label>
-                    <p className="text-sm">{employee.city || '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">
-                      State
-                    </label>
-                    <p className="text-sm">{employee.state || '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">
-                      Country
-                    </label>
-                    <p className="text-sm">{employee.country || '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">
-                      Postal Code
-                    </label>
-                    <p className="text-sm">{employee.postalCode || '-'}</p>
-                  </div>
-                </div>
+                )}
               </TabsContent>
 
               {/* Emergency Contacts Tab */}
@@ -389,7 +410,9 @@ export default function EmployeeDetailPage() {
                           <label className="text-sm font-medium text-muted-foreground">
                             Phone
                           </label>
-                          <p className="text-sm">{contact.phone}</p>
+                          <p className="text-sm">
+                            <PhoneDisplay value={contact.phone} />
+                          </p>
                         </div>
                         <div>
                           <label className="text-sm font-medium text-muted-foreground">
@@ -401,9 +424,15 @@ export default function EmployeeDetailPage() {
                     </div>
                   ))
                 ) : (
-                  <p className="text-muted-foreground text-center py-8">
-                    No emergency contacts added
-                  </p>
+                  <div className="flex flex-col items-center justify-center py-12">
+                    <div className="rounded-full bg-muted p-4 mb-4">
+                      <AlertCircle className="h-8 w-8 text-muted-foreground" />
+                    </div>
+                    <h4 className="font-medium text-muted-foreground mb-1">No Emergency Contacts</h4>
+                    <p className="text-sm text-muted-foreground text-center">
+                      Emergency contact information has not been added yet.
+                    </p>
+                  </div>
                 )}
               </TabsContent>
 
@@ -456,9 +485,15 @@ export default function EmployeeDetailPage() {
                     </div>
                   ))
                 ) : (
-                  <p className="text-muted-foreground text-center py-8">
-                    No education records added
-                  </p>
+                  <div className="flex flex-col items-center justify-center py-12">
+                    <div className="rounded-full bg-muted p-4 mb-4">
+                      <GraduationCap className="h-8 w-8 text-muted-foreground" />
+                    </div>
+                    <h4 className="font-medium text-muted-foreground mb-1">No Education Records</h4>
+                    <p className="text-sm text-muted-foreground text-center">
+                      Education history has not been added yet.
+                    </p>
+                  </div>
                 )}
               </TabsContent>
             </CardContent>

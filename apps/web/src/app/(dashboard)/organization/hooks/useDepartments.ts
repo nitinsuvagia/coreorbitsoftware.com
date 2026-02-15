@@ -28,9 +28,13 @@ export function useDepartments() {
   const fetchDepartments = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get<Department[]>('/api/v1/departments');
+      // Fetch all departments with a high pageSize to get all records
+      const response = await apiClient.get<Department[]>('/api/v1/departments?pageSize=1000');
       if (response.success) {
         setDepartments(response.data || []);
+      } else {
+        console.error('[useDepartments] API returned error:', response.error);
+        toast.error(response.error?.message || 'Failed to load departments');
       }
     } catch (error: any) {
       console.error('Failed to fetch departments:', error);

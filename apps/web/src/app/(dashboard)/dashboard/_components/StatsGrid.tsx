@@ -40,7 +40,7 @@ export function StatsGrid({ stats, limits, loading }: StatsGridProps) {
       <StatCard
         title="Pending Tasks"
         value={stats?.pendingTasks || 0}
-        description={`${stats?.highPriorityTasks || 0} high priority`}
+        description={`${stats?.completedTasks || 0} completed, ${stats?.highPriorityTasks || 0} high priority`}
         icon={<CheckSquare className="h-6 w-6" />}
         iconColor="orange"
         loading={loading}

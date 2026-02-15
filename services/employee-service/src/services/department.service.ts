@@ -2,7 +2,7 @@
  * Department Service - CRUD operations for departments and teams
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '.prisma/tenant-client';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
 
@@ -178,7 +178,7 @@ export async function listDepartments(
   filters: DepartmentFilters
 ): Promise<{ data: any[]; total: number; page: number; pageSize: number }> {
   const page = filters.page || 1;
-  const pageSize = Math.min(filters.pageSize || 20, 100);
+  const pageSize = Math.min(filters.pageSize || 20, 1000);
   const skip = (page - 1) * pageSize;
   
   const where: any = {};
@@ -506,7 +506,7 @@ export async function listTeams(
   filters: TeamFilters
 ): Promise<{ data: any[]; total: number; page: number; pageSize: number }> {
   const page = filters.page || 1;
-  const pageSize = Math.min(filters.pageSize || 20, 100);
+  const pageSize = Math.min(filters.pageSize || 20, 1000);
   const skip = (page - 1) * pageSize;
   
   const where: any = {};

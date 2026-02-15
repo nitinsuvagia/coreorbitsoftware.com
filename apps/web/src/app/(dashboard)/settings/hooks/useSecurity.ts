@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api/client';
+import { useAuth } from '@/lib/auth/auth-context';
 import type { PasswordForm, ShowPasswords, ActiveSession } from '../types';
 
 interface UseSecurityReturn {
@@ -54,6 +55,7 @@ interface UseSecurityReturn {
 
 export function useSecurity(): UseSecurityReturn {
   const router = useRouter();
+  const { logout } = useAuth();
   
   // Password state
   const [passwordForm, setPasswordForm] = useState<PasswordForm>({
@@ -292,17 +294,20 @@ export function useSecurity(): UseSecurityReturn {
 
       if (response.success) {
         toast.success('Your account has been frozen. Check your email for reactivation instructions.');
-        // Clear auth and redirect
-        setTimeout(() => {
-          router.push('/login');
+        // Keep loading state while redirecting - don't set deletingAccount to false
+        // Clear auth state and redirect to login after short delay
+        setTimeout(async () => {
+          await logout();
+          // Router push happens in logout, but keep loading state
         }, 2000);
+        // Don't reset deletingAccount - keep showing loading until redirect completes
       } else {
+        setDeletingAccount(false);
         throw new Error(response.error?.message || 'Failed to delete account');
       }
     } catch (error: any) {
-      toast.error(error.message || 'Failed to delete account');
-    } finally {
       setDeletingAccount(false);
+      toast.error(error.message || 'Failed to delete account');
     }
   };
 

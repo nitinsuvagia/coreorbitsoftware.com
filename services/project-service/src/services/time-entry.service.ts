@@ -2,7 +2,7 @@
  * Time Entry Service - Time tracking, timesheets, and approvals
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '.prisma/tenant-client';
 import { v4 as uuidv4 } from 'uuid';
 import {
   parseISO,

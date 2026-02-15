@@ -19,7 +19,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { getInitials, getPriorityColor, formatDate } from '@/lib/utils';
+import { getInitials, getPriorityColor, formatDate, getAvatarColor } from '@/lib/utils';
 import {
   Plus,
   Search,
@@ -107,7 +107,7 @@ function TaskCard({ task }: { task: Task }) {
           </div>
           {task.assignee && (
             <Avatar className="h-6 w-6">
-              <AvatarFallback className="text-xs">
+              <AvatarFallback className={`${getAvatarColor(task.assignee.firstName + task.assignee.lastName).className} text-xs font-semibold`}>
                 {getInitials(`${task.assignee.firstName} ${task.assignee.lastName}`)}
               </AvatarFallback>
             </Avatar>
@@ -307,7 +307,7 @@ export default function TasksPage() {
                         {task.assignee && (
                           <div className="flex items-center gap-2">
                             <Avatar className="h-6 w-6">
-                              <AvatarFallback className="text-xs">
+                              <AvatarFallback className={`${getAvatarColor(task.assignee.firstName + task.assignee.lastName).className} text-xs font-semibold`}>
                                 {getInitials(`${task.assignee.firstName} ${task.assignee.lastName}`)}
                               </AvatarFallback>
                             </Avatar>

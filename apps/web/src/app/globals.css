@@ -5,47 +5,57 @@
 @layer base {
   :root {
     --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --foreground: 0 0% 3.9%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 0 0% 3.9%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --popover-foreground: 0 0% 3.9%;
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 0 0% 9%;
     --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 0 0% 3.9%;
     --radius: 0.5rem;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
+    --background: 0 0% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 14.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%;
+    --accent: 0 0% 14.9%;
+    --accent-foreground: 0 0% 98%;
     --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 14.9%;
+    --input: 0 0% 14.9%;
+    --ring: 0 0% 83.1%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
   }
 }
 
@@ -55,6 +65,29 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  
+  /* Remove focus ring/outline for non-keyboard interactions */
+  *:focus:not(:focus-visible) {
+    outline: none !important;
+    box-shadow: none !important;
+    ring: 0 !important;
+  }
+  
+  /* Remove blue selection border on clickable elements */
+  [role="button"]:focus,
+  [tabindex]:focus,
+  div[onclick]:focus,
+  .cursor-pointer:focus {
+    outline: none !important;
+  }
+  
+  /* Ensure buttons and interactive elements don't show focus ring on click */
+  button:focus:not(:focus-visible),
+  [role="button"]:focus:not(:focus-visible),
+  a:focus:not(:focus-visible) {
+    outline: none !important;
+    box-shadow: none !important;
   }
 }
 
@@ -221,4 +254,133 @@
 
 :root[data-font-family="work-sans"] {
   --font-family: 'Work Sans', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ============================================================================
+   PRINT STYLES
+   ============================================================================ */
+
+@media print {
+  /* Hide non-printable elements */
+  .no-print,
+  .print\\:hidden {
+    display: none !important;
+  }
+  
+  /* Show print-only elements */
+  .print\\:block {
+    display: block !important;
+  }
+  
+  .print\\:flex {
+    display: flex !important;
+  }
+  
+  /* Reset layout for print */
+  body {
+    background: white !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
+  /* Remove sidebar and header for print */
+  aside,
+  nav,
+  header {
+    display: none !important;
+  }
+  
+  /* Full width main content with proper margins */
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+    background: white !important;
+    overflow: visible !important;
+  }
+  
+  /* Remove fixed positioning and overflow issues */
+  .flex.h-screen.overflow-hidden {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  
+  .flex-1.flex-col.overflow-hidden {
+    display: block !important;
+    overflow: visible !important;
+  }
+  
+  .flex-1.overflow-y-auto {
+    overflow: visible !important;
+  }
+  
+  /* Proper page margins */
+  @page {
+    margin: 15mm 12mm;
+    size: A4;
+  }
+  
+  /* Reduce spacing for print */
+  .space-y-6 > * + * {
+    margin-top: 1rem !important;
+  }
+  
+  .print\\:space-y-4 > * + * {
+    margin-top: 0.75rem !important;
+  }
+  
+  /* Card styling for print */
+  .card,
+  [class*="rounded-lg"][class*="border"] {
+    border: 1px solid #e5e7eb !important;
+    box-shadow: none !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  
+  /* Grid adjustments for print - make it full width */
+  .grid.grid-cols-1.lg\\:grid-cols-3 {
+    display: block !important;
+  }
+  
+  .lg\\:col-span-2 {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  
+  /* Print margins for cards */
+  .print\\:mb-6 {
+    margin-bottom: 1.5rem !important;
+  }
+  
+  /* Ensure colors print properly */
+  .bg-green-100, .bg-red-100, .bg-yellow-100, .bg-blue-100, .bg-purple-100,
+  .bg-green-50, .bg-red-50, .bg-yellow-50, .bg-blue-50, .bg-purple-50 {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
+  /* Text colors */
+  .text-green-600, .text-green-700,
+  .text-red-600, .text-red-700,
+  .text-yellow-600, .text-yellow-700,
+  .text-blue-600, .text-blue-700,
+  .text-purple-600, .text-purple-700 {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
+  /* Badge styling for print */
+  .badge,
+  [class*="rounded-full"][class*="bg-"] {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
+  /* SVG charts should show colors */
+  svg circle,
+  svg path {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
 }

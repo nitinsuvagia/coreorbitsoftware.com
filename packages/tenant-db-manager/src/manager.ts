@@ -145,13 +145,12 @@ export class TenantDbManager {
     if (!this.masterClient) {
       // Always read masterDatabaseUrl fresh from env
       const masterUrl = process.env.MASTER_DATABASE_URL || this.config.masterDatabaseUrl || 'postgresql://postgres:password@localhost:5432/oms_master';
-      console.log('[TenantDbManager] Creating master client with URL:', masterUrl);
       const MasterPrismaClient = getMasterPrismaClientClass();
       this.masterClient = new MasterPrismaClient({
         datasources: {
           db: { url: masterUrl },
         },
-        log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+        log: ['error'], // Only errors to prevent query spam
       });
     }
     return this.masterClient;
@@ -163,11 +162,19 @@ export class TenantDbManager {
   
   /**
    * Look up tenant by slug from master database
+   * @param slug - Tenant slug
+   * @param options - Optional settings
+   * @param options.verifyIfSuspended - If true and cached status is SUSPENDED, verify against database
    */
-  async getTenantBySlug(slug: string): Promise<TenantLookupResult> {
+  async getTenantBySlug(slug: string, options?: { verifyIfSuspended?: boolean }): Promise<TenantLookupResult> {
     // Check cache first
     const cached = this.tenantLookupCache.get(`slug:${slug}`);
     if (cached) {
+      // If requested and tenant appears suspended, verify against database
+      // This prevents stale cache from blocking logins after reactivation
+      if (options?.verifyIfSuspended && (cached.status === 'SUSPENDED' || cached.status === 'TERMINATED')) {
+        return this.refreshTenantStatus(slug);
+      }
       return cached;
     }
     
@@ -240,8 +247,11 @@ export class TenantDbManager {
   
   /**
    * Get Prisma client for a tenant by slug
+   * @param slug - Tenant slug
+   * @param options - Optional settings
+   * @param options.skipStatusCheck - If true, don't throw error for suspended/terminated tenants
    */
-  async getClientBySlug(slug: string): Promise<PrismaClient> {
+  async getClientBySlug(slug: string, options?: { skipStatusCheck?: boolean }): Promise<PrismaClient> {
     // Check if we already have a cached client
     const cached = this.tenantCache.get(slug);
     if (cached) {
@@ -251,15 +261,52 @@ export class TenantDbManager {
     }
     
     // Look up tenant in master database
-    const tenant = await this.getTenantBySlug(slug);
+    let tenant = await this.getTenantBySlug(slug);
     
-    // Check tenant status
-    if (tenant.status === 'SUSPENDED' || tenant.status === 'TERMINATED') {
-      throw new TenantSuspendedError(slug);
+    // Check tenant status (unless bypassed for reactivation)
+    if (!options?.skipStatusCheck && (tenant.status === 'SUSPENDED' || tenant.status === 'TERMINATED')) {
+      // Verify against database directly in case cache is stale
+      // This prevents false rejections after reactivation when cache invalidation fails
+      const freshTenant = await this.refreshTenantStatus(slug);
+      if (freshTenant.status === 'ACTIVE' || freshTenant.status === 'TRIAL') {
+        tenant = freshTenant;
+      } else {
+        throw new TenantSuspendedError(slug);
+      }
     }
     
     // Create new Prisma client for this tenant
     return this.createTenantClient(tenant);
+  }
+  
+  /**
+   * Refresh tenant status from database (bypasses cache)
+   */
+  private async refreshTenantStatus(slug: string): Promise<TenantLookupResult> {
+    const master = this.getMasterClient();
+    
+    const tenant = await (master as any).tenant.findUnique({
+      where: { slug },
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        status: true,
+        databaseName: true,
+        databaseHost: true,
+        databasePort: true,
+      },
+    });
+    
+    if (!tenant) {
+      throw new TenantNotFoundError(slug);
+    }
+    
+    // Update cache with fresh data
+    this.tenantLookupCache.set(`slug:${slug}`, tenant);
+    this.tenantLookupCache.set(`id:${tenant.id}`, tenant);
+    
+    return tenant;
   }
   
   /**
@@ -300,7 +347,7 @@ export class TenantDbManager {
         datasources: {
           db: { url: databaseUrl },
         },
-        log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+        log: ['error'], // Only errors to prevent query spam
       });
       
       // Test connection
@@ -379,9 +426,6 @@ export class TenantDbManager {
     let databaseUrl = `postgresql://${this.config.tenantDbUser}:${encodeURIComponent(this.config.tenantDbPassword)}`;
     databaseUrl += `@${this.config.tenantDbHost}:${this.config.tenantDbPort}/${databaseName}`;
     
-    console.log(`Migrating database for tenant: ${tenantSlug}`);
-    console.log(`Database URL: ${databaseUrl.replace(/:[^:@]+@/, ':***@')}`); // Log with hidden password
-    
     // Find the tenant schema directory
     // In Docker, this should be in the node_modules or a mounted volume
     const schemaPath = path.resolve(__dirname, '../../database/prisma/tenant/schema.prisma');
@@ -416,8 +460,6 @@ export class TenantDbManager {
       throw new Error('Tenant schema not found. Please ensure @oms/database is properly installed.');
     }
     
-    console.log(`Using schema: ${usedSchemaPath}`);
-    
     // Run prisma db push to create schema
     try {
       const { stdout, stderr } = await execAsync(
@@ -430,11 +472,6 @@ export class TenantDbManager {
           timeout: 60000, // 60 second timeout
         }
       );
-      
-      if (stdout) console.log(`Prisma db push stdout: ${stdout}`);
-      if (stderr) console.log(`Prisma db push stderr: ${stderr}`);
-      
-      console.log(`Successfully migrated database for tenant: ${tenantSlug}`);
     } catch (error: any) {
       console.error(`Failed to migrate tenant database: ${error.message}`);
       if (error.stdout) console.error(`stdout: ${error.stdout}`);
@@ -654,6 +691,22 @@ export class TenantDbManager {
     
     this.tenantCache.clear();
     this.tenantLookupCache.clear();
+  }
+  
+  /**
+   * Invalidate cache for a specific tenant
+   * Use this after tenant status changes (e.g., reactivation)
+   */
+  invalidateTenantCache(tenantSlug: string): void {
+    // Remove from lookup cache (by slug)
+    this.tenantLookupCache.delete(`slug:${tenantSlug}`);
+    
+    // Also remove the client cache for this tenant
+    const cached = this.tenantCache.get(tenantSlug);
+    if (cached) {
+      this.tenantLookupCache.delete(`id:${cached.info.tenantId}`);
+      this.tenantCache.delete(tenantSlug);
+    }
   }
   
   // ==========================================================================

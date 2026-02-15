@@ -7,7 +7,7 @@
  */
 
 import { AsyncLocalStorage } from 'async_hooks';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '.prisma/tenant-client';
 import { getTenantDbManager, TenantLookupResult } from './manager';
 
 // ============================================================================

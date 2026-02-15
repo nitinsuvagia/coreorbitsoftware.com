@@ -16,6 +16,11 @@ import departmentRoutes, { teamRouter } from './routes/department.routes';
 import designationRoutes from './routes/designation.routes';
 import jobRoutes from './routes/job.routes';
 import candidateRoutes from './routes/candidate.routes';
+import interviewRoutes from './routes/interview.routes';
+import assessmentRoutes from './routes/assessment.routes';
+import integrationRoutes from './routes/integration.routes';
+import offerRoutes from './routes/offer.routes';
+import { publicOnboardingRouter, protectedOnboardingRouter } from './routes/onboarding.routes';
 
 // ============================================================================
 // CREATE APP
@@ -67,8 +72,25 @@ app.get('/ready', (req: Request, res: Response) => {
 // ROUTES (with tenant context)
 // ============================================================================
 
-// Serve static files from uploads directory
+// Serve static files from uploads directory (supports both local and shared uploads)
+// Local uploads (resumes, etc.)
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+// Shared uploads (on-boarding documents stored at root level)
+app.use('/uploads', express.static(path.join(process.cwd(), '../../uploads')));
+
+// ============================================================================
+// PUBLIC ROUTES (no authentication required)
+// ============================================================================
+
+// Public offer routes - candidates can view and respond to offers without login
+app.use('/api/v1/public/offer', offerRoutes);
+
+// Public onboarding routes - candidates can fill onboarding details
+app.use('/api/v1/public/onboarding', publicOnboardingRouter);
+
+// ============================================================================
+// PROTECTED ROUTES (with tenant context)
+// ============================================================================
 
 // Apply tenant context middleware to all API routes
 app.use('/api/v1', tenantContextMiddleware);
@@ -80,6 +102,10 @@ app.use('/api/v1/designations', designationRoutes);
 app.use('/api/v1/jobs', jobRoutes);
 app.use('/api/v1/jobs/:jobId/candidates', candidateRoutes);
 app.use('/api/v1/candidates', candidateRoutes); // All candidates endpoint
+app.use('/api/v1/interviews', interviewRoutes);
+app.use('/api/v1/assessments', assessmentRoutes);
+app.use('/api/v1/organization/integrations', integrationRoutes);
+app.use('/api/v1/onboarding', protectedOnboardingRouter);
 
 // ============================================================================
 // ERROR HANDLING

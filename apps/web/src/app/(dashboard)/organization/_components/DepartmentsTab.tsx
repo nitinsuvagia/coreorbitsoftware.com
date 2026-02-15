@@ -1,12 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Card,
   CardContent,
@@ -39,8 +46,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { FolderTree, Plus, MoreHorizontal, Edit, Trash2, RefreshCw, AlertTriangle } from 'lucide-react';
+import { FolderTree, Plus, MoreHorizontal, Edit, Trash2, RefreshCw, AlertTriangle, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import type { Department, DepartmentFormData, DeptFormErrors } from '../types';
+
+// Page size options
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 
 interface DepartmentsTabProps {
   departments: Department[];
@@ -81,6 +91,27 @@ export function DepartmentsTab({
 }: DepartmentsTabProps) {
   const [permanentDeleteId, setPermanentDeleteId] = useState<string | null>(null);
   const [isPermanentDeleting, setIsPermanentDeleting] = useState(false);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+
+  // Calculate paginated data
+  const { paginatedDepartments, totalPages, startIndex, endIndex } = useMemo(() => {
+    const total = departments.length;
+    const totalPages = Math.ceil(total / pageSize);
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = Math.min(startIndex + pageSize, total);
+    const paginatedDepartments = departments.slice(startIndex, endIndex);
+    
+    return { paginatedDepartments, totalPages, startIndex, endIndex };
+  }, [departments, currentPage, pageSize]);
+
+  // Reset to page 1 when page size changes
+  const handlePageSizeChange = (newSize: string) => {
+    setPageSize(parseInt(newSize));
+    setCurrentPage(1);
+  };
 
   const handlePermanentDelete = async () => {
     if (!permanentDeleteId) return;
@@ -128,8 +159,9 @@ export function DepartmentsTab({
               </Button>
             </div>
           ) : (
-            <table className="w-full">
-              <thead>
+            <>
+              <table className="w-full">
+                <thead>
                 <tr className="border-b">
                   <th className="text-left p-3 font-medium">Department</th>
                   <th className="text-left p-3 font-medium">Code</th>
@@ -139,7 +171,7 @@ export function DepartmentsTab({
                 </tr>
               </thead>
               <tbody>
-                {departments.map((dept) => (
+                {paginatedDepartments.map((dept) => (
                   <tr key={dept.id} className="border-b hover:bg-muted/50">
                     <td className="p-3">
                       <div className="flex items-center gap-3">
@@ -202,7 +234,70 @@ export function DepartmentsTab({
                   </tr>
                 ))}
               </tbody>
-            </table>
+              </table>
+            
+              {/* Pagination Controls */}
+              {departments.length > 0 && (
+                <div className="flex items-center justify-between mt-4 px-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">Rows per page:</span>
+                    <Select value={pageSize.toString()} onValueChange={handlePageSizeChange}>
+                      <SelectTrigger className="w-[70px] h-8">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PAGE_SIZE_OPTIONS.map(size => (
+                          <SelectItem key={size} value={size.toString()}>{size}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">
+                      {startIndex + 1}-{endIndex} of {departments.length}
+                    </span>
+                    <div className="flex gap-1">
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => setCurrentPage(1)}
+                        disabled={currentPage === 1}
+                      >
+                        <ChevronsLeft className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                        disabled={currentPage === totalPages}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => setCurrentPage(totalPages)}
+                        disabled={currentPage === totalPages}
+                      >
+                        <ChevronsRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
@@ -325,6 +420,9 @@ export function DepartmentsTab({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      
+      {/* Bottom spacing to prevent content touching screen bottom */}
+      <div className="h-6" />
     </>
   );
 }

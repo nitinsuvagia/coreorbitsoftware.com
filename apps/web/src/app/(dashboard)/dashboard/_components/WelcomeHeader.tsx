@@ -1,9 +1,7 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Building2, Sparkles } from 'lucide-react';
-import Link from 'next/link';
+import { Building2 } from 'lucide-react';
 import type { TenantInfo } from '../types';
 
 interface WelcomeHeaderProps {
@@ -21,12 +19,6 @@ export function WelcomeHeader({ firstName, tenant }: WelcomeHeaderProps) {
         <p className="text-muted-foreground">
           Here's what's happening in your organization today.
         </p>
-        <Button variant="outline" size="sm" className="mt-3" asChild>
-          <Link href="/admin-360">
-            <Sparkles className="mr-2 h-4 w-4" />
-            View 360° Dashboard
-          </Link>
-        </Button>
       </div>
       {tenant && (
         <div className="text-right">

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PhoneInput, PhoneDisplay } from '@/components/ui/phone-input';
 import {
   Card,
   CardContent,
@@ -397,11 +398,11 @@ export default function NewTenantPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="phone">Phone</Label>
-                <Input
-                  id="phone"
-                  placeholder="+1 234 567 8900"
+                <PhoneInput
                   value={formData.phone}
-                  onChange={(e) => updateField('phone', e.target.value)}
+                  onChange={(value) => updateField('phone', value)}
+                  defaultCountry="IN"
+                  placeholder="Enter phone number"
                 />
               </div>
             </div>
@@ -631,7 +632,7 @@ export default function NewTenantPage() {
                   {formData.phone && (
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Phone:</span>
-                      <span>{formData.phone}</span>
+                      <PhoneDisplay value={formData.phone} />
                     </div>
                   )}
                 </div>

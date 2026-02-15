@@ -33,6 +33,7 @@ export interface GatewayConfig {
   projectServiceUrl: string;
   taskServiceUrl: string;
   clientServiceUrl: string;
+  documentServiceUrl: string;
   assetServiceUrl: string;
   hrPayrollServiceUrl: string;
   meetingServiceUrl: string;
@@ -62,9 +63,9 @@ export const config: GatewayConfig = {
   jwtAccessTokenExpiry: process.env.JWT_ACCESS_TOKEN_EXPIRY || '15m',
   jwtRefreshTokenExpiry: process.env.JWT_REFRESH_TOKEN_EXPIRY || '7d',
   
-  // Rate Limiting
+  // Rate Limiting (increased for development - 10000 requests per minute)
   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000'),
-  rateLimitMaxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100'),
+  rateLimitMaxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '10000'),
   redisUrl: process.env.REDIS_URL,
   
   // CORS
@@ -78,6 +79,7 @@ export const config: GatewayConfig = {
   taskServiceUrl: process.env.TASK_SERVICE_URL || 'http://localhost:3005',
   billingServiceUrl: process.env.BILLING_SERVICE_URL || 'http://localhost:3006',
   clientServiceUrl: process.env.CLIENT_SERVICE_URL || 'http://localhost:3006',
+  documentServiceUrl: process.env.DOCUMENT_SERVICE_URL || 'http://localhost:3007',
   assetServiceUrl: process.env.ASSET_SERVICE_URL || 'http://localhost:3007',
   hrPayrollServiceUrl: process.env.HR_PAYROLL_SERVICE_URL || 'http://localhost:3008',
   meetingServiceUrl: process.env.MEETING_SERVICE_URL || 'http://localhost:3009',

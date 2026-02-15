@@ -40,7 +40,6 @@ export function useServiceWorker(options: UseServiceWorkerOptions = {}) {
   // Register service worker
   const register = useCallback(async () => {
     if (!('serviceWorker' in navigator)) {
-      console.log('Service Worker not supported');
       return;
     }
 
@@ -76,10 +75,7 @@ export function useServiceWorker(options: UseServiceWorkerOptions = {}) {
       if (registration.active) {
         onSuccess?.();
       }
-
-      console.log('Service Worker registered:', registration);
     } catch (error) {
-      console.error('Service Worker registration failed:', error);
     }
   }, [path, scope, onUpdate, onSuccess]);
 
@@ -94,7 +90,6 @@ export function useServiceWorker(options: UseServiceWorkerOptions = {}) {
         isRegistered: false,
         registration: null,
       }));
-      console.log('Service Worker unregistered');
     } catch (error) {
       console.error('Service Worker unregistration failed:', error);
     }
@@ -115,7 +110,6 @@ export function useServiceWorker(options: UseServiceWorkerOptions = {}) {
     if ('caches' in window) {
       const keys = await caches.keys();
       await Promise.all(keys.map((key) => caches.delete(key)));
-      console.log('All caches cleared');
     }
   }, []);
 
@@ -155,7 +149,6 @@ export function useServiceWorker(options: UseServiceWorkerOptions = {}) {
 
     const handleControllerChange = () => {
       // New service worker took control
-      console.log('New service worker activated');
     };
 
     navigator.serviceWorker.addEventListener(

@@ -480,25 +480,172 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
 });
 
 // ============================================================================
-// DELETE TENANT (Soft delete)
+// DELETE TENANT (Soft delete with subscription cancellation)
 // ============================================================================
 
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prisma = getMasterPrisma();
+    const { hardDelete } = req.query; // If true, also drop database
     
-    await prisma.tenant.update({
+    // Get tenant details first
+    const tenant = await prisma.tenant.findUnique({
       where: { id: req.params.id },
-      data: {
-        deletedAt: new Date(),
-        status: 'TERMINATED',
-        terminatedAt: new Date(),
-      },
+      select: { id: true, slug: true, databaseName: true },
     });
     
-    res.json({ success: true, message: 'Tenant deleted successfully' });
+    if (!tenant) {
+      return res.status(404).json({ success: false, error: 'Tenant not found' });
+    }
+    
+    // Use transaction to update tenant and cancel subscriptions
+    await prisma.$transaction(async (tx) => {
+      // Update tenant status
+      await tx.tenant.update({
+        where: { id: req.params.id },
+        data: {
+          deletedAt: new Date(),
+          status: 'TERMINATED',
+          terminatedAt: new Date(),
+        },
+      });
+      
+      // Cancel all subscriptions for this tenant
+      await tx.subscription.updateMany({
+        where: { tenantId: req.params.id },
+        data: {
+          status: 'CANCELED',
+          canceledAt: new Date(),
+        },
+      });
+    });
+    
+    logger.info({ tenantId: req.params.id, tenantSlug: tenant.slug }, 'Tenant soft deleted and subscriptions canceled');
+    
+    // If hard delete requested, also drop the database
+    if (hardDelete === 'true') {
+      try {
+        const dbName = tenant.databaseName || `oms_tenant_${tenant.slug}`;
+        
+        // Import pg for raw database operations
+        const { Pool } = require('pg');
+        const pool = new Pool({
+          host: process.env.DATABASE_HOST || 'localhost',
+          port: parseInt(process.env.DATABASE_PORT || '5432'),
+          user: process.env.DATABASE_USER || 'postgres',
+          password: process.env.DATABASE_PASSWORD || 'password',
+          database: 'postgres', // Connect to default database to drop tenant db
+        });
+        
+        // Terminate all connections to the tenant database
+        await pool.query(`
+          SELECT pg_terminate_backend(pid) 
+          FROM pg_stat_activity 
+          WHERE datname = $1 AND pid <> pg_backend_pid()
+        `, [dbName]);
+        
+        // Drop the database
+        await pool.query(`DROP DATABASE IF EXISTS "${dbName}"`);
+        await pool.end();
+        
+        // Hard delete tenant record from master
+        await prisma.tenant.delete({
+          where: { id: req.params.id },
+        });
+        
+        logger.info({ tenantId: req.params.id, dbName }, 'Tenant database dropped and record permanently deleted');
+        
+        res.json({ 
+          success: true, 
+          message: 'Tenant permanently deleted with database dropped',
+          hardDeleted: true,
+        });
+      } catch (dbError) {
+        logger.error({ error: dbError, tenantId: req.params.id }, 'Failed to drop tenant database');
+        res.json({ 
+          success: true, 
+          message: 'Tenant soft deleted, but failed to drop database',
+          hardDeleted: false,
+          dbError: (dbError as Error).message,
+        });
+      }
+    } else {
+      res.json({ success: true, message: 'Tenant deleted successfully (soft delete)', hardDeleted: false });
+    }
   } catch (error) {
     logger.error({ error }, 'Delete tenant error');
+    next(error);
+  }
+});
+
+// ============================================================================
+// HARD DELETE TENANT (Permanently remove tenant and database)
+// ============================================================================
+
+router.delete('/:id/permanent', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const prisma = getMasterPrisma();
+    
+    // Get tenant details
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, slug: true, databaseName: true, status: true },
+    });
+    
+    if (!tenant) {
+      return res.status(404).json({ success: false, error: 'Tenant not found' });
+    }
+    
+    // Only allow permanent delete if already terminated
+    if (tenant.status !== 'TERMINATED') {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Tenant must be terminated (soft deleted) before permanent deletion',
+      });
+    }
+    
+    const dbName = tenant.databaseName || `oms_tenant_${tenant.slug}`;
+    
+    try {
+      // Import pg for raw database operations
+      const { Pool } = require('pg');
+      const pool = new Pool({
+        host: process.env.DATABASE_HOST || 'localhost',
+        port: parseInt(process.env.DATABASE_PORT || '5432'),
+        user: process.env.DATABASE_USER || 'postgres',
+        password: process.env.DATABASE_PASSWORD || 'password',
+        database: 'postgres',
+      });
+      
+      // Terminate all connections
+      await pool.query(`
+        SELECT pg_terminate_backend(pid) 
+        FROM pg_stat_activity 
+        WHERE datname = $1 AND pid <> pg_backend_pid()
+      `, [dbName]);
+      
+      // Drop the database
+      await pool.query(`DROP DATABASE IF EXISTS "${dbName}"`);
+      await pool.end();
+      
+      logger.info({ tenantId: tenant.id, dbName }, 'Tenant database dropped');
+    } catch (dbError) {
+      logger.warn({ error: dbError, dbName }, 'Failed to drop database (may not exist)');
+    }
+    
+    // Delete tenant record (cascades to subscriptions, etc.)
+    await prisma.tenant.delete({
+      where: { id: req.params.id },
+    });
+    
+    logger.info({ tenantId: req.params.id, tenantSlug: tenant.slug }, 'Tenant permanently deleted');
+    
+    res.json({ 
+      success: true, 
+      message: 'Tenant and database permanently deleted',
+    });
+  } catch (error) {
+    logger.error({ error }, 'Permanent delete tenant error');
     next(error);
   }
 });
@@ -537,17 +684,19 @@ router.get('/stats/dashboard', async (req: Request, res: Response, next: NextFun
     const prisma = getMasterPrisma();
     
     // Get tenant counts
-    const [totalTenants, activeTenants, trialTenants, suspendedTenants] = await Promise.all([
+    const [totalTenants, activeTenants, trialTenants, suspendedTenants, pendingTenants] = await Promise.all([
       prisma.tenant.count({ where: { deletedAt: null } }),
       prisma.tenant.count({ where: { status: 'ACTIVE', deletedAt: null } }),
       prisma.tenant.count({ where: { status: 'TRIAL', deletedAt: null } }),
       prisma.tenant.count({ where: { status: 'SUSPENDED', deletedAt: null } }),
+      prisma.tenant.count({ where: { status: 'PENDING', deletedAt: null } }),
     ]);
     
     // Get subscription stats
-    const [activeSubscriptions, trialingSubscriptions, subscriptionsByPlan] = await Promise.all([
+    const [activeSubscriptions, trialingSubscriptions, cancelledSubscriptions, subscriptionsByPlan] = await Promise.all([
       prisma.subscription.count({ where: { status: 'ACTIVE' } }),
       prisma.subscription.count({ where: { status: 'TRIALING' } }),
+      prisma.subscription.count({ where: { status: 'CANCELED' } }),
       prisma.subscription.groupBy({
         by: ['planId'],
         _count: { id: true },
@@ -633,6 +782,18 @@ router.get('/stats/dashboard', async (req: Request, res: Response, next: NextFun
       ? Math.round(((tenantsLast30Days - tenantsPrevious30Days) / tenantsPrevious30Days) * 100)
       : tenantsLast30Days > 0 ? 100 : 0;
     
+    // Calculate ARR (Annual Recurring Revenue)
+    const totalARR = totalMRR * 12;
+    
+    // Calculate average revenue per tenant
+    const avgRevenuePerTenant = activeTenants > 0 ? Math.round(totalMRR / activeTenants) : 0;
+    
+    // Calculate trial conversion rate (simplified - active / (active + cancelled))
+    const totalCycledSubscriptions = activeSubscriptions + cancelledSubscriptions;
+    const conversionRate = totalCycledSubscriptions > 0 
+      ? Math.round((activeSubscriptions / totalCycledSubscriptions) * 100)
+      : 0;
+    
     res.json({
       success: true,
       data: {
@@ -641,9 +802,15 @@ router.get('/stats/dashboard', async (req: Request, res: Response, next: NextFun
           activeTenants,
           trialTenants,
           suspendedTenants,
+          pendingTenants,
           activeSubscriptions,
           trialingSubscriptions,
+          cancelledSubscriptions,
           totalMRR,
+          totalARR,
+          avgRevenuePerTenant,
+          conversionRate,
+          newTenantsThisMonth: tenantsLast30Days,
           tenantGrowthPercent,
         },
         recentTenants: recentTenants.map(t => ({

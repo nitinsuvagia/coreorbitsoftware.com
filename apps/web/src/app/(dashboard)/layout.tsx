@@ -20,11 +20,11 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden print:block print:h-auto print:overflow-visible">
       <Sidebar />
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-hidden print:block print:overflow-visible">
         <Header />
-        <main className="flex-1 overflow-y-auto bg-muted/30 p-6">
+        <main className="flex-1 overflow-y-auto bg-muted/30 p-6 print:p-0 print:bg-white print:overflow-visible">
           {children}
         </main>
       </div>

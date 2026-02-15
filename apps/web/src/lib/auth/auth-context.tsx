@@ -40,22 +40,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function checkAuth() {
     try {
       const token = getCookie('accessToken');
-      console.log('[Auth] checkAuth running, token:', token);
-      console.log('BUILD_ID_20260103');
       if (!token) {
-        console.log('[Auth] No accessToken found, skipping auth check.');
         setIsLoading(false);
         return;
       }
 
       const response = await api.get('/api/v1/auth/me');
-      console.log('[Auth] /me response:', response.data);
       const userData = response.data.data || response.data.user;
-      console.log('[Auth] userData to set:', userData);
       setUser(userData);
-      setTimeout(() => {
-        console.log('[Auth] user state after setUser:', user);
-      }, 100);
     } catch (err) {
       console.error('[Auth] checkAuth error', err);
       deleteCookie('accessToken');
@@ -90,14 +82,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const tenantSlug = getTenantSlugFromHost();
     const loginEndpoint = tenantSlug ? '/api/v1/auth/tenant/login' : '/api/v1/auth/platform/login';
     
-    console.log('[Auth] Attempting login to endpoint:', loginEndpoint);
-    
     try {
       // Auth login has a different response format: { success, tokens, user }
       const response = await api.post(loginEndpoint, { email, password });
       const data = response.data;
-      
-      console.log('[Auth] Login response:', data);
 
       if (data.requiresMfa) {
         // Return for MFA handling
@@ -132,31 +120,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isPlatformAdmin: !isTenantUser && (data.user.role === 'SUPER_ADMIN' || data.user.role === 'SUB_ADMIN' || data.user.role === 'ADMIN_USER'),
       };
       
-      console.log('[Auth] Setting user and redirecting:', userData);
       setUser(userData);
       
-      // Use window.location for a full page navigation to ensure proper redirect
+      // Use Next.js router for client-side navigation
       const redirectUrl = userData.isPlatformAdmin ? '/admin/dashboard' : '/dashboard';
-      console.log('[Auth] Redirecting to:', redirectUrl);
       
       // Show success toast
       toast.success('Welcome back!');
       
-      // Verify cookie was set before redirecting
-      const verifyAndRedirect = () => {
-        const tokenCheck = document.cookie.includes('accessToken');
-        console.log('[Auth] Cookie verification before redirect:', tokenCheck);
-        if (tokenCheck) {
-          window.location.href = redirectUrl;
-        } else {
-          // Cookie not yet visible, retry after a short delay
-          console.log('[Auth] Cookie not visible yet, retrying...');
-          setTimeout(verifyAndRedirect, 100);
-        }
-      };
-      
-      // Start verification after a brief delay to show the toast
-      setTimeout(verifyAndRedirect, 300);
+      // Use router.push for client-side navigation (preserves cookies)
+      router.push(redirectUrl);
     }
     } catch (error: any) {
       // Check if this is an axios error with MFA required response
@@ -188,9 +161,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const userData = data.user;
     setUser(userData);
     
-    // Use window.location for a full page navigation
+    // Use Next.js router for client-side navigation
     const redirectUrl = userData.isPlatformAdmin ? '/admin/dashboard' : '/dashboard';
-    window.location.href = redirectUrl;
+    router.push(redirectUrl);
   }
 
   async function logout() {

@@ -2,7 +2,7 @@
  * Dispatcher Service - Orchestrates notification delivery
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '.prisma/tenant-client';
 import { getTenantPrisma, getMasterPrisma } from '@oms/database';
 import { getEventBus, SQS_QUEUES } from '@oms/event-bus';
 import { logger } from '../utils/logger';

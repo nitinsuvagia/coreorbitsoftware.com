@@ -9,9 +9,6 @@ export interface UserProfile {
   phone?: string;
   avatar?: string;
   bio?: string;
-  timezone?: string;
-  language?: string;
-  dateFormat?: string;
   skills?: string[];
   location?: string;
   department?: string;

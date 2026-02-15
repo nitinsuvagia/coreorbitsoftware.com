@@ -2,7 +2,7 @@
  * In-App Notification Service - Database-stored notifications
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '.prisma/tenant-client';
 import { v4 as uuidv4 } from 'uuid';
 import { subDays } from 'date-fns';
 import { logger } from '../utils/logger';

@@ -2,7 +2,7 @@
  * Invoice Service - Generate and manage invoices
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '.prisma/tenant-client';
 import { DateTime } from 'luxon';
 import { v4 as uuid } from 'uuid';
 import Decimal from 'decimal.js';

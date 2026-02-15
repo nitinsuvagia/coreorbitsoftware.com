@@ -2,7 +2,7 @@
  * Plan Service - Subscription plan management
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '.prisma/tenant-client';
 import { config, PlanId } from '../config';
 import { logger } from '../utils/logger';
 

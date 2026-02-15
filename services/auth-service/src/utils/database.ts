@@ -20,9 +20,7 @@ export function getMasterPrisma(): PrismaClientType {
       datasources: {
         db: { url: config.masterDatabaseUrl },
       },
-      log: config.nodeEnv === 'development' 
-        ? ['query', 'error', 'warn'] 
-        : ['error'],
+      log: ['error'], // Only log errors to prevent infinite query loops
     });
   }
   return masterPrisma;

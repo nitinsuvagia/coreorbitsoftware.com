@@ -2,7 +2,7 @@
  * Client Service - Client management with contacts and contracts
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '.prisma/tenant-client';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
 import { config } from '../config';

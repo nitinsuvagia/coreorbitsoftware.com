@@ -1,11 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { DatePicker } from '@/components/ui/date-picker';
+import { PhoneInput } from '@/components/ui/phone-input';
 import {
   Card,
   CardContent,
@@ -33,10 +35,13 @@ import {
   CheckCircle,
   Plus,
   Trash2,
+  Hash,
 } from 'lucide-react';
 import Link from 'next/link';
+import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api/client';
 import { useDepartments, useDesignations, useEmployees } from '@/hooks/use-employees';
+import { useOrgSettings } from '@/hooks/use-org-settings';
 import { toast } from 'sonner';
 
 // Types
@@ -203,16 +208,44 @@ const initialFormData: FormData = {
 
 export default function NewEmployeePage() {
   const router = useRouter();
+  const orgSettings = useOrgSettings();
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('personal');
   const [formData, setFormData] = useState<FormData>(initialFormData);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isFetchingAddress, setIsFetchingAddress] = useState(false);
+  const [employeeCodePreview, setEmployeeCodePreview] = useState<string | null>(null);
 
   const { data: departments } = useDepartments();
-  const { data: designations } = useDesignations();
+  const { data: designations, isLoading: designationsLoading } = useDesignations();
   const { data: employeesData } = useEmployees({ limit: 100 });
   const employees = employeesData?.items || [];
+
+  // Fetch employee code preview on mount
+  useEffect(() => {
+    const fetchPreview = async () => {
+      try {
+        const response = await apiClient.get<{ previewCode: string }>('/api/v1/organization/employee-code-preview');
+        if (response.success && response.data?.previewCode) {
+          setEmployeeCodePreview(response.data.previewCode);
+        }
+      } catch (error) {
+        console.error('Failed to fetch employee code preview:', error);
+      }
+    };
+    fetchPreview();
+  }, []);
+
+  // Apply organization settings as defaults when loaded
+  useEffect(() => {
+    if (orgSettings) {
+      setFormData(prev => ({
+        ...prev,
+        currency: prev.currency === 'USD' ? orgSettings.currency : prev.currency,
+        timezone: prev.timezone === 'UTC' ? orgSettings.timezone : prev.timezone,
+      }));
+    }
+  }, [orgSettings]);
 
   // Field update helper
   const updateField = (field: keyof FormData, value: any) => {
@@ -401,25 +434,54 @@ export default function NewEmployeePage() {
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.firstName) newErrors.firstName = 'First name is required';
-    if (!formData.lastName) newErrors.lastName = 'Last name is required';
-    if (!formData.email) newErrors.email = 'Email is required';
-    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = 'Valid email is required';
+    // Personal Info validation
+    if (!formData.firstName?.trim()) newErrors.firstName = 'First name is required';
+    if (!formData.lastName?.trim()) newErrors.lastName = 'Last name is required';
+    if (!formData.email?.trim()) {
+      newErrors.email = 'Work email is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      newErrors.email = 'Please enter a valid email address';
     }
-    if (!formData.departmentId) newErrors.departmentId = 'Department is required';
-    if (!formData.designationId) newErrors.designationId = 'Designation is required';
+    if (formData.personalEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.personalEmail)) {
+      newErrors.personalEmail = 'Please enter a valid email address';
+    }
+    if (formData.phone && !/^[+]?[\d\s()-]{7,20}$/.test(formData.phone)) {
+      newErrors.phone = 'Please enter a valid phone number';
+    }
+    if (formData.mobile && !/^[+]?[\d\s()-]{7,20}$/.test(formData.mobile)) {
+      newErrors.mobile = 'Please enter a valid mobile number';
+    }
+    
+    // Employment validation
+    if (!formData.departmentId) newErrors.departmentId = 'Please select a department';
+    if (!formData.designationId) newErrors.designationId = 'Please select a designation';
     if (!formData.joinDate) newErrors.joinDate = 'Join date is required';
+    
+    // Date validation
+    if (formData.dateOfBirth) {
+      const dob = new Date(formData.dateOfBirth);
+      const today = new Date();
+      const age = (today.getFullYear() - dob.getFullYear());
+      if (age < 16) newErrors.dateOfBirth = 'Employee must be at least 16 years old';
+      if (age > 100) newErrors.dateOfBirth = 'Please enter a valid date of birth';
+    }
+    
+    if (formData.joinDate && formData.probationEndDate) {
+      if (new Date(formData.probationEndDate) <= new Date(formData.joinDate)) {
+        newErrors.probationEndDate = 'Probation end date must be after join date';
+      }
+    }
 
     setErrors(newErrors);
     
     if (Object.keys(newErrors).length > 0) {
       // Switch to tab with first error
-      if (newErrors.firstName || newErrors.lastName || newErrors.email) {
+      if (newErrors.firstName || newErrors.lastName || newErrors.email || newErrors.personalEmail || newErrors.phone || newErrors.mobile || newErrors.dateOfBirth) {
         setActiveTab('personal');
-      } else if (newErrors.departmentId || newErrors.designationId || newErrors.joinDate) {
+      } else if (newErrors.departmentId || newErrors.designationId || newErrors.joinDate || newErrors.probationEndDate) {
         setActiveTab('employment');
       }
+      toast.error('Please fix the validation errors before submitting');
     }
 
     return Object.keys(newErrors).length === 0;
@@ -433,44 +495,68 @@ export default function NewEmployeePage() {
     try {
       // Prepare payload
       const payload = {
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        middleName: formData.middleName || undefined,
-        displayName: formData.displayName,
-        email: formData.email,
-        personalEmail: formData.personalEmail || undefined,
-        phone: formData.phone || undefined,
-        mobile: formData.mobile || undefined,
+        firstName: formData.firstName.trim(),
+        lastName: formData.lastName.trim(),
+        middleName: formData.middleName?.trim() || undefined,
+        displayName: formData.displayName?.trim() || `${formData.firstName.trim()} ${formData.lastName.trim()}`,
+        email: formData.email.trim().toLowerCase(),
+        personalEmail: formData.personalEmail?.trim() || undefined,
+        phone: formData.phone?.trim() || undefined,
+        mobile: formData.mobile?.trim() || undefined,
         dateOfBirth: formData.dateOfBirth || undefined,
         gender: formData.gender || undefined,
         maritalStatus: formData.maritalStatus || undefined,
-        nationality: formData.nationality || undefined,
-        addressLine1: formData.addressLine1 || undefined,
-        addressLine2: formData.addressLine2 || undefined,
-        city: formData.city || undefined,
-        state: formData.state || undefined,
-        country: formData.country || undefined,
-        postalCode: formData.postalCode || undefined,
+        nationality: formData.nationality?.trim() || undefined,
+        addressLine1: formData.addressLine1?.trim() || undefined,
+        addressLine2: formData.addressLine2?.trim() || undefined,
+        city: formData.city?.trim() || undefined,
+        state: formData.state?.trim() || undefined,
+        country: formData.country?.trim() || undefined,
+        postalCode: formData.postalCode?.trim() || undefined,
         departmentId: formData.departmentId,
         designationId: formData.designationId,
         reportingManagerId: formData.reportingManagerId || undefined,
         employmentType: formData.employmentType,
         joinDate: formData.joinDate,
         probationEndDate: formData.probationEndDate || undefined,
-        workLocation: formData.workLocation || undefined,
-        workShift: formData.workShift || undefined,
+        workLocation: formData.workLocation?.trim() || undefined,
+        workShift: formData.workShift?.trim() || undefined,
         timezone: formData.timezone,
         baseSalary: formData.baseSalary ? parseFloat(formData.baseSalary) : undefined,
         currency: formData.currency,
-        emergencyContacts: formData.emergencyContacts.filter(c => c.name && c.phone),
-        bankDetails: formData.bankDetails.filter(b => b.bankName && b.accountNumber),
+        emergencyContacts: formData.emergencyContacts.filter(c => c.name?.trim() && c.phone?.trim()).map(c => ({
+          name: c.name.trim(),
+          relationship: c.relationship?.trim() || undefined,
+          phone: c.phone.trim(),
+          alternatePhone: c.alternatePhone?.trim() || undefined,
+          email: c.email?.trim() || undefined,
+          address: c.address?.trim() || undefined,
+        })),
+        bankDetails: formData.bankDetails.filter(b => b.bankName?.trim() && b.accountNumber?.trim()).map(b => ({
+          bankName: b.bankName.trim(),
+          branchName: b.branchName?.trim() || undefined,
+          accountNumber: b.accountNumber.trim(),
+          accountType: b.accountType,
+          routingNumber: b.routingNumber?.trim() || undefined,
+          swiftCode: b.swiftCode?.trim() || undefined,
+          ifscCode: b.ifscCode?.trim() || undefined,
+        })),
         educations: formData.educations
-          .filter(e => e.institutionName && e.educationType)
+          .filter(e => e.institutionName?.trim() && e.educationType)
           .map(e => ({
-            ...e,
+            educationType: e.educationType,
+            institutionName: e.institutionName.trim(),
+            institutionType: e.institutionType,
+            degree: e.degree?.trim() || undefined,
+            fieldOfStudy: e.fieldOfStudy?.trim() || undefined,
+            specialization: e.specialization?.trim() || undefined,
             enrollmentYear: e.enrollmentYear ? Number(e.enrollmentYear) : undefined,
             completionYear: e.completionYear ? Number(e.completionYear) : undefined,
+            isOngoing: e.isOngoing,
+            gradeType: e.gradeType,
+            grade: e.grade?.trim() || undefined,
             percentage: e.percentage ? parseFloat(e.percentage) : undefined,
+            boardUniversity: e.boardUniversity?.trim() || undefined,
           })),
       };
 
@@ -493,17 +579,33 @@ export default function NewEmployeePage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild>
-          <Link href="/employees">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
+      <div>
+        <Button
+          variant="ghost"
+          className="mb-2 -ml-2 text-muted-foreground hover:text-foreground"
+          onClick={() => router.push('/employees')}
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to Employees
         </Button>
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">Add New Employee</h2>
-          <p className="text-muted-foreground">
-            Fill in the details to onboard a new employee
-          </p>
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-3xl font-bold tracking-tight">Add New Employee</h2>
+            <p className="text-muted-foreground">
+              Fill in the details to onboard a new employee
+            </p>
+          </div>
+          {employeeCodePreview && (
+            <div className="text-right">
+              <p className="text-sm text-muted-foreground flex items-center gap-1 justify-end mb-1">
+                <Hash className="h-3 w-3" />
+                Employee Code (Auto-Generated)
+              </p>
+              <Badge variant="secondary" className="text-base font-mono px-3 py-1">
+                {employeeCodePreview}
+              </Badge>
+            </div>
+          )}
         </div>
       </div>
 
@@ -619,37 +721,54 @@ export default function NewEmployeePage() {
                     value={formData.personalEmail}
                     onChange={(e) => updateField('personalEmail', e.target.value)}
                     placeholder="john@gmail.com"
+                    className={errors.personalEmail ? 'border-destructive' : ''}
                   />
+                  {errors.personalEmail && (
+                    <p className="text-sm text-destructive">{errors.personalEmail}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="phone">Phone</Label>
-                  <Input
-                    id="phone"
+                  <PhoneInput
                     value={formData.phone}
-                    onChange={(e) => updateField('phone', e.target.value)}
-                    placeholder="+1 234 567 8900"
+                    onChange={(value) => updateField('phone', value)}
+                    defaultCountry="IN"
+                    placeholder="Enter phone number"
+                    error={!!errors.phone}
                   />
+                  {errors.phone && (
+                    <p className="text-sm text-destructive">{errors.phone}</p>
+                  )}
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="mobile">Mobile</Label>
-                  <Input
-                    id="mobile"
+                  <PhoneInput
                     value={formData.mobile}
-                    onChange={(e) => updateField('mobile', e.target.value)}
-                    placeholder="+1 234 567 8901"
+                    onChange={(value) => updateField('mobile', value)}
+                    defaultCountry="IN"
+                    placeholder="Enter mobile number"
+                    error={!!errors.mobile}
                   />
+                  {errors.mobile && (
+                    <p className="text-sm text-destructive">{errors.mobile}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="dateOfBirth">Date of Birth</Label>
-                  <Input
+                  <DatePicker
                     id="dateOfBirth"
-                    type="date"
                     value={formData.dateOfBirth}
-                    onChange={(e) => updateField('dateOfBirth', e.target.value)}
+                    onChange={(date) => updateField('dateOfBirth', date || '')}
+                    placeholder="Select date of birth"
+                    error={!!errors.dateOfBirth}
+                    maxDate={new Date()}
                   />
+                  {errors.dateOfBirth && (
+                    <p className="text-sm text-destructive">{errors.dateOfBirth}</p>
+                  )}
                 </div>
               </div>
 
@@ -740,16 +859,23 @@ export default function NewEmployeePage() {
                   <Select
                     value={formData.designationId}
                     onValueChange={(v) => updateField('designationId', v)}
+                    disabled={designationsLoading}
                   >
                     <SelectTrigger className={errors.designationId ? 'border-destructive' : ''}>
-                      <SelectValue placeholder="Select designation" />
+                      <SelectValue placeholder={designationsLoading ? "Loading designations..." : "Select designation"} />
                     </SelectTrigger>
                     <SelectContent>
-                      {designations?.map((desig) => (
-                        <SelectItem key={desig.id} value={desig.id}>
-                          {desig.name}
-                        </SelectItem>
-                      ))}
+                      {designationsLoading ? (
+                        <SelectItem value="_loading" disabled>Loading...</SelectItem>
+                      ) : designations && designations.length > 0 ? (
+                        designations.map((desig) => (
+                          <SelectItem key={desig.id} value={desig.id}>
+                            {desig.name}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="_empty" disabled>No designations available</SelectItem>
+                      )}
                     </SelectContent>
                   </Select>
                   {errors.designationId && (
@@ -801,12 +927,12 @@ export default function NewEmployeePage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="joinDate">Join Date *</Label>
-                  <Input
+                  <DatePicker
                     id="joinDate"
-                    type="date"
                     value={formData.joinDate}
-                    onChange={(e) => updateField('joinDate', e.target.value)}
-                    className={errors.joinDate ? 'border-destructive' : ''}
+                    onChange={(date) => updateField('joinDate', date || '')}
+                    placeholder="Select join date"
+                    error={!!errors.joinDate}
                   />
                   {errors.joinDate && (
                     <p className="text-sm text-destructive">{errors.joinDate}</p>
@@ -814,12 +940,17 @@ export default function NewEmployeePage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="probationEndDate">Probation End Date</Label>
-                  <Input
+                  <DatePicker
                     id="probationEndDate"
-                    type="date"
                     value={formData.probationEndDate}
-                    onChange={(e) => updateField('probationEndDate', e.target.value)}
+                    onChange={(date) => updateField('probationEndDate', date || '')}
+                    placeholder="Select probation end date"
+                    error={!!errors.probationEndDate}
+                    minDate={formData.joinDate ? new Date(formData.joinDate) : undefined}
                   />
+                  {errors.probationEndDate && (
+                    <p className="text-sm text-destructive">{errors.probationEndDate}</p>
+                  )}
                 </div>
               </div>
 
@@ -1039,18 +1170,20 @@ export default function NewEmployeePage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>Phone</Label>
-                      <Input
+                      <PhoneInput
                         value={contact.phone}
-                        onChange={(e) => updateEmergencyContact(index, 'phone', e.target.value)}
-                        placeholder="+1 234 567 8900"
+                        onChange={(value) => updateEmergencyContact(index, 'phone', value)}
+                        defaultCountry="IN"
+                        placeholder="Enter phone number"
                       />
                     </div>
                     <div className="space-y-2">
                       <Label>Alternate Phone</Label>
-                      <Input
+                      <PhoneInput
                         value={contact.alternatePhone}
-                        onChange={(e) => updateEmergencyContact(index, 'alternatePhone', e.target.value)}
-                        placeholder="+1 234 567 8901"
+                        onChange={(value) => updateEmergencyContact(index, 'alternatePhone', value)}
+                        defaultCountry="IN"
+                        placeholder="Enter alternate phone"
                       />
                     </div>
                   </div>

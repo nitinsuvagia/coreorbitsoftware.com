@@ -84,13 +84,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     });
 
     socket.on('connect', () => {
-      console.log('WebSocket connected');
       setIsConnected(true);
       onConnect?.();
     });
 
     socket.on('disconnect', (reason) => {
-      console.log('WebSocket disconnected:', reason);
       setIsConnected(false);
       onDisconnect?.(reason);
     });
@@ -101,8 +99,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     });
 
     socket.on('notification', (notification: Notification) => {
-      console.log('Received notification:', notification);
-      
       // Add to local state
       setNotifications((prev) => [notification, ...prev]);
 

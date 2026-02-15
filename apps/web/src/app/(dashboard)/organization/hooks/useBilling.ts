@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api/client';
-import type { Invoice, Integration, BillingInfo, SubscriptionPlan, Subscription, PaymentMethod } from '../types';
+import type { Invoice, BillingInfo, SubscriptionPlan, Subscription, PaymentMethod } from '../types';
 
 // Default billing info when no subscription exists
 const defaultBillingInfo: BillingInfo = {
@@ -16,26 +16,11 @@ const defaultBillingInfo: BillingInfo = {
   cardBrand: '',
 };
 
-const defaultIntegrations: Integration[] = [
-  { id: '1', name: 'Slack', description: 'Team communication and notifications', icon: '💬', category: 'communication', connected: true, connectedAt: '2024-01-15' },
-  { id: '2', name: 'Google Calendar', description: 'Sync events and meetings', icon: '📅', category: 'calendar', connected: true, connectedAt: '2024-01-10' },
-  { id: '3', name: 'Microsoft Teams', description: 'Video calls and collaboration', icon: '👥', category: 'communication', connected: false },
-  { id: '4', name: 'Dropbox', description: 'File storage and sharing', icon: '📦', category: 'storage', connected: false },
-  { id: '5', name: 'Google Drive', description: 'Cloud storage integration', icon: '☁️', category: 'storage', connected: true, connectedAt: '2024-01-20' },
-  { id: '6', name: 'Zoom', description: 'Video conferencing', icon: '📹', category: 'communication', connected: false },
-  { id: '7', name: 'Jira', description: 'Project and issue tracking', icon: '🎯', category: 'productivity', connected: false },
-  { id: '8', name: 'GitHub', description: 'Code repository integration', icon: '🐙', category: 'productivity', connected: true, connectedAt: '2024-02-01' },
-];
-
 export function useBilling() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loadingInvoices, setLoadingInvoices] = useState(true);
   const [loadingBilling, setLoadingBilling] = useState(true);
   const [billingInfo, setBillingInfo] = useState<BillingInfo>(defaultBillingInfo);
-  
-  // Integrations
-  const [integrations, setIntegrations] = useState<Integration[]>(defaultIntegrations);
-  const [connectingIntegration, setConnectingIntegration] = useState<string | null>(null);
 
   // Fetch available subscription plans from Platform Admin
   const fetchPlans = useCallback(async (): Promise<SubscriptionPlan[]> => {
@@ -156,51 +141,6 @@ export function useBilling() {
     fetchInvoices();
   }, [fetchBillingData, fetchInvoices]);
 
-  const connectIntegration = useCallback(async (integrationId: string) => {
-    try {
-      setConnectingIntegration(integrationId);
-      // Simulate OAuth flow
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      setIntegrations(prev => prev.map(i => 
-        i.id === integrationId 
-          ? { ...i, connected: true, connectedAt: new Date().toISOString() } 
-          : i
-      ));
-      toast.success('Integration connected successfully');
-      return true;
-    } catch (error: any) {
-      toast.error('Failed to connect integration');
-      return false;
-    } finally {
-      setConnectingIntegration(null);
-    }
-  }, []);
-
-  const disconnectIntegration = useCallback(async (integrationId: string) => {
-    try {
-      setConnectingIntegration(integrationId);
-      await apiClient.delete(`/api/v1/integrations/${integrationId}`);
-      setIntegrations(prev => prev.map(i => 
-        i.id === integrationId 
-          ? { ...i, connected: false, connectedAt: undefined } 
-          : i
-      ));
-      toast.success('Integration disconnected');
-      return true;
-    } catch (error: any) {
-      // Demo - still update UI
-      setIntegrations(prev => prev.map(i => 
-        i.id === integrationId 
-          ? { ...i, connected: false, connectedAt: undefined } 
-          : i
-      ));
-      toast.success('Integration disconnected');
-      return true;
-    } finally {
-      setConnectingIntegration(null);
-    }
-  }, []);
-
   const changePlan = useCallback(async (newPlanId: string, billingCycle: 'MONTHLY' | 'YEARLY' = 'MONTHLY') => {
     try {
       const response = await apiClient.patch('/api/v1/billing/subscription', {
@@ -293,12 +233,8 @@ export function useBilling() {
     loadingInvoices,
     loadingBilling,
     billingInfo,
-    integrations,
-    connectingIntegration,
     fetchInvoices,
     fetchBillingData,
-    connectIntegration,
-    disconnectIntegration,
     changePlan,
     cancelSubscription,
     updatePaymentMethod,

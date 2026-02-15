@@ -2,7 +2,7 @@
  * Subscription Service - Manage tenant subscriptions
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '.prisma/tenant-client';
 import { DateTime } from 'luxon';
 import { v4 as uuid } from 'uuid';
 import { getMasterPrisma } from '@oms/database';

@@ -172,8 +172,9 @@ export class CandidateService {
     let resumeUrl = data.resumeUrl;
     if (data.resumeData) {
       try {
-        // Create uploads directory if it doesn't exist
-        const uploadsDir = path.join(process.cwd(), 'uploads', 'resumes', tenantSlug);
+        // Create uploads directory - unified structure under documents/tenants/{tenant}/resumes/
+        const baseDir = process.env.UPLOADS_DIR || path.join(process.cwd(), '../../uploads');
+        const uploadsDir = path.join(baseDir, 'documents', 'tenants', tenantSlug, 'resumes');
         if (!fs.existsSync(uploadsDir)) {
           fs.mkdirSync(uploadsDir, { recursive: true });
         }
@@ -187,8 +188,8 @@ export class CandidateService {
         const fileBuffer = Buffer.from(data.resumeData.content, 'base64');
         fs.writeFileSync(filePath, fileBuffer);
 
-        // Store relative path as URL (can be served later via static file server)
-        resumeUrl = `/uploads/resumes/${tenantSlug}/${uniqueFilename}`;
+        // Store relative path as URL (served via document-service)
+        resumeUrl = `/uploads/documents/tenants/${tenantSlug}/resumes/${uniqueFilename}`;
         
         logger.info({ filename: data.resumeData.filename, path: resumeUrl }, 'Resume uploaded');
       } catch (error: any) {
@@ -261,8 +262,9 @@ export class CandidateService {
       const ext = filename.split('.').pop() || 'pdf';
       const uniqueFilename = `${crypto.randomUUID()}.${ext}`;
       
-      // Create uploads directory if it doesn't exist
-      const uploadDir = path.join(process.cwd(), 'uploads', 'resumes', tenantSlug);
+      // Create uploads directory - unified structure under documents/tenants/{tenant}/resumes/
+      const baseDir = process.env.UPLOADS_DIR || path.join(process.cwd(), '../../uploads');
+      const uploadDir = path.join(baseDir, 'documents', 'tenants', tenantSlug, 'resumes');
       if (!fs.existsSync(uploadDir)) {
         fs.mkdirSync(uploadDir, { recursive: true });
       }
@@ -271,8 +273,8 @@ export class CandidateService {
       const filePath = path.join(uploadDir, uniqueFilename);
       fs.writeFileSync(filePath, buffer);
       
-      // Update resumeUrl in updateData
-      updateData.resumeUrl = `/uploads/resumes/${tenantSlug}/${uniqueFilename}`;
+      // Update resumeUrl in updateData (served via document-service)
+      updateData.resumeUrl = `/uploads/documents/tenants/${tenantSlug}/resumes/${uniqueFilename}`;
       
       // Remove resumeData from updateData as it's not a database field
       delete updateData.resumeData;
@@ -336,6 +338,44 @@ export class CandidateService {
       data: updateData,
     });
 
+    // Cascade email/name updates to related records
+    const emailChanged = data.email && data.email !== existing.email;
+    const nameChanged = (data.firstName && data.firstName !== existing.firstName) || 
+                        (data.lastName && data.lastName !== existing.lastName);
+    
+    if (emailChanged || nameChanged) {
+      const updatedName = `${data.firstName || existing.firstName} ${data.lastName || existing.lastName}`;
+      const updatedEmail = data.email || existing.email;
+      
+      // Update AssessmentInvitation records
+      await db.assessmentInvitation.updateMany({
+        where: { candidateId },
+        data: {
+          ...(emailChanged && { candidateEmail: updatedEmail }),
+          ...(nameChanged && { candidateName: updatedName }),
+        },
+      });
+      
+      // Get invitation IDs for this candidate to update results
+      const invitations = await db.assessmentInvitation.findMany({
+        where: { candidateId },
+        select: { id: true },
+      });
+      
+      if (invitations.length > 0) {
+        // Update AssessmentResult records through invitation relationship
+        await db.assessmentResult.updateMany({
+          where: { invitationId: { in: invitations.map(i => i.id) } },
+          data: {
+            ...(emailChanged && { candidateEmail: updatedEmail }),
+            ...(nameChanged && { candidateName: updatedName }),
+          },
+        });
+      }
+      
+      logger.info({ candidateId, emailChanged, nameChanged }, 'Cascaded candidate updates to related records');
+    }
+
     logger.info({ candidateId, jobId }, 'Updated candidate');
     return candidate;
   }
@@ -365,5 +405,120 @@ export class CandidateService {
     });
 
     logger.info({ candidateId, jobId }, 'Deleted candidate');
+  }
+
+  /**
+   * Update candidate status by ID only (no jobId required)
+   * Used for quick status updates from interview detail page
+   */
+  static async updateCandidateStatus(tenantSlug: string, candidateId: string, status: string) {
+    const db = await getTenantPrismaBySlug(tenantSlug);
+
+    const existing = await db.jobCandidate.findUnique({
+      where: { id: candidateId },
+    });
+
+    if (!existing) {
+      throw new Error('Candidate not found');
+    }
+
+    const updateData: any = { status };
+
+    // Track status change timestamps
+    switch (status) {
+      case 'SCREENING':
+        updateData.screenedAt = new Date();
+        break;
+      case 'INTERVIEWED':
+        updateData.interviewedAt = new Date();
+        break;
+      case 'OFFERED':
+        updateData.offeredAt = new Date();
+        break;
+      case 'HIRED':
+        updateData.hiredAt = new Date();
+        // Update job hired count
+        await db.jobDescription.update({
+          where: { id: existing.jobId },
+          data: { hired: { increment: 1 } },
+        });
+        break;
+      case 'REJECTED':
+        updateData.rejectedAt = new Date();
+        break;
+    }
+
+    // Update stage based on status
+    const statusToStage: Record<string, string> = {
+      'SCREENING': 'PHONE_SCREEN',
+      'SHORTLISTED': 'TECHNICAL_INTERVIEW',
+      'INTERVIEWED': 'HR_INTERVIEW',
+      'OFFERED': 'OFFER',
+      'HIRED': 'ONBOARDING',
+    };
+
+    if (statusToStage[status]) {
+      updateData.stage = statusToStage[status];
+    }
+
+    // Update job statistics
+    if (status === 'SHORTLISTED') {
+      await db.jobDescription.update({
+        where: { id: existing.jobId },
+        data: { shortlisted: { increment: 1 } },
+      });
+    } else if (status === 'INTERVIEWED') {
+      await db.jobDescription.update({
+        where: { id: existing.jobId },
+        data: { interviewed: { increment: 1 } },
+      });
+    }
+
+    const candidate = await db.jobCandidate.update({
+      where: { id: candidateId },
+      data: updateData,
+      include: {
+        job: {
+          select: {
+            id: true,
+            title: true,
+            department: true,
+          },
+        },
+      },
+    });
+
+    logger.info({ candidateId, status }, 'Updated candidate status');
+    return candidate;
+  }
+
+  /**
+   * Bulk delete candidates
+   */
+  static async bulkDeleteCandidates(tenantSlug: string, candidates: { id: string; jobId: string }[]) {
+    const db = await getTenantPrismaBySlug(tenantSlug);
+
+    // Group candidates by jobId to update job statistics efficiently
+    const jobCounts: Record<string, number> = {};
+    const candidateIds = candidates.map(c => {
+      jobCounts[c.jobId] = (jobCounts[c.jobId] || 0) + 1;
+      return c.id;
+    });
+
+    // Delete all candidates
+    await db.jobCandidate.deleteMany({
+      where: { id: { in: candidateIds } },
+    });
+
+    // Update job statistics for each affected job
+    for (const [jobId, count] of Object.entries(jobCounts)) {
+      await db.jobDescription.update({
+        where: { id: jobId },
+        data: { totalApplied: { decrement: count } },
+      });
+    }
+
+    logger.info({ count: candidates.length }, 'Bulk deleted candidates');
+    return { deleted: candidates.length };
   }
 }

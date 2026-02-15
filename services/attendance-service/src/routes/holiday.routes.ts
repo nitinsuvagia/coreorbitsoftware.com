@@ -4,7 +4,7 @@
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { getTenantPrisma } from '@oms/tenant-db-manager';
+import { getTenantPrismaBySlug } from '../utils/database';
 import {
   createHoliday,
   bulkCreateHolidays,
@@ -18,6 +18,14 @@ import {
   getWorkingDaysInRange,
   importStandardHolidays,
 } from '../services/holiday.service';
+import {
+  listOptionalHolidays,
+  getEmployeeOptedHolidays,
+  optInToHoliday,
+  cancelOptIn,
+  getTenantOptionalHolidaySettings,
+  getOptedHolidayCount,
+} from '../services/optional-holiday.service';
 import { logger } from '../utils/logger';
 import { parseISO } from 'date-fns';
 
@@ -120,7 +128,8 @@ router.post(
   validateBody(createHolidaySchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       const userId = (req as any).userId;
       
       const holiday = await createHoliday(prisma, req.body, userId);
@@ -148,7 +157,8 @@ router.post(
   validateBody(bulkCreateSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       const userId = (req as any).userId;
       
       const result = await bulkCreateHolidays(prisma, req.body, userId);
@@ -172,7 +182,8 @@ router.get(
   validateQuery(listHolidaysSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       
       const holidays = await listHolidays(prisma, req.query as any);
       
@@ -191,7 +202,8 @@ router.get(
   '/upcoming',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 5;
       const departmentId = req.query.departmentId as string | undefined;
       
@@ -212,7 +224,8 @@ router.get(
   '/stats/:year',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       const year = parseInt(req.params.year);
       
       const stats = await getHolidayStats(prisma, year);
@@ -233,7 +246,8 @@ router.get(
   validateQuery(workingDaysSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       const { fromDate, toDate, departmentId } = req.query as any;
       
       const result = await getWorkingDaysInRange(
@@ -258,7 +272,8 @@ router.get(
   '/:id',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       const { id } = req.params;
       
       const holiday = await getHolidayById(prisma, id);
@@ -283,7 +298,8 @@ router.put(
   validateBody(updateHolidaySchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       const { id } = req.params;
       const userId = (req as any).userId;
       
@@ -307,7 +323,8 @@ router.delete(
   '/:id',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       const { id } = req.params;
       
       await deleteHoliday(prisma, id);
@@ -327,7 +344,8 @@ router.post(
   '/generate-recurring',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       const year = req.body.year || new Date().getFullYear() + 1;
       const userId = (req as any).userId;
       
@@ -352,7 +370,8 @@ router.post(
   validateBody(importHolidaysSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prisma = await getTenantPrisma();
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
       const { year, country } = req.body;
       const userId = (req as any).userId;
       
@@ -367,6 +386,135 @@ router.post(
       if ((error as Error).message.includes('not available')) {
         return res.status(400).json({ error: (error as Error).message });
       }
+      next(error);
+    }
+  }
+);
+
+// ============================================================================
+// OPTIONAL HOLIDAY OPT-IN ROUTES
+// ============================================================================
+
+/**
+ * GET /holidays/optional/settings
+ * Get optional holiday settings for tenant
+ */
+router.get(
+  '/optional/settings',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const tenantSlug = (req as any).tenantSlug;
+      const settings = await getTenantOptionalHolidaySettings(tenantSlug);
+      res.json({ data: settings });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /holidays/optional/:employeeId
+ * List all optional holidays with opt status for an employee
+ */
+router.get(
+  '/optional/:employeeId',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
+      const { employeeId } = req.params;
+      const year = req.query.year ? parseInt(req.query.year as string) : undefined;
+      
+      const settings = await getTenantOptionalHolidaySettings(tenantSlug);
+      const holidays = await listOptionalHolidays(prisma, employeeId, year);
+      const optedCount = await getOptedHolidayCount(prisma, employeeId, year);
+      
+      res.json({
+        data: {
+          holidays,
+          quota: settings.optionalHolidayQuota,
+          used: optedCount,
+          remaining: Math.max(0, settings.optionalHolidayQuota - optedCount),
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /holidays/optional/:employeeId/opted
+ * Get only opted holidays for an employee
+ */
+router.get(
+  '/optional/:employeeId/opted',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
+      const { employeeId } = req.params;
+      const year = req.query.year ? parseInt(req.query.year as string) : undefined;
+      
+      const optedHolidays = await getEmployeeOptedHolidays(prisma, employeeId, year);
+      
+      res.json({ data: optedHolidays });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /holidays/optional/:employeeId/:holidayId/opt
+ * Opt into an optional holiday
+ */
+router.post(
+  '/optional/:employeeId/:holidayId/opt',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
+      const { employeeId, holidayId } = req.params;
+      
+      const result = await optInToHoliday(prisma, employeeId, holidayId, tenantSlug);
+      
+      if (!result.success) {
+        return res.status(400).json({ error: result.message });
+      }
+      
+      res.status(200).json({
+        message: result.message,
+        data: result.data,
+      });
+    } catch (error) {
+      logger.error({ error: (error as Error).message }, 'Opt-in to holiday failed');
+      next(error);
+    }
+  }
+);
+
+/**
+ * DELETE /holidays/optional/:employeeId/:holidayId/opt
+ * Cancel opt-in for an optional holiday
+ */
+router.delete(
+  '/optional/:employeeId/:holidayId/opt',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
+      const { employeeId, holidayId } = req.params;
+      
+      const result = await cancelOptIn(prisma, employeeId, holidayId);
+      
+      if (!result.success) {
+        return res.status(400).json({ error: result.message });
+      }
+      
+      res.json({ message: result.message });
+    } catch (error) {
+      logger.error({ error: (error as Error).message }, 'Cancel opt-in failed');
       next(error);
     }
   }

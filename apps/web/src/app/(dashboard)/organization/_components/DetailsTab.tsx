@@ -11,7 +11,8 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Building2, RefreshCw, Save } from 'lucide-react';
+import { Building2, RefreshCw, Save, ImageIcon } from 'lucide-react';
+import { LogoUpload } from '@/components/logo-upload';
 import type { Organization, OrgFormErrors } from '../types';
 
 interface DetailsTabProps {
@@ -36,6 +37,7 @@ export function DetailsTab({
   onClearError,
 }: DetailsTabProps) {
   return (
+    <>
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
@@ -44,7 +46,42 @@ export function DetailsTab({
         </CardTitle>
         <CardDescription>Basic information about your organization</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-6">
+        {/* Logo Uploads */}
+        <div className="grid gap-6 md:grid-cols-2 pb-6 border-b">
+          {/* Thumbnail Logo */}
+          <div className="flex flex-col items-center">
+            <Label className="mb-2 text-center flex items-center gap-2">
+              <ImageIcon className="h-4 w-4" />
+              Thumbnail Logo
+            </Label>
+            <p className="text-xs text-muted-foreground mb-3 text-center">Used in navigation, lists & avatars</p>
+            <LogoUpload
+              value={orgForm.logo || null}
+              onChange={(logo) => onUpdateField('logo', logo)}
+              name={orgForm.name || 'Organization'}
+              shape="circle"
+              size="lg"
+            />
+          </div>
+          {/* Stationary/Report Logo */}
+          <div className="flex flex-col items-center">
+            <Label className="mb-2 text-center flex items-center gap-2">
+              <ImageIcon className="h-4 w-4" />
+              Stationery Logo
+            </Label>
+            <p className="text-xs text-muted-foreground mb-3 text-center">Full-size logo for reports & documents (3:1 ratio)</p>
+            <LogoUpload
+              value={orgForm.reportLogo || null}
+              onChange={(reportLogo) => onUpdateField('reportLogo', reportLogo)}
+              name={orgForm.name || 'Organization'}
+              shape="square"
+              size="lg"
+              aspectRatio={3}
+            />
+          </div>
+        </div>
+
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="orgName">Organization Name <span className="text-red-500">*</span></Label>
@@ -183,5 +220,9 @@ export function DetailsTab({
         </Button>
       </CardFooter>
     </Card>
+    
+    {/* Bottom spacing to prevent content touching screen bottom */}
+    <div className="h-6" />
+    </>
   );
 }

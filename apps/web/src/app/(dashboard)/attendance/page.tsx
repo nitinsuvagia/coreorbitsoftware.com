@@ -47,7 +47,7 @@ export default function AttendancePage() {
   const checkOutMutation = useCheckOut();
 
   const attendance = attendanceData?.items || [];
-  const pendingLeaves = leavesData?.items || [];
+  const pendingLeaves = leavesData?.data || [];
 
   // Calculate today's status
   const today = new Date().toISOString().slice(0, 10);
@@ -225,11 +225,11 @@ export default function AttendancePage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {leaveBalance?.map((balance) => (
-                <div key={balance.leaveType} className="flex items-center justify-between">
+              {leaveBalance?.data?.map((balance) => (
+                <div key={String(balance.leaveType)} className="flex items-center justify-between">
                   <div>
                     <p className="font-medium capitalize">
-                      {balance.leaveType.replace('_', ' ')}
+                      {String(balance.leaveType).replace('_', ' ')}
                     </p>
                     <p className="text-sm text-muted-foreground">
                       {balance.used} used of {balance.total}
@@ -262,10 +262,13 @@ export default function AttendancePage() {
                   <div key={leave.id} className="flex items-center justify-between">
                     <div>
                       <p className="font-medium capitalize">
-                        {leave.leaveType.replace('_', ' ')}
+                        {(typeof leave.leaveType === 'string' 
+                          ? leave.leaveType 
+                          : leave.leaveType?.name || 'Leave'
+                        ).replace('_', ' ')}
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        {formatDate(leave.startDate)} - {formatDate(leave.endDate)}
+                        {leave.startDate ? formatDate(leave.startDate) : 'N/A'} - {leave.endDate ? formatDate(leave.endDate) : 'N/A'}
                       </p>
                     </div>
                     <Badge variant="warning">{leave.status}</Badge>

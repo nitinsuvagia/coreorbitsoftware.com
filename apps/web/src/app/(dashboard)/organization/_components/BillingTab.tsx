@@ -654,6 +654,9 @@ export function BillingTab({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      
+      {/* Bottom spacing to prevent content touching screen bottom */}
+      <div className="h-4" />
     </div>
   );
 }

@@ -6,6 +6,8 @@ import { useEmployee, useUpdateEmployee } from '@/hooks/use-employees';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { DatePicker } from '@/components/ui/date-picker';
+import { PhoneInput } from '@/components/ui/phone-input';
 import {
   Select,
   SelectContent,
@@ -219,6 +221,8 @@ export default function EditEmployeePage() {
         data: {
           ...formData,
           dateOfBirth: formData.dateOfBirth || undefined,
+          gender: formData.gender || undefined,
+          maritalStatus: formData.maritalStatus || undefined,
           joinDate: formData.joinDate,
           confirmationDate: formData.confirmationDate || undefined,
           probationEndDate: formData.probationEndDate || undefined,
@@ -359,19 +363,20 @@ export default function EditEmployeePage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" asChild>
-            <Link href={`/employees/${employeeId}`}>
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-          </Button>
-          <div>
-            <h2 className="text-3xl font-bold tracking-tight">Edit Employee</h2>
-            <p className="text-muted-foreground">
-              {employee.employeeCode} • {employee.displayName}
-            </p>
-          </div>
+      <div>
+        <Button
+          variant="ghost"
+          className="mb-2 -ml-2 text-muted-foreground hover:text-foreground"
+          onClick={() => router.push(`/employees/${employeeId}`)}
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to Employee
+        </Button>
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">Edit Employee</h2>
+          <p className="text-muted-foreground">
+            {employee.employeeCode} • {employee.displayName}
+          </p>
         </div>
       </div>
 
@@ -450,13 +455,14 @@ export default function EditEmployeePage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="dateOfBirth">Date of Birth</Label>
-                    <Input
+                    <DatePicker
                       id="dateOfBirth"
-                      type="date"
                       value={formData.dateOfBirth}
-                      onChange={(e) =>
-                        handleInputChange('dateOfBirth', e.target.value)
+                      onChange={(date) =>
+                        handleInputChange('dateOfBirth', date || '')
                       }
+                      placeholder="Select date of birth"
+                      maxDate={new Date()}
                     />
                   </div>
                   <div className="space-y-2">
@@ -546,36 +552,37 @@ export default function EditEmployeePage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="joinDate">Join Date *</Label>
-                    <Input
+                    <DatePicker
                       id="joinDate"
-                      type="date"
                       value={formData.joinDate}
-                      onChange={(e) =>
-                        handleInputChange('joinDate', e.target.value)
+                      onChange={(date) =>
+                        handleInputChange('joinDate', date || '')
                       }
-                      required
+                      placeholder="Select join date"
                     />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="confirmationDate">Confirmation Date</Label>
-                    <Input
+                    <DatePicker
                       id="confirmationDate"
-                      type="date"
                       value={formData.confirmationDate}
-                      onChange={(e) =>
-                        handleInputChange('confirmationDate', e.target.value)
+                      onChange={(date) =>
+                        handleInputChange('confirmationDate', date || '')
                       }
+                      placeholder="Select confirmation date"
+                      minDate={formData.joinDate ? new Date(formData.joinDate) : undefined}
                     />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="probationEndDate">Probation End Date</Label>
-                    <Input
+                    <DatePicker
                       id="probationEndDate"
-                      type="date"
                       value={formData.probationEndDate}
-                      onChange={(e) =>
-                        handleInputChange('probationEndDate', e.target.value)
+                      onChange={(date) =>
+                        handleInputChange('probationEndDate', date || '')
                       }
+                      placeholder="Select probation end date"
+                      minDate={formData.joinDate ? new Date(formData.joinDate) : undefined}
                     />
                   </div>
                   <div className="space-y-2">
@@ -600,13 +607,28 @@ export default function EditEmployeePage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="timezone">Timezone</Label>
-                    <Input
-                      id="timezone"
+                    <Select
                       value={formData.timezone}
-                      onChange={(e) =>
-                        handleInputChange('timezone', e.target.value)
+                      onValueChange={(value) =>
+                        handleInputChange('timezone', value)
                       }
-                    />
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select timezone" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="UTC">UTC</SelectItem>
+                        <SelectItem value="America/New_York">Eastern Time</SelectItem>
+                        <SelectItem value="America/Chicago">Central Time</SelectItem>
+                        <SelectItem value="America/Denver">Mountain Time</SelectItem>
+                        <SelectItem value="America/Los_Angeles">Pacific Time</SelectItem>
+                        <SelectItem value="Europe/London">London</SelectItem>
+                        <SelectItem value="Europe/Paris">Paris</SelectItem>
+                        <SelectItem value="Asia/Tokyo">Tokyo</SelectItem>
+                        <SelectItem value="Asia/Kolkata">India</SelectItem>
+                        <SelectItem value="Asia/Shanghai">Shanghai</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="baseSalary">Base Salary</Label>

@@ -4,7 +4,7 @@
 
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '.prisma/tenant-client';
 
 import * as designationService from '../services/designation.service';
 import type { CreateDesignationInput } from '../services/designation.service';
@@ -47,7 +47,7 @@ const listSchema = z.object({
   minLevel: z.coerce.number().optional(),
   maxLevel: z.coerce.number().optional(),
   page: z.coerce.number().min(1).optional(),
-  pageSize: z.coerce.number().min(1).max(100).optional(),
+  pageSize: z.coerce.number().min(1).max(1000).optional(),
 });
 
 // ============================================================================

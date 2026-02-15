@@ -50,7 +50,7 @@ export function Header({ title }: HeaderProps) {
   return (
     <>
       <SearchCommand open={searchOpen} onOpenChange={setSearchOpen} />
-      <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b bg-background px-6">
+      <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b bg-background px-6 print:hidden">
         {/* Page Title */}
         {title && (
           <h1 className="text-xl font-semibold">{title}</h1>
@@ -134,7 +134,6 @@ export function Header({ title }: HeaderProps) {
                 type="button"
                 className="w-full flex items-center cursor-pointer text-red-600"
                 onClick={() => {
-                  console.log('[Header] Logout clicked');
                   logout();
                 }}
               >

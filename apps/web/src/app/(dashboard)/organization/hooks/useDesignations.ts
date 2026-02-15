@@ -29,7 +29,8 @@ export function useDesignations() {
   const fetchDesignations = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get<Designation[]>('/api/v1/designations');
+      // Fetch all designations with a high pageSize to get all records
+      const response = await apiClient.get<Designation[]>('/api/v1/designations?pageSize=1000');
       if (response.success) {
         setDesignations(response.data || []);
       }

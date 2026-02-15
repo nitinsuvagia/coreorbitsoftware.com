@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -45,11 +46,14 @@ import {
   XCircle,
   Trash2,
   Briefcase,
+  X,
 } from 'lucide-react';
 import { candidateApi, type JobCandidate } from '@/lib/api/candidates';
 import { jobApi, type JobDescription } from '@/lib/api/jobs';
 import { useOrgSettings } from '@/hooks/use-org-settings';
 import { formatDate, getAvatarColor } from '@/lib/format';
+import { ScheduleInterviewDialog } from '../interviews/_components/ScheduleInterviewDialog';
+import { SendOfferDialog } from '@/components/hr/SendOfferDialog';
 
 const statusColors: Record<string, string> = {
   APPLIED: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300',
@@ -73,6 +77,19 @@ export default function CandidatesPage() {
   const [jobFilter, setJobFilter] = useState<string>('all');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [candidateToDelete, setCandidateToDelete] = useState<{ id: string; jobId: string } | null>(null);
+  
+  // Selection state
+  const [selectedCandidates, setSelectedCandidates] = useState<Set<string>>(new Set());
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  
+  // Schedule Interview state
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [candidateToSchedule, setCandidateToSchedule] = useState<JobCandidate | null>(null);
+
+  // Send Offer state
+  const [sendOfferOpen, setSendOfferOpen] = useState(false);
+  const [candidateForOffer, setCandidateForOffer] = useState<JobCandidate | null>(null);
 
   useEffect(() => {
     loadData();
@@ -110,6 +127,23 @@ export default function CandidatesPage() {
     }
   };
 
+  const handleMarkAsHired = async (candidate: JobCandidate) => {
+    // Only allow hiring if candidate has been offered
+    if (candidate.status !== 'OFFERED') {
+      toast.error('Candidate must be in OFFERED status before being marked as hired');
+      return;
+    }
+    
+    try {
+      const result = await candidateApi.markAsHired(candidate.id);
+      toast.success(result.message || 'Employee created successfully!');
+      loadData();
+    } catch (error: any) {
+      console.error('Failed to mark as hired:', error);
+      toast.error(error.response?.data?.error || 'Failed to mark as hired');
+    }
+  };
+
   const handleDelete = (candidate: JobCandidate) => {
     setCandidateToDelete({ id: candidate.id, jobId: candidate.jobId });
     setDeleteDialogOpen(true);
@@ -131,7 +165,52 @@ export default function CandidatesPage() {
   };
 
   const handleViewDetails = (candidate: JobCandidate) => {
+    router.push(`/hr/candidates/${candidate.jobId}/${candidate.id}`);
+  };
+
+  const handleViewJob = (candidate: JobCandidate) => {
     router.push(`/hr/jobs/${candidate.jobId}`);
+  };
+
+  const handleScheduleInterview = (candidate: JobCandidate) => {
+    setCandidateToSchedule(candidate);
+    setScheduleDialogOpen(true);
+  };
+
+  const handleInterviewScheduled = async (data?: { type: string; candidateId: string }) => {
+    if (!data || !candidateToSchedule) {
+      setScheduleDialogOpen(false);
+      setCandidateToSchedule(null);
+      return;
+    }
+
+    // Map interview type to candidate status
+    const statusMap: Record<string, string> = {
+      PHONE_SCREEN: 'SCREENING',
+      TECHNICAL: 'SHORTLISTED',
+      HR: 'INTERVIEWED',
+      MANAGER: 'INTERVIEWED',
+      FINAL: 'INTERVIEWED',
+      ASSIGNMENT: 'SHORTLISTED',
+    };
+
+    const newStatus = statusMap[data.type];
+    
+    if (newStatus) {
+      // Update candidate status based on interview type
+      try {
+        await candidateApi.updateCandidate(candidateToSchedule.jobId, candidateToSchedule.id, { 
+          status: newStatus 
+        });
+        toast.success(`Interview scheduled! Candidate moved to ${newStatus.replace('_', ' ').toLowerCase()}`);
+        loadData();
+      } catch (error) {
+        console.error('Failed to update candidate status:', error);
+      }
+    }
+    
+    setScheduleDialogOpen(false);
+    setCandidateToSchedule(null);
   };
 
   // Stats
@@ -142,6 +221,54 @@ export default function CandidatesPage() {
     interviewed: candidates.filter(c => c.status === 'INTERVIEWED').length,
     hired: candidates.filter(c => c.status === 'HIRED').length,
     rejected: candidates.filter(c => c.status === 'REJECTED').length,
+  };
+
+  // Selection helpers
+  const isAllSelected = candidates.length > 0 && selectedCandidates.size === candidates.length;
+  const isSomeSelected = selectedCandidates.size > 0 && selectedCandidates.size < candidates.length;
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedCandidates(new Set());
+    } else {
+      setSelectedCandidates(new Set(candidates.map(c => c.id)));
+    }
+  };
+
+  const toggleSelectCandidate = (candidateId: string) => {
+    const newSelected = new Set(selectedCandidates);
+    if (newSelected.has(candidateId)) {
+      newSelected.delete(candidateId);
+    } else {
+      newSelected.add(candidateId);
+    }
+    setSelectedCandidates(newSelected);
+  };
+
+  const clearSelection = () => {
+    setSelectedCandidates(new Set());
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedCandidates.size === 0) return;
+    
+    setBulkDeleting(true);
+    try {
+      const candidatesToDelete = candidates
+        .filter(c => selectedCandidates.has(c.id))
+        .map(c => ({ id: c.id, jobId: c.jobId }));
+      
+      await candidateApi.bulkDeleteCandidates(candidatesToDelete);
+      toast.success(`${candidatesToDelete.length} candidates deleted successfully`);
+      setSelectedCandidates(new Set());
+      loadData();
+    } catch (error) {
+      console.error('Failed to bulk delete candidates:', error);
+      toast.error('Failed to delete candidates');
+    } finally {
+      setBulkDeleting(false);
+      setBulkDeleteDialogOpen(false);
+    }
   };
 
   return (
@@ -264,7 +391,7 @@ export default function CandidatesPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-4 flex-wrap">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
@@ -331,6 +458,27 @@ export default function CandidatesPage() {
         <Button variant="outline" size="icon" title="Download PDF">
           <Download className="h-4 w-4" />
         </Button>
+
+        {/* Bulk Actions - inline on right side */}
+        {selectedCandidates.size > 0 && (
+          <div className="flex items-center gap-2 ml-auto pl-4 border-l">
+            <span className="text-sm font-medium text-primary">
+              {selectedCandidates.size} selected
+            </span>
+            <Button variant="ghost" size="sm" onClick={clearSelection} className="h-8 px-2">
+              <X className="h-4 w-4" />
+            </Button>
+            <Button 
+              variant="destructive" 
+              size="sm"
+              onClick={() => setBulkDeleteDialogOpen(true)}
+              className="h-8"
+            >
+              <Trash2 className="h-4 w-4 mr-1" />
+              Delete
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Candidates Table */}
@@ -340,6 +488,9 @@ export default function CandidatesPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
+                  <th className="w-12 p-4">
+                    <Skeleton className="h-4 w-4" />
+                  </th>
                   <th className="text-left p-4 font-medium">Candidate</th>
                   <th className="text-left p-4 font-medium">Job Position</th>
                   <th className="text-left p-4 font-medium">Contact</th>
@@ -352,6 +503,9 @@ export default function CandidatesPage() {
               <tbody>
                 {Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i} className="border-b">
+                    <td className="p-4">
+                      <Skeleton className="h-4 w-4" />
+                    </td>
                     <td className="p-4">
                       <div className="flex items-center gap-3">
                         <Skeleton className="h-10 w-10 rounded-full" />
@@ -401,6 +555,14 @@ export default function CandidatesPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
+                  <th className="w-12 p-4">
+                    <Checkbox
+                      checked={isAllSelected}
+                      onCheckedChange={toggleSelectAll}
+                      aria-label="Select all candidates"
+                      className={isSomeSelected ? 'data-[state=checked]:bg-primary/50' : ''}
+                    />
+                  </th>
                   <th className="text-left p-4 font-medium">Candidate</th>
                   <th className="text-left p-4 font-medium">Job Position</th>
                   <th className="text-left p-4 font-medium">Contact</th>
@@ -412,11 +574,22 @@ export default function CandidatesPage() {
               </thead>
               <tbody>
                 {candidates.map((candidate) => (
-                  <tr key={candidate.id} className="border-b hover:bg-muted/50">
+                  <tr 
+                    key={candidate.id} 
+                    className={`border-b hover:bg-muted/50 cursor-pointer ${selectedCandidates.has(candidate.id) ? 'bg-primary/5' : ''}`}
+                    onClick={() => handleViewDetails(candidate)}
+                  >
+                    <td className="p-4" onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selectedCandidates.has(candidate.id)}
+                        onCheckedChange={() => toggleSelectCandidate(candidate.id)}
+                        aria-label={`Select ${candidate.firstName} ${candidate.lastName}`}
+                      />
+                    </td>
                     <td className="p-4">
                       <div className="flex items-center gap-3">
                         <Avatar className="h-10 w-10">
-                          <AvatarFallback className={`${getAvatarColor(candidate.email || candidate.firstName + candidate.lastName).className} font-semibold`}>
+                          <AvatarFallback className={`${getAvatarColor((candidate.email || '') + candidate.firstName + candidate.lastName).className} font-semibold`}>
                             {candidate.firstName[0]}{candidate.lastName[0]}
                           </AvatarFallback>
                         </Avatar>
@@ -471,7 +644,7 @@ export default function CandidatesPage() {
                         {candidate.status}
                       </Badge>
                     </td>
-                    <td className="p-4 text-right">
+                    <td className="p-4 text-right" onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -481,27 +654,33 @@ export default function CandidatesPage() {
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => handleViewDetails(candidate)}>
                             <Eye className="h-4 w-4 mr-2" />
+                            View Details
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleViewJob(candidate)}>
+                            <Briefcase className="h-4 w-4 mr-2" />
                             View Job
                           </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleScheduleInterview(candidate)}>
+                            <Video className="h-4 w-4 mr-2" />
+                            Schedule Interview
+                          </DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          <DropdownMenuLabel>Change Status</DropdownMenuLabel>
-                          <DropdownMenuItem onClick={() => handleUpdateStatus(candidate, 'SCREENING')}>
-                            Move to Screening
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleUpdateStatus(candidate, 'SHORTLISTED')}>
-                            Shortlist
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleUpdateStatus(candidate, 'INTERVIEWED')}>
-                            Mark as Interviewed
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleUpdateStatus(candidate, 'OFFERED')}>
+                          <DropdownMenuLabel>Final Decision</DropdownMenuLabel>
+                          <DropdownMenuItem onClick={() => {
+                              setCandidateForOffer(candidate);
+                              setSendOfferOpen(true);
+                            }}>
+                            <Award className="h-4 w-4 mr-2 text-amber-500" />
                             Send Offer
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleUpdateStatus(candidate, 'HIRED')}>
-                            <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
-                            Mark as Hired
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
+                          {candidate.status === 'OFFERED' && (
+                            <DropdownMenuItem 
+                              onClick={() => handleMarkAsHired(candidate)}
+                            >
+                              <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
+                              Mark as Hired
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem 
                             onClick={() => handleUpdateStatus(candidate, 'REJECTED')}
                             className="text-red-600"
@@ -545,6 +724,79 @@ export default function CandidatesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <AlertDialog open={bulkDeleteDialogOpen} onOpenChange={setBulkDeleteDialogOpen}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedCandidates.size} Candidates</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>
+                  Are you sure you want to permanently delete the following candidate{selectedCandidates.size > 1 ? 's' : ''}? 
+                  This action cannot be undone.
+                </p>
+                <div className="max-h-40 overflow-y-auto rounded-md border bg-muted/50 p-2">
+                  <ul className="space-y-1">
+                    {candidates
+                      .filter(c => selectedCandidates.has(c.id))
+                      .map(c => (
+                        <li key={c.id} className="text-sm flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
+                          <span className="font-medium text-foreground">{c.firstName} {c.lastName}</span>
+                          <span className="text-muted-foreground text-xs">({c.email})</span>
+                        </li>
+                      ))
+                    }
+                  </ul>
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleBulkDelete} 
+              className="bg-red-600 hover:bg-red-700"
+              disabled={bulkDeleting}
+            >
+              {bulkDeleting ? 'Deleting...' : `Delete ${selectedCandidates.size} Candidates`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Schedule Interview Dialog */}
+      {candidateToSchedule && (
+        <ScheduleInterviewDialog
+          open={scheduleDialogOpen}
+          onOpenChange={(open) => {
+            setScheduleDialogOpen(open);
+            if (!open) setCandidateToSchedule(null);
+          }}
+          onSuccess={handleInterviewScheduled}
+          preSelectedCandidate={{
+            id: candidateToSchedule.id,
+            name: `${candidateToSchedule.firstName} ${candidateToSchedule.lastName}`,
+            email: candidateToSchedule.email,
+            jobId: candidateToSchedule.jobId,
+            jobTitle: candidateToSchedule.job?.title || 'Unknown Position',
+          }}
+        />
+      )}
+
+      {/* Send Offer Dialog */}
+      <SendOfferDialog
+        open={sendOfferOpen}
+        onOpenChange={(open) => {
+          setSendOfferOpen(open);
+          if (!open) setCandidateForOffer(null);
+        }}
+        candidate={candidateForOffer}
+        job={candidateForOffer?.job}
+        currency={orgSettings.currency}
+        onSuccess={loadData}
+      />
     </div>
   );
 }

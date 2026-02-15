@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { PhoneDisplay } from '@/components/ui/phone-input';
 import { ArrowLeft, Building2, ExternalLink, User, Users, Globe, Database } from 'lucide-react';
 
 interface TenantDetail {
@@ -488,7 +489,9 @@ export default function TenantDetailPage() {
             </div>
             <div>
               <p className="text-muted-foreground">Phone</p>
-              <p className="font-medium">{tenant.phone || 'N/A'}</p>
+              <p className="font-medium">
+                {tenant.phone ? <PhoneDisplay value={tenant.phone} /> : 'N/A'}
+              </p>
             </div>
             <div>
               <p className="text-muted-foreground">Website</p>
