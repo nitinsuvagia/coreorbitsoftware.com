@@ -173,6 +173,17 @@ jobs:
           
           echo "🚀 Starting deployment..."
           
+          # Stop any existing services on ports 80/443
+          echo "🔌 Freeing up ports 80 and 443..."
+          sudo systemctl stop nginx 2>/dev/null || true
+          sudo systemctl stop apache2 2>/dev/null || true
+          sudo fuser -k 80/tcp 2>/dev/null || true
+          sudo fuser -k 443/tcp 2>/dev/null || true
+          
+          # Stop any existing Docker containers using these ports
+          sudo docker ps -q --filter "publish=80" | xargs -r sudo docker stop || true
+          sudo docker ps -q --filter "publish=443" | xargs -r sudo docker stop || true
+          
           # Create app directory if not exists
           sudo mkdir -p /opt/office-management
           sudo chown $USER:$USER /opt/office-management
@@ -214,7 +225,11 @@ jobs:
           sudo docker compose -f docker-compose.prod.yml build public-website
           
           echo "🔄 Restarting services..."
-          sudo docker compose -f docker-compose.prod.yml down || true
+          # Stop all existing OMS containers to free up ports
+          sudo docker compose -f docker-compose.prod.yml down --remove-orphans || true
+          sudo docker stop $(sudo docker ps -q --filter "name=oms-") 2>/dev/null || true
+          sudo docker rm $(sudo docker ps -aq --filter "name=oms-") 2>/dev/null || true
+          
           sudo docker compose -f docker-compose.prod.yml up -d
           
           echo "✅ Deployment complete!"
