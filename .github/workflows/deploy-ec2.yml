@@ -69,6 +69,13 @@ jobs:
             sudo systemctl start docker
             sudo systemctl enable docker
           fi
+          
+          # Add user to docker group if not already
+          if ! groups | grep -q docker; then
+            echo "🔧 Adding user to docker group..."
+            sudo usermod -aG docker $USER
+            echo "✅ User added to docker group"
+          fi
            
           # Check disk space
           echo "💾 Disk space:"
@@ -84,7 +91,7 @@ jobs:
             echo "⚠️ Disk usage high ($DISK_USAGE%). Cleaning up..."
             sudo apt-get clean
             sudo apt-get autoremove -y
-            docker system prune -af --volumes || true
+            sudo docker system prune -af --volumes || true
             echo "💾 Disk space after cleanup:"
             df -h / | tail -1
           fi
@@ -166,15 +173,16 @@ jobs:
           fi
           
           # Build and deploy with Docker Compose
+          # Using sudo for docker commands since group membership requires new session
           echo "🔨 Building Docker images..."
-          docker compose build --parallel
+          sudo docker compose -f docker-compose.prod.yml build --parallel
           
           echo "🔄 Restarting services..."
-          docker compose down || true
-          docker compose up -d
+          sudo docker compose -f docker-compose.prod.yml down || true
+          sudo docker compose -f docker-compose.prod.yml up -d
           
           echo "✅ Deployment complete!"
-          docker compose ps
+          sudo docker compose -f docker-compose.prod.yml ps
           DEPLOYSSH
 
       - name: Health Check
@@ -189,7 +197,7 @@ jobs:
             echo "✅ API Gateway is healthy"
           else
             echo "❌ API Gateway health check failed"
-            docker compose logs api-gateway --tail=50
+            sudo docker compose -f docker-compose.prod.yml logs api-gateway --tail=50
             exit 1
           fi
           
@@ -197,7 +205,7 @@ jobs:
             echo "✅ Web App is healthy"
           else
             echo "❌ Web App health check failed"
-            docker compose logs web --tail=50
+            sudo docker compose -f docker-compose.prod.yml logs web --tail=50
             exit 1
           fi
           HEALTHSSH
