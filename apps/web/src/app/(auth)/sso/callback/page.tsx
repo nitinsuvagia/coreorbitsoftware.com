@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api/client';
 
-export default function SSOCallbackPage() {
+function SSOCallbackContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
@@ -123,5 +123,29 @@ export default function SSOCallbackPage() {
         )}
       </Card>
     </div>
+  );
+}
+
+function LoadingFallback() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 px-4">
+      <Card className="w-full max-w-md">
+        <CardHeader className="text-center">
+          <div className="flex justify-center mb-2">
+            <Loader2 className="h-10 w-10 text-primary animate-spin" />
+          </div>
+          <CardTitle className="text-2xl font-bold">Signing you in...</CardTitle>
+          <CardDescription>Please wait while we complete your sign-in</CardDescription>
+        </CardHeader>
+      </Card>
+    </div>
+  );
+}
+
+export default function SSOCallbackPage() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <SSOCallbackContent />
+    </Suspense>
   );
 }
