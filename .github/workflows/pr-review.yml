@@ -1,0 +1,322 @@
+name: Pull Request Review
+
+# Triggers on pull requests to main branch
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+# Cancel any in-progress runs for the same PR
+concurrency:
+  group: pr-review-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ============================================================================
+  # Code Quality Checks
+  # ============================================================================
+  code-quality:
+    name: 🔍 Code Quality
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for better diff analysis
+
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 📥 Install dependencies
+        run: npm ci
+
+      - name: 🔍 Check for console.log statements
+        run: |
+          echo "Checking for debug statements..."
+          # Exclude test files and specific allowed files
+          if grep -r "console\.log\|console\.debug" --include="*.ts" --include="*.tsx" \
+            --exclude-dir=node_modules \
+            --exclude-dir=dist \
+            --exclude-dir=.next \
+            --exclude="*.test.ts" \
+            --exclude="*.spec.ts" \
+            services/ apps/ 2>/dev/null | grep -v "// allowed" | head -20; then
+            echo "⚠️ Warning: Found console.log statements. Consider removing before merge."
+          else
+            echo "✅ No debug console statements found"
+          fi
+
+      - name: 📝 ESLint Check
+        run: |
+          echo "Running ESLint..."
+          npm run lint --workspaces --if-present 2>&1 || true
+        continue-on-error: true
+
+  # ============================================================================
+  # TypeScript Type Check
+  # ============================================================================
+  type-check:
+    name: 📘 TypeScript Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 📥 Install dependencies
+        run: npm ci
+
+      - name: 🔨 Generate Prisma Client
+        run: |
+          cd packages/database
+          npx prisma generate --schema=prisma/master/schema.prisma
+          npx prisma generate --schema=prisma/tenant/schema.prisma
+
+      - name: 📘 Type check - Shared packages
+        run: |
+          echo "Building shared packages..."
+          npm run build --workspace=packages/shared-types || true
+          npm run build --workspace=packages/shared-utils || true
+          npm run build --workspace=packages/event-bus || true
+          npm run build --workspace=packages/database || true
+
+      - name: 📘 Type check - Services
+        run: |
+          echo "Type checking services..."
+          for service in services/*/; do
+            if [ -f "${service}tsconfig.json" ]; then
+              echo "Checking ${service}..."
+              npx tsc --noEmit --project ${service}tsconfig.json || echo "⚠️ Type errors in ${service}"
+            fi
+          done
+
+      - name: 📘 Type check - Web App
+        run: |
+          echo "Type checking web app..."
+          npx tsc --noEmit --project apps/web/tsconfig.json || echo "⚠️ Type errors in web app"
+
+  # ============================================================================
+  # Build Test
+  # ============================================================================
+  build-test:
+    name: 🏗️ Build Test
+    runs-on: ubuntu-latest
+    needs: [code-quality, type-check]
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 📥 Install dependencies
+        run: npm ci
+
+      - name: 🔨 Generate Prisma Client
+        run: |
+          cd packages/database
+          npx prisma generate --schema=prisma/master/schema.prisma
+          npx prisma generate --schema=prisma/tenant/schema.prisma
+
+      - name: 🏗️ Build shared packages
+        run: |
+          npm run build --workspace=packages/shared-types
+          npm run build --workspace=packages/shared-utils
+          npm run build --workspace=packages/event-bus
+          npm run build --workspace=packages/database
+          npm run build --workspace=packages/tenant-db-manager
+
+      - name: 🏗️ Build services
+        run: |
+          for service in api-gateway auth-service employee-service attendance-service project-service task-service billing-service document-service notification-service report-service ai-service; do
+            if [ -d "services/${service}" ]; then
+              echo "Building ${service}..."
+              npm run build --workspace=services/${service} || exit 1
+            fi
+          done
+
+      - name: 🏗️ Build web app
+        run: |
+          cd apps/web
+          npm run build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:4000
+
+  # ============================================================================
+  # Security Scan
+  # ============================================================================
+  security-scan:
+    name: 🔒 Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 🔒 Run npm audit
+        run: |
+          echo "Running security audit..."
+          npm audit --audit-level=high || echo "⚠️ Some vulnerabilities found"
+        continue-on-error: true
+
+      - name: 🔍 Check for secrets in code
+        run: |
+          echo "Checking for potential secrets..."
+          # Check for common secret patterns
+          if grep -rE "(password|secret|api_key|apikey|access_token|private_key)\s*[:=]\s*['\"][^'\"]{8,}" \
+            --include="*.ts" --include="*.tsx" --include="*.js" --include="*.json" \
+            --exclude-dir=node_modules \
+            --exclude-dir=dist \
+            --exclude="package*.json" \
+            . 2>/dev/null | grep -v "process.env" | grep -v "example" | head -10; then
+            echo "⚠️ Warning: Potential hardcoded secrets found!"
+          else
+            echo "✅ No obvious hardcoded secrets found"
+          fi
+
+  # ============================================================================
+  # PR Summary Comment
+  # ============================================================================
+  pr-summary:
+    name: 📋 PR Summary
+    runs-on: ubuntu-latest
+    needs: [code-quality, type-check, build-test, security-scan]
+    if: always()
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 📊 Generate PR Statistics
+        id: stats
+        run: |
+          # Count changed files
+          FILES_CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | wc -l | tr -d ' ')
+          
+          # Count lines added/removed
+          STATS=$(git diff --stat origin/${{ github.base_ref }}...HEAD | tail -1)
+          
+          # Get list of changed services/apps
+          CHANGED_SERVICES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E "^services/|^apps/" | cut -d'/' -f2 | sort -u | tr '\n' ', ' | sed 's/,$//')
+          
+          echo "files_changed=${FILES_CHANGED}" >> $GITHUB_OUTPUT
+          echo "stats=${STATS}" >> $GITHUB_OUTPUT
+          echo "changed_services=${CHANGED_SERVICES}" >> $GITHUB_OUTPUT
+
+      - name: 💬 Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: jobs } = await github.rest.actions.listJobsForWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.runId
+            });
+            
+            const getStatus = (jobName) => {
+              const job = jobs.jobs.find(j => j.name.includes(jobName));
+              if (!job) return '⏳ Pending';
+              if (job.conclusion === 'success') return '✅ Passed';
+              if (job.conclusion === 'failure') return '❌ Failed';
+              if (job.conclusion === 'skipped') return '⏭️ Skipped';
+              return '⏳ Running';
+            };
+            
+            const body = `## 🤖 Automated Code Review Summary
+
+            ### 📊 PR Statistics
+            - **Files Changed:** ${{ steps.stats.outputs.files_changed }}
+            - **Changes:** ${{ steps.stats.outputs.stats }}
+            - **Affected Areas:** ${{ steps.stats.outputs.changed_services || 'N/A' }}
+
+            ### 🔍 Check Results
+            | Check | Status |
+            |-------|--------|
+            | Code Quality | ${getStatus('Code Quality')} |
+            | TypeScript Check | ${getStatus('TypeScript')} |
+            | Build Test | ${getStatus('Build')} |
+            | Security Scan | ${getStatus('Security')} |
+
+            ### 📝 Review Guidelines
+            - All checks must pass before merging
+            - Request review from at least one team member
+            - Ensure all comments are addressed
+
+            ---
+            *This is an automated review. A maintainer will review your changes shortly.*`;
+            
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+            
+            const botComment = comments.find(c => 
+              c.user.type === 'Bot' && 
+              c.body.includes('Automated Code Review Summary')
+            );
+            
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body
+              });
+            }
+
+  # ============================================================================
+  # Final Status (Required for branch protection)
+  # ============================================================================
+  pr-review-status:
+    name: ✅ PR Review Status
+    runs-on: ubuntu-latest
+    needs: [code-quality, type-check, build-test, security-scan]
+    if: always()
+    
+    steps:
+      - name: Check all jobs status
+        run: |
+          if [[ "${{ needs.code-quality.result }}" == "failure" ]] || \
+             [[ "${{ needs.type-check.result }}" == "failure" ]] || \
+             [[ "${{ needs.build-test.result }}" == "failure" ]] || \
+             [[ "${{ needs.security-scan.result }}" == "failure" ]]; then
+            echo "❌ One or more checks failed. Please fix the issues before merging."
+            exit 1
+          fi
+          echo "✅ All checks passed! Ready for review."

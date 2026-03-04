@@ -46,6 +46,9 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
+    "@typescript-eslint/eslint-plugin": "^6.18.1",
+    "@typescript-eslint/parser": "^6.18.1",
+    "eslint": "^8.56.0",
     "prisma": "^5.10.0",
     "rimraf": "^5.0.5",
     "ts-node": "^10.9.2",
