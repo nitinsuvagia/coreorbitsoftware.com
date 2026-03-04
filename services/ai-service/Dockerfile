@@ -1,5 +1,5 @@
 # AI Service Dockerfile
-FROM node:20-alpine AS base
+FROM node:20-alpine3.21 AS base
 
 FROM base AS deps
 RUN apk add --no-cache openssl ca-certificates
