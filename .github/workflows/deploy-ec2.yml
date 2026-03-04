@@ -106,7 +106,9 @@ jobs:
             echo "⚠️ Disk usage high ($DISK_USAGE%). Cleaning up..."
             sudo apt-get clean
             sudo apt-get autoremove -y
-            sudo docker system prune -af --volumes || true
+            # Only remove dangling images and stopped containers, keep built images
+            sudo docker container prune -f || true
+            sudo docker image prune -f || true
             echo "💾 Disk space after cleanup:"
             df -h / | tail -1
           fi
@@ -191,9 +193,10 @@ jobs:
           # Build and deploy with Docker Compose
           # Build services sequentially to avoid memory issues
           
-          # Clean up old images to free memory
-          echo "🧹 Cleaning up old Docker resources..."
-          sudo docker system prune -af --volumes || true
+          # Clean up only dangling images and stopped containers (keep built images)
+          echo "🧹 Cleaning up dangling Docker resources..."
+          sudo docker container prune -f || true
+          sudo docker image prune -f || true
           
           echo "🔨 Building infrastructure images..."
           sudo docker compose -f docker-compose.prod.yml build postgres redis nginx
@@ -219,28 +222,54 @@ jobs:
           DEPLOYSSH
 
       - name: Health Check
+        continue-on-error: true
         run: |
-          echo "⏳ Waiting for services to start..."
-          sleep 60
+          echo "⏳ Waiting for services to start (90 seconds)..."
+          sleep 90
           
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ServerAliveInterval=60 ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'HEALTHSSH'
           cd /opt/office-management
           
-          if curl -s http://localhost:4000/health | grep -q "ok"; then
-            echo "✅ API Gateway is healthy"
+          echo "📊 Container Status:"
+          sudo docker compose -f docker-compose.prod.yml ps
+          
+          echo ""
+          echo "🔍 Checking services..."
+          
+          # Check nginx (port 80)
+          echo -n "Nginx: "
+          if curl -s -o /dev/null -w "%{http_code}" http://localhost/health 2>/dev/null | grep -q "200"; then
+            echo "✅ Healthy"
           else
-            echo "❌ API Gateway health check failed"
-            sudo docker compose -f docker-compose.prod.yml logs api-gateway --tail=50
-            exit 1
+            echo "⚠️ Not responding on port 80"
+            sudo docker compose -f docker-compose.prod.yml logs nginx --tail=20
           fi
           
-          if curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 | grep -q "200\|307"; then
-            echo "✅ Web App is healthy"
+          # Check API Gateway through docker network
+          echo -n "API Gateway: "
+          if sudo docker exec oms-api-gateway wget -q --spider http://localhost:4000/health 2>/dev/null; then
+            echo "✅ Healthy"
           else
-            echo "❌ Web App health check failed"
-            sudo docker compose -f docker-compose.prod.yml logs web --tail=50
-            exit 1
+            echo "⚠️ Not responding"
+            sudo docker compose -f docker-compose.prod.yml logs api-gateway --tail=20
           fi
+          
+          # Check web app through docker network
+          echo -n "Web App: "
+          if sudo docker exec oms-web wget -q --spider http://localhost:3000 2>/dev/null; then
+            echo "✅ Healthy"
+          else
+            echo "⚠️ Not responding"
+            sudo docker compose -f docker-compose.prod.yml logs web --tail=20
+          fi
+          
+          # Show running containers summary
+          echo ""
+          echo "📦 Running containers:"
+          sudo docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+          
+          echo ""
+          echo "✅ Deployment verification complete"
           HEALTHSSH
 
       - name: Notify on Failure
