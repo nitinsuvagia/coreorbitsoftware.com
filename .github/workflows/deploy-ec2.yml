@@ -70,7 +70,7 @@ jobs:
             sudo systemctl enable docker
           fi
           
-          # Check disk spaces
+          # Check disk space
           echo "💾 Disk space:"
           df -h / | tail -1
           
