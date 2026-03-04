@@ -85,6 +85,21 @@ jobs:
           echo "🧠 Memory:"
           free -h | head -2
           
+          # Setup swap if not present (needed for Docker builds)
+          if [ ! -f /swapfile ]; then
+            echo "🔧 Creating 4GB swap file..."
+            sudo fallocate -l 4G /swapfile
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile
+            sudo swapon /swapfile
+            echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+            echo "✅ Swap created"
+            free -h | head -2
+          else
+            echo "✅ Swap already configured"
+            sudo swapon --show
+          fi
+          
           # Clean up disk space if low
           DISK_USAGE=$(df / | tail -1 | awk '{print $5}' | sed 's/%//')
           if [ "$DISK_USAGE" -gt 80 ]; then
@@ -149,7 +164,7 @@ jobs:
           ENVSSH
 
       - name: Deploy to EC2
-        timeout-minutes: 45
+        timeout-minutes: 60
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -o TCPKeepAlive=yes ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'DEPLOYSSH'
           set -e
@@ -175,14 +190,24 @@ jobs:
           
           # Build and deploy with Docker Compose
           # Build services sequentially to avoid memory issues
+          
+          # Clean up old images to free memory
+          echo "🧹 Cleaning up old Docker resources..."
+          sudo docker system prune -af --volumes || true
+          
           echo "🔨 Building infrastructure images..."
           sudo docker compose -f docker-compose.prod.yml build postgres redis nginx
           
-          echo "🔨 Building backend services..."
-          sudo docker compose -f docker-compose.prod.yml build auth-service employee-service attendance-service document-service task-service project-service report-service notification-service billing-service ai-service api-gateway
+          echo "🔨 Building backend services (batch 1)..."
+          sudo docker compose -f docker-compose.prod.yml build auth-service employee-service attendance-service document-service task-service
           
-          echo "🔨 Building frontend apps (this may take a few minutes)..."
+          echo "🔨 Building backend services (batch 2)..."
+          sudo docker compose -f docker-compose.prod.yml build project-service report-service notification-service billing-service ai-service api-gateway
+          
+          echo "🔨 Building frontend apps (this may take several minutes)..."
           sudo docker compose -f docker-compose.prod.yml build web
+          
+          echo "🔨 Building public website..."
           sudo docker compose -f docker-compose.prod.yml build public-website
           
           echo "🔄 Restarting services..."
