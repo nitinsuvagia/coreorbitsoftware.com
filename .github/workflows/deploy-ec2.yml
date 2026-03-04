@@ -160,6 +160,8 @@ jobs:
             git reset --hard origin/main || git reset --hard origin/master
           else
             echo "📦 Cloning repository..."
+            # Clean directory if not empty and not a git repo
+            rm -rf /opt/office-management/* /opt/office-management/.[!.]* 2>/dev/null || true
             git clone ${{ secrets.REPO_URL }} .
           fi
           
