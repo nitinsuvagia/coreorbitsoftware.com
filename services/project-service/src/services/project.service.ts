@@ -95,7 +95,7 @@ async function generateProjectCode(prisma: PrismaClient): Promise<string> {
   const prefix = config.project.codePrefix;
   const year = new Date().getFullYear().toString().slice(-2);
   
-  const lastProject = await prisma.project.findFirst({
+  const lastProject = await (prisma as any).project.findFirst({
     where: {
       code: { startsWith: `${prefix}${year}` },
     },
@@ -160,7 +160,7 @@ export async function createProject(
   }
   
   // Verify client exists
-  const client = await prisma.client.findUnique({
+  const client = await (prisma as any).client.findUnique({
     where: { id: input.clientId },
     select: { id: true, name: true },
   });
@@ -169,7 +169,7 @@ export async function createProject(
     throw new Error('Client not found');
   }
   
-  const project = await prisma.project.create({
+  const project = await (prisma as any).project.create({
     data: {
       id,
       name: input.name,
@@ -202,7 +202,7 @@ export async function createProject(
   });
   
   // Add manager as team member
-  await prisma.projectTeamMember.create({
+  await (prisma as any).projectTeamMember.create({
     data: {
       id: uuidv4(),
       projectId: id,
@@ -242,7 +242,7 @@ export async function getProjectById(
   prisma: PrismaClient,
   id: string
 ): Promise<any | null> {
-  const project = await prisma.project.findUnique({
+  const project = await (prisma as any).project.findUnique({
     where: { id },
     include: {
       client: { select: { id: true, name: true, code: true, email: true } },
@@ -281,12 +281,12 @@ export async function getProjectById(
   if (!project) return null;
   
   // Calculate project stats
-  const timeEntries = await prisma.timeEntry.aggregate({
-    where: { projectId: id, status: 'approved' },
+  const timeEntries = await (prisma as any).timeEntry.aggregate({
+    where: { projectId: id, status: 'approved' } as any,
     _sum: { durationMinutes: true },
   });
   
-  const hoursUsed = (timeEntries._sum.durationMinutes || 0) / 60;
+  const hoursUsed = ((timeEntries as any)._sum.durationMinutes || 0) / 60;
   const budgetUsedCents = Math.round(hoursUsed * (project.hourlyRateCents || 0));
   
   const now = new Date();
@@ -368,7 +368,7 @@ export async function updateProject(
     data.completedAt = new Date();
   }
   
-  const project = await prisma.project.update({
+  const project = await (prisma as any).project.update({
     where: { id },
     data,
     include: {
@@ -425,7 +425,7 @@ export async function listProjects(
   }
   
   const [projects, total] = await Promise.all([
-    prisma.project.findMany({
+    (prisma as any).project.findMany({
       where,
       skip,
       take: pageSize,
@@ -443,7 +443,7 @@ export async function listProjects(
         },
       },
     }),
-    prisma.project.count({ where }),
+    (prisma as any).project.count({ where }),
   ]);
   
   return {
@@ -472,7 +472,7 @@ export async function createPhase(
 ): Promise<any> {
   const id = uuidv4();
   
-  const phase = await prisma.projectPhase.create({
+  const phase = await (prisma as any).projectPhase.create({
     data: {
       id,
       projectId: input.projectId,
@@ -513,7 +513,7 @@ export async function updatePhase(
   if (input.order !== undefined) data.order = input.order;
   if (input.status) data.status = input.status;
   
-  const phase = await prisma.projectPhase.update({
+  const phase = await (prisma as any).projectPhase.update({
     where: { id },
     data,
   });
@@ -531,12 +531,12 @@ export async function deletePhase(
   id: string
 ): Promise<void> {
   // Move milestones to project level
-  await prisma.milestone.updateMany({
+  await (prisma as any).milestone.updateMany({
     where: { phaseId: id },
     data: { phaseId: null },
   });
   
-  await prisma.projectPhase.delete({
+  await (prisma as any).projectPhase.delete({
     where: { id },
   });
   
@@ -557,7 +557,7 @@ export async function createMilestone(
 ): Promise<any> {
   const id = uuidv4();
   
-  const milestone = await prisma.milestone.create({
+  const milestone = await (prisma as any).milestone.create({
     data: {
       id,
       projectId: input.projectId,
@@ -604,7 +604,7 @@ export async function updateMilestone(
     }
   }
   
-  const milestone = await prisma.milestone.update({
+  const milestone = await (prisma as any).milestone.update({
     where: { id },
     data,
   });
@@ -629,7 +629,7 @@ export async function addTeamMember(
   const id = uuidv4();
   
   // Check if already a member
-  const existing = await prisma.projectTeamMember.findFirst({
+  const existing = await (prisma as any).projectTeamMember.findFirst({
     where: {
       projectId: input.projectId,
       employeeId: input.employeeId,
@@ -642,7 +642,7 @@ export async function addTeamMember(
   }
   
   // Check team size limit
-  const currentSize = await prisma.projectTeamMember.count({
+  const currentSize = await (prisma as any).projectTeamMember.count({
     where: { projectId: input.projectId, isActive: true },
   });
   
@@ -650,7 +650,7 @@ export async function addTeamMember(
     throw new Error(`Maximum team size of ${config.project.maxTeamSize} reached`);
   }
   
-  const member = await prisma.projectTeamMember.create({
+  const member = await (prisma as any).projectTeamMember.create({
     data: {
       id,
       projectId: input.projectId,
@@ -703,7 +703,7 @@ export async function updateTeamMember(
   if (input.allocatedHours !== undefined) data.allocatedHours = input.allocatedHours;
   if (input.endDate) data.endDate = parseISO(input.endDate);
   
-  const member = await prisma.projectTeamMember.update({
+  const member = await (prisma as any).projectTeamMember.update({
     where: { id },
     data,
     include: {
@@ -729,7 +729,7 @@ export async function removeTeamMember(
   id: string,
   userId: string
 ): Promise<void> {
-  await prisma.projectTeamMember.update({
+  await (prisma as any).projectTeamMember.update({
     where: { id },
     data: {
       isActive: false,
@@ -749,7 +749,7 @@ export async function getEmployeeProjects(
   prisma: PrismaClient,
   employeeId: string
 ): Promise<any[]> {
-  const memberships = await prisma.projectTeamMember.findMany({
+  const memberships = await (prisma as any).projectTeamMember.findMany({
     where: { employeeId, isActive: true },
     include: {
       project: {

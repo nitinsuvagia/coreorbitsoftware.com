@@ -151,7 +151,7 @@ export async function uploadOnBoardingDocument(
 
     // Upload the file
     const formData = new FormData();
-    formData.append('file', new Blob([input.content], { type: input.mimeType }), input.filename);
+    formData.append('file', new Blob([new Uint8Array(input.content)], { type: input.mimeType }), input.filename);
     if (targetFolderId) {
       formData.append('folderId', targetFolderId);
     }

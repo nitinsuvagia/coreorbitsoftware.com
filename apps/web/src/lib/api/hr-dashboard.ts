@@ -65,6 +65,7 @@ export interface UpcomingEvents {
     id: string;
     name: string;
     department: string;
+    avatar?: string;
     date: string;
     daysUntil: number;
   }>;
@@ -72,6 +73,7 @@ export interface UpcomingEvents {
     id: string;
     name: string;
     department: string;
+    avatar?: string;
     date: string;
     years: number;
     daysUntil: number;
@@ -441,6 +443,179 @@ export async function getComplianceStats(): Promise<ComplianceStats> {
       totalPolicies: 0,
       expiringDocuments: [],
       pendingVerifications: [],
+    };
+  }
+}
+
+// Performance stats interface and function
+export interface PerformanceStats {
+  avgScore: number;
+  reviewsCompleted: number;
+  reviewsPending: number;
+  reviewsDue: number;
+  topPerformers: Array<{
+    id: string;
+    name: string;
+    department: string;
+    avatar?: string;
+    score: number;
+  }>;
+  needsImprovement: number;
+  departmentScores: Array<{
+    department: string;
+    score: number;
+  }>;
+}
+
+export async function getPerformanceStats(): Promise<PerformanceStats> {
+  try {
+    return await get<PerformanceStats>('/api/v1/employees/performance-stats');
+  } catch (error) {
+    console.error('Error fetching performance stats:', error);
+    return {
+      avgScore: 0,
+      reviewsCompleted: 0,
+      reviewsPending: 0,
+      reviewsDue: 0,
+      topPerformers: [],
+      needsImprovement: 0,
+      departmentScores: [],
+    };
+  }
+}
+
+// Compensation stats interface and function
+export interface CompensationStats {
+  totalPayroll: number;
+  avgSalary: number;
+  currency: string;
+  employeesWithSalary: number;
+  employeesWithoutSalary: number;
+  salaryBands: Array<{
+    range: string;
+    count: number;
+  }>;
+  departmentSalaries: Array<{
+    departmentId: string;
+    department: string;
+    totalSalary: number;
+    employeeCount: number;
+    avgSalary: number;
+  }>;
+}
+
+export async function getCompensationStats(): Promise<CompensationStats> {
+  try {
+    return await get<CompensationStats>('/api/v1/employees/compensation-stats');
+  } catch (error) {
+    console.error('Error fetching compensation stats:', error);
+    return {
+      totalPayroll: 0,
+      avgSalary: 0,
+      currency: 'INR',
+      employeesWithSalary: 0,
+      employeesWithoutSalary: 0,
+      salaryBands: [],
+      departmentSalaries: [],
+    };
+  }
+}
+
+// Engagement stats interface and function
+export interface EngagementStats {
+  satisfactionScore: number;
+  engagementScore: number;
+  eNPS: number;
+  surveyResponseRate: number;
+  recognitionsThisMonth: number;
+  feedbackSubmitted: number;
+  oneOnOnesMeetings: number;
+  teamEvents: number;
+  pendingSurveys: number;
+  recentRecognitions: Array<{
+    from: string;
+    to: string;
+    message: string;
+    timestamp: string;
+  }>;
+}
+
+export async function getEngagementStats(): Promise<EngagementStats> {
+  try {
+    return await get<EngagementStats>('/api/v1/employees/engagement-stats');
+  } catch (error) {
+    console.error('Error fetching engagement stats:', error);
+    return {
+      satisfactionScore: 0,
+      engagementScore: 0,
+      eNPS: 0,
+      surveyResponseRate: 0,
+      recognitionsThisMonth: 0,
+      feedbackSubmitted: 0,
+      oneOnOnesMeetings: 0,
+      teamEvents: 0,
+      pendingSurveys: 0,
+      recentRecognitions: [],
+    };
+  }
+}
+
+// Skills stats interface and function
+export interface SkillsStats {
+  totalUniqueSkills: number;
+  employeesWithSkills: number;
+  avgSkillsPerEmployee: number;
+  topSkills: Array<{
+    skill: string;
+    count: number;
+  }>;
+}
+
+export async function getSkillsStats(): Promise<SkillsStats> {
+  try {
+    return await get<SkillsStats>('/api/v1/employees/skills-stats');
+  } catch (error) {
+    console.error('Error fetching skills stats:', error);
+    return {
+      totalUniqueSkills: 0,
+      employeesWithSkills: 0,
+      avgSkillsPerEmployee: 0,
+      topSkills: [],
+    };
+  }
+}
+
+// Assets stats interface and function
+export interface AssetsStats {
+  totalAssigned: number;
+  pendingReturns: number;
+  pendingIssues: number;
+  assetsByCategory: Array<{
+    category: string;
+    icon: string;
+    assigned: number;
+    available: number;
+  }>;
+  recentAssignments: Array<{
+    id: string;
+    employeeName: string;
+    assetName: string;
+    date: string;
+    status: string;
+  }>;
+}
+
+export async function getAssetsStats(): Promise<AssetsStats> {
+  try {
+    return await get<AssetsStats>('/api/v1/employees/assets-stats');
+  } catch (error) {
+    console.error('Error fetching assets stats:', error);
+    return {
+      totalAssigned: 0,
+      pendingReturns: 0,
+      pendingIssues: 0,
+      assetsByCategory: [],
+      recentAssignments: [],
     };
   }
 }

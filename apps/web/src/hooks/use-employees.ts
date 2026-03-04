@@ -30,6 +30,7 @@ export interface Employee {
   dateOfBirth?: string;
   gender?: string;
   maritalStatus?: string;
+  bloodGroup?: string;
   nationality?: string;
   addressLine1?: string;
   addressLine2?: string;
@@ -45,6 +46,8 @@ export interface Employee {
   emergencyContacts?: any[];
   bankDetails?: any[];
   educations?: any[];
+  userId?: string;
+  systemRole?: { id: string; name: string; slug: string };
   createdAt: string;
   updatedAt: string;
 }
@@ -55,6 +58,8 @@ export interface EmployeeFilters {
   departmentId?: string;
   designationId?: string;
   status?: string;
+  statuses?: string;  // comma-separated list of statuses to include
+  excludeStatuses?: string;  // comma-separated list of statuses to exclude
   employmentType?: string;
   page?: number;
   limit?: number;
@@ -68,11 +73,34 @@ export interface PaginatedResponse<T> {
   totalPages: number;
 }
 
+// Helper to filter out undefined values from object
+function cleanFilters<T extends Record<string, any>>(filters: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(filters).filter(([_, v]) => v !== undefined && v !== '')
+  ) as Partial<T>;
+}
+
 // Employees
 export function useEmployees(filters: EmployeeFilters = {}) {
+  const cleanedFilters = cleanFilters(filters);
   return useQuery({
-    queryKey: ['employees', filters],
-    queryFn: () => get<PaginatedResponse<Employee>>('/api/v1/employees', filters),
+    queryKey: ['employees', cleanedFilters],
+    queryFn: () => get<PaginatedResponse<Employee>>('/api/v1/employees', cleanedFilters),
+  });
+}
+
+// Status counts for tabs
+export interface EmployeeStatusCounts {
+  current: number;
+  probation: number;
+  relieving: number;
+  exEmployees: number;
+}
+
+export function useEmployeeStatusCounts() {
+  return useQuery({
+    queryKey: ['employee-status-counts'],
+    queryFn: () => get<EmployeeStatusCounts>('/api/v1/employees/status-counts'),
   });
 }
 
@@ -81,6 +109,13 @@ export function useEmployee(id: string) {
     queryKey: ['employee', id],
     queryFn: () => get<Employee>(`/api/v1/employees/${id}`),
     enabled: !!id,
+  });
+}
+
+export function useMyEmployee() {
+  return useQuery({
+    queryKey: ['employee', 'me'],
+    queryFn: () => get<Employee>('/api/v1/employees/me'),
   });
 }
 

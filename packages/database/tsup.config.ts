@@ -6,10 +6,13 @@ export default defineConfig({
     'master/index': 'src/master/index.ts',
     'tenant/index': 'src/tenant/index.ts',
   },
-  format: ['cjs', 'esm'],
-  dts: true,
+  format: ['cjs'],
+  dts: false,
   splitting: false,
-  sourcemap: true,
+  sourcemap: false,
   clean: true,
-  external: ['@prisma/client'],
+  // External workspace packages - prisma is loaded dynamically at runtime
+  external: [
+    '@oms/tenant-db-manager',
+  ],
 });

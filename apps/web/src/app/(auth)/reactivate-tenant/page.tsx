@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,7 @@ import { Loader2, CheckCircle2, XCircle, Building2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api/client';
 
-export default function ReactivateTenantPage() {
+function ReactivateTenantContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const token = searchParams.get('token');
@@ -158,5 +158,17 @@ export default function ReactivateTenantPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function ReactivateTenantPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    }>
+      <ReactivateTenantContent />
+    </Suspense>
   );
 }

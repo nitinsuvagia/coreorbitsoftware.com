@@ -3,23 +3,25 @@
   "version": "1.0.0",
   "description": "Database schemas and Prisma clients for Office Management System",
   "main": "./dist/index.js",
-  "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.mjs",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
       "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "default": "./dist/index.js"
     },
     "./master": {
-      "import": "./dist/master/index.mjs",
+      "types": "./dist/master/index.d.ts",
+      "import": "./dist/master/index.js",
       "require": "./dist/master/index.js",
-      "types": "./dist/master/index.d.ts"
+      "default": "./dist/master/index.js"
     },
     "./tenant": {
-      "import": "./dist/tenant/index.mjs",
+      "types": "./dist/tenant/index.d.ts",
+      "import": "./dist/tenant/index.js",
       "require": "./dist/tenant/index.js",
-      "types": "./dist/tenant/index.d.ts"
+      "default": "./dist/tenant/index.js"
     }
   },
   "scripts": {

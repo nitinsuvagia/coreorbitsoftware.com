@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { format, parseISO } from 'date-fns';
 import {
@@ -31,7 +31,7 @@ import {
   useCreateLeave,
   LeaveType,
 } from '@/hooks/use-attendance';
-import { useEmployees } from '@/hooks/use-employees';
+import { apiClient } from '@/lib/api/client';
 import { useLeaveCalculator } from '@/hooks/use-leave-calculator';
 import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import Link from 'next/link';
@@ -63,15 +63,16 @@ export default function RequestLeavePage() {
   const { data: leaveBalanceResponse } = useLeaveBalance();
   const leaveBalance = (leaveBalanceResponse as any)?.data || leaveBalanceResponse || [];
   
-  // Fetch employees and find current user's employee record
-  const { data: employeesResponse } = useEmployees({});
-  const employees = (employeesResponse as any)?.data || (employeesResponse as any)?.items || [];
-  
-  // Find current user's employee record by email
-  const currentEmployee = useMemo(() => {
-    if (!user?.email || !employees.length) return null;
-    return employees.find((emp: any) => emp.email === user.email);
-  }, [user?.email, employees]);
+  // Fetch current user's employee record from my-stats (works for all roles)
+  const [currentEmployee, setCurrentEmployee] = useState<{ id: string; firstName: string; lastName: string; email: string } | null>(null);
+  useEffect(() => {
+    apiClient.get('/api/v1/dashboard/my-stats').then((res: any) => {
+      const emp = res.data?.employee;
+      if (emp) {
+        setCurrentEmployee({ id: emp.id, firstName: emp.firstName, lastName: emp.lastName, email: emp.email });
+      }
+    }).catch(() => {});
+  }, []);
   
   const createLeave = useCreateLeave();
   

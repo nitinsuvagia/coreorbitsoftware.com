@@ -4,23 +4,24 @@ import { Providers } from './providers';
 import { Toaster } from '@/components/ui/sonner';
 
 export const metadata: Metadata = {
-  title: 'Office Management System',
-  description: 'Enterprise-grade office management system for IT companies',
+  title: 'CoreOrbit - Smart Office Management System',
+  description: 'AI-powered office management platform that streamlines HR, projects, attendance, and team collaboration with intelligent automation.',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'OMS',
+    title: 'CoreOrbit',
   },
   formatDetection: {
     telephone: false,
   },
   openGraph: {
     type: 'website',
-    siteName: 'Office Management System',
-    title: 'Office Management System',
-    description: 'Enterprise-grade office management system for IT companies',
+    siteName: 'CoreOrbit',
+    title: 'CoreOrbit - Smart Office Management',
+    description: 'Transform your workplace with AI-powered office management. Streamline HR, projects, and team collaboration.',
   },
+  keywords: ['office management', 'AI', 'HR software', 'employee management', 'project tracking', 'attendance system', 'team collaboration'],
 };
 
 export const viewport: Viewport = {
@@ -30,8 +31,8 @@ export const viewport: Viewport = {
   ],
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  maximumScale: 5,
+  userScalable: true,
 };
 
 export default function RootLayout({

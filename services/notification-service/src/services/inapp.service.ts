@@ -14,13 +14,29 @@ import { config, NotificationType } from '../config';
 
 export interface CreateNotificationInput {
   userId: string;
-  type: NotificationType;
+  type: NotificationType; // Semantic type like 'task.assigned', 'leave.approved', etc.
   title: string;
   message: string;
   data?: Record<string, any>;
   actionUrl?: string;
   priority?: 'low' | 'normal' | 'high' | 'urgent';
   expiresAt?: Date;
+}
+
+// Map priority to database NotificationType enum
+function mapPriorityToDbType(priority?: string): 'INFO' | 'SUCCESS' | 'WARNING' | 'CRITICAL' {
+  switch (priority) {
+    case 'urgent': return 'CRITICAL';
+    case 'high': return 'WARNING';
+    case 'low': return 'INFO';
+    default: return 'INFO';
+  }
+}
+
+// Extract category from semantic type (e.g., 'task.assigned' -> 'task')
+function extractCategory(semanticType: string): string {
+  const [category] = semanticType.split('.');
+  return category;
 }
 
 export interface NotificationFilters {
@@ -73,12 +89,16 @@ export async function createNotification(
     data: {
       id,
       userId: input.userId,
-      type: input.type,
+      type: mapPriorityToDbType(input.priority),
+      category: extractCategory(input.type), // Store semantic category
       title: input.title,
       message: input.message,
-      data: input.data || {},
+      metadata: {
+        semanticType: input.type,
+        priority: input.priority || 'normal',
+        ...input.data,
+      },
       actionUrl: input.actionUrl,
-      priority: input.priority || 'normal',
       expiresAt: input.expiresAt,
     },
   });
@@ -86,7 +106,8 @@ export async function createNotification(
   logger.debug({ 
     notificationId: id, 
     userId: input.userId, 
-    type: input.type 
+    category: extractCategory(input.type),
+    semanticType: input.type,
   }, 'In-app notification created');
   
   return notification;
@@ -103,12 +124,16 @@ export async function createBulkNotifications(
   const notifications = userIds.map(userId => ({
     id: uuidv4(),
     userId,
-    type: input.type,
+    type: mapPriorityToDbType(input.priority),
+    category: extractCategory(input.type),
     title: input.title,
     message: input.message,
-    data: input.data || {},
+    metadata: {
+      semanticType: input.type,
+      priority: input.priority || 'normal',
+      ...input.data,
+    },
     actionUrl: input.actionUrl,
-    priority: input.priority || 'normal',
     expiresAt: input.expiresAt,
   }));
   
@@ -151,8 +176,8 @@ export async function listNotifications(
   const where: any = { userId: filters.userId };
   
   if (filters.unreadOnly) where.isRead = false;
-  if (filters.type) where.type = filters.type;
-  if (filters.priority) where.priority = filters.priority;
+  // Filter by category (e.g., 'task', 'leave', etc.) which is derived from semantic type
+  if (filters.type) where.category = filters.type;
   
   if (filters.from || filters.to) {
     where.createdAt = {};
@@ -172,7 +197,7 @@ export async function listNotifications(
       skip,
       take: pageSize,
       orderBy: [
-        { priority: 'desc' },
+        { type: 'desc' }, // CRITICAL > WARNING > SUCCESS > INFO
         { createdAt: 'desc' },
       ],
     }),
@@ -294,12 +319,12 @@ export async function getNotificationStats(
   const [total, unread, byType, byPriority] = await Promise.all([
     prisma.notification.count({ where: { userId } }),
     prisma.notification.count({ where: { userId, isRead: false } }),
-    prisma.notification.groupBy({
+    (prisma.notification.groupBy as any)({
       by: ['type'],
       where: { userId },
       _count: true,
     }),
-    prisma.notification.groupBy({
+    (prisma.notification.groupBy as any)({
       by: ['priority'],
       where: { userId },
       _count: true,
@@ -309,8 +334,8 @@ export async function getNotificationStats(
   return {
     total,
     unread,
-    byType: Object.fromEntries(byType.map(t => [t.type, t._count])),
-    byPriority: Object.fromEntries(byPriority.map(p => [p.priority, p._count])),
+    byType: Object.fromEntries(byType.map((t: any) => [t.type, t._count])),
+    byPriority: Object.fromEntries(byPriority.map((p: any) => [p.priority, p._count])),
   };
 }
 
@@ -347,7 +372,7 @@ export async function createTypedNotification(
   userId: string,
   data: Record<string, any>
 ): Promise<any> {
-  const contentMap: Record<NotificationType, { title: string; message: string; priority?: 'low' | 'normal' | 'high' | 'urgent' }> = {
+  const contentMap = {
     'task.assigned': {
       title: 'New Task Assigned',
       message: `You have been assigned to ${data.taskNumber || 'a task'}: ${data.taskTitle || ''}`,
@@ -446,7 +471,16 @@ export async function createTypedNotification(
       message: `${data.employeeName || 'A colleague'} celebrates ${data.years || ''} years with us!`,
       priority: 'low',
     },
-  };
+    'job.created': {
+      title: 'New Job Opening! 🎯',
+      message: `New position available: ${data.jobTitle || 'Job'} in ${data.department || 'our company'}${data.location ? ` (${data.location})` : ''}`,
+    },
+    'job.published': {
+      title: 'Job Opening Published',
+      message: `${data.jobTitle || 'A position'} is now open for referrals`,
+      priority: 'low',
+    },
+  } as Record<NotificationType, { title: string; message: string; priority?: 'low' | 'normal' | 'high' | 'urgent' }>;
   
   const content = contentMap[type];
   if (!content) {

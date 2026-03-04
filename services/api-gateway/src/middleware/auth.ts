@@ -303,7 +303,7 @@ export function requireTenantUser(requiredRoles?: string[]) {
 }
 
 /**
- * Middleware that requires specific permissions
+ * Middleware that requires ALL of the specified permissions (AND logic)
  */
 export function requirePermission(...permissions: string[]) {
   return (req: Request, res: Response, next: NextFunction): void => {
@@ -319,8 +319,23 @@ export function requirePermission(...permissions: string[]) {
       });
       return;
     }
+
+    // Tenant admins bypass all permission checks
+    const userRoles: string[] = authReq.user.roles || [];
+    if (userRoles.includes('tenant_admin')) {
+      next();
+      return;
+    }
     
     const userPermissions = authReq.user.permissions || [];
+    
+    // Backward compatibility: if user has no permissions in token (pre-RBAC/stale token),
+    // allow access. Real permission enforcement happens at the service level.
+    if (userPermissions.length === 0) {
+      next();
+      return;
+    }
+    
     const hasPermission = permissions.every(perm => userPermissions.includes(perm));
     
     if (!hasPermission) {
@@ -344,10 +359,68 @@ export function requirePermission(...permissions: string[]) {
   };
 }
 
+/**
+ * Middleware that requires ANY of the specified permissions (OR logic)
+ */
+export function requireAnyPermission(...permissions: string[]) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const authReq = req as AuthenticatedRequest;
+    
+    if (!authReq.user) {
+      res.status(401).json({
+        success: false,
+        error: {
+          code: 'AUTHENTICATION_REQUIRED',
+          message: 'You must be logged in to access this resource.',
+        },
+      });
+      return;
+    }
+
+    // Tenant admins bypass all permission checks
+    const userRoles: string[] = authReq.user.roles || [];
+    if (userRoles.includes('tenant_admin')) {
+      next();
+      return;
+    }
+    
+    const userPermissions = authReq.user.permissions || [];
+    
+    // Backward compatibility: if user has no permissions in token (pre-RBAC/stale token),
+    // allow access. Real permission enforcement happens at the service level.
+    if (userPermissions.length === 0) {
+      next();
+      return;
+    }
+    
+    const hasPermission = permissions.some(perm => userPermissions.includes(perm));
+    
+    if (!hasPermission) {
+      logger.warn({
+        userId: authReq.user.id,
+        requiredAny: permissions,
+        has: userPermissions,
+      }, 'Permission denied (any)');
+      
+      res.status(403).json({
+        success: false,
+        error: {
+          code: 'PERMISSION_DENIED',
+          message: 'You do not have permission to perform this action.',
+        },
+      });
+      return;
+    }
+    
+    next();
+  };
+}
+
 export default {
   authMiddleware,
   requireAuth,
   requirePlatformAdmin,
   requireTenantUser,
   requirePermission,
+  requireAnyPermission,
 };

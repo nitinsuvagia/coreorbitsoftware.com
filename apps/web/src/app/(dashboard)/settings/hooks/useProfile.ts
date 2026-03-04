@@ -20,7 +20,7 @@ interface UseProfileReturn {
 }
 
 export function useProfile(): UseProfileReturn {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileForm, setProfileForm] = useState<Partial<UserProfile>>({});
   const [loading, setLoading] = useState(true);
@@ -113,6 +113,12 @@ export function useProfile(): UseProfileReturn {
         setProfileForm(response.data);
         setAvatarFile(null);
         setAvatarPreview(null);
+        // Update auth context to sync avatar with header
+        updateUser({
+          firstName: response.data.firstName,
+          lastName: response.data.lastName,
+          avatar: response.data.avatar,
+        });
         toast.success('Profile updated successfully');
       }
     } catch (error: any) {

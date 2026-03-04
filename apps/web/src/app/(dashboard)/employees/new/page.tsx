@@ -36,6 +36,7 @@ import {
   Plus,
   Trash2,
   Hash,
+  FileText,
 } from 'lucide-react';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
@@ -43,6 +44,7 @@ import { apiClient } from '@/lib/api/client';
 import { useDepartments, useDesignations, useEmployees } from '@/hooks/use-employees';
 import { useOrgSettings } from '@/hooks/use-org-settings';
 import { toast } from 'sonner';
+import { OtherInformationTab } from '../_components/OtherInformationTab';
 
 // Types
 interface EducationEntry {
@@ -611,7 +613,7 @@ export default function NewEmployeePage() {
 
       {/* Form Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-6 lg:w-auto lg:inline-grid">
+        <TabsList className="grid w-full grid-cols-7 lg:w-auto lg:inline-grid">
           <TabsTrigger value="personal" className="gap-2">
             <User className="h-4 w-4 hidden sm:block" />
             Personal
@@ -635,6 +637,10 @@ export default function NewEmployeePage() {
           <TabsTrigger value="education" className="gap-2">
             <GraduationCap className="h-4 w-4 hidden sm:block" />
             Education
+          </TabsTrigger>
+          <TabsTrigger value="other" className="gap-2">
+            <FileText className="h-4 w-4 hidden sm:block" />
+            Other
           </TabsTrigger>
         </TabsList>
 
@@ -1514,6 +1520,27 @@ export default function NewEmployeePage() {
                 <Plus className="h-4 w-4 mr-2" />
                 Add Education
               </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Other Information Tab */}
+        <TabsContent value="other">
+          <Card>
+            <CardHeader>
+              <CardTitle>Other Information</CardTitle>
+              <CardDescription>
+                Additional custom fields for this employee
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-center py-8 text-muted-foreground">
+                <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>Custom fields can be added after the employee is created.</p>
+                <p className="text-sm mt-2">
+                  You can also import employees from Excel - unmapped columns will be automatically saved as custom fields.
+                </p>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

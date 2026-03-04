@@ -5,14 +5,86 @@
  */
 
 import express, { Request, Response } from 'express';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
 import { OnboardingService } from '../services/onboarding.service';
 import { logger } from '../utils/logger';
 
 const router = express.Router();
 
+// Configure multer for file uploads
+const uploadsDir = path.join(process.cwd(), 'uploads', 'onboarding');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    cb(null, uploadsDir);
+  },
+  filename: (_req, file, cb) => {
+    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1E9)}`;
+    cb(null, `${uniqueSuffix}-${file.originalname}`);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB max
+  },
+  fileFilter: (_req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only JPEG, PNG, GIF, and PDF are allowed.'));
+    }
+  },
+});
+
 // ============================================================================
 // PUBLIC ROUTES - For candidates (no authentication required)
 // ============================================================================
+
+/**
+ * GET /onboarding/files/:filename - Serve uploaded onboarding files
+ * Public endpoint - allows viewing uploaded documents
+ */
+router.get('/files/:filename', (req: Request, res: Response) => {
+  try {
+    const { filename } = req.params;
+    
+    if (!filename) {
+      return res.status(400).json({
+        success: false,
+        error: 'Filename is required',
+      });
+    }
+
+    // Sanitize filename to prevent directory traversal
+    const sanitizedFilename = path.basename(filename);
+    const filePath = path.join(uploadsDir, sanitizedFilename);
+
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({
+        success: false,
+        error: 'File not found',
+      });
+    }
+
+    // Send the file
+    res.sendFile(filePath);
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Error serving onboarding file');
+    res.status(500).json({
+      success: false,
+      error: 'Failed to serve file',
+    });
+  }
+});
 
 /**
  * GET /onboarding/:token - Get onboarding details by token
@@ -114,7 +186,7 @@ router.post('/:token/authenticate', async (req: Request, res: Response) => {
 router.put('/:token/details', async (req: Request, res: Response) => {
   try {
     const { token } = req.params;
-    const { address, emergencyContact, education, bankDetails, personal } = req.body;
+    const { address, emergencyContact, education, bankDetails, personal, documents } = req.body;
 
     if (!token || token.length < 32) {
       return res.status(400).json({
@@ -129,6 +201,7 @@ router.put('/:token/details', async (req: Request, res: Response) => {
       education,
       bankDetails,
       personal,
+      documents,
     });
 
     res.json({
@@ -145,12 +218,13 @@ router.put('/:token/details', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /onboarding/:token/complete - Complete onboarding
- * Public endpoint - candidate submits onboarding form
+ * POST /onboarding/:token/save - Save onboarding progress
+ * Public endpoint - candidate saves progress (alias for PUT /details)
  */
-router.post('/:token/complete', async (req: Request, res: Response) => {
+router.post('/:token/save', async (req: Request, res: Response) => {
   try {
     const { token } = req.params;
+    const { data } = req.body;
 
     if (!token || token.length < 32) {
       return res.status(400).json({
@@ -159,7 +233,75 @@ router.post('/:token/complete', async (req: Request, res: Response) => {
       });
     }
 
-    const result = await OnboardingService.completeOnboarding(token);
+    if (!data) {
+      return res.status(400).json({
+        success: false,
+        error: 'Form data is required',
+      });
+    }
+
+    const result = await OnboardingService.saveOnboardingDetails(token, {
+      address: data.address,
+      emergencyContact: data.emergencyContact,
+      education: data.education,
+      bankDetails: data.bankDetails,
+      personal: data.personal,
+      documents: data.documents,
+    });
+
+    res.json({
+      success: true,
+      message: result.message,
+    });
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Error saving onboarding progress');
+    res.status(400).json({
+      success: false,
+      error: error.message || 'Failed to save progress',
+    });
+  }
+});
+
+/**
+ * POST /onboarding/:token/complete - Complete onboarding
+ * Public endpoint - candidate submits onboarding form
+ */
+router.post('/:token/complete', async (req: Request, res: Response) => {
+  try {
+    const { token } = req.params;
+    
+    // Extract declaration data - frontend sends it as `declaration` object
+    // which contains both the consent flags and signature
+    const { declaration, declarations: legacyDeclarations, signature: legacySignature } = req.body;
+    
+    // Support both formats:
+    // 1. New format: { declaration: { backgroundCheckConsent, signature, ... } }
+    // 2. Legacy format: { declarations: {...}, signature: "..." }
+    let finalDeclarations: Record<string, boolean> | undefined;
+    let finalSignature: string | undefined;
+    
+    if (declaration) {
+      // New format - extract from declaration object
+      const { signature, ...consentFlags } = declaration;
+      finalDeclarations = consentFlags;
+      finalSignature = signature;
+    } else {
+      // Legacy format
+      finalDeclarations = legacyDeclarations;
+      finalSignature = legacySignature;
+    }
+
+    if (!token || token.length < 32) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid onboarding token',
+      });
+    }
+
+    const result = await OnboardingService.completeOnboarding(token, { 
+      declarations: finalDeclarations, 
+      signature: finalSignature 
+    });
 
     res.json({
       success: true,
@@ -170,6 +312,36 @@ router.post('/:token/complete', async (req: Request, res: Response) => {
     res.status(400).json({
       success: false,
       error: error.message || 'Failed to complete onboarding',
+    });
+  }
+});
+
+/**
+ * POST /onboarding/:token/upload - Upload document for onboarding
+ * Public endpoint - candidate uploads documents
+ */
+router.post('/:token/upload', upload.single('file'), async (req: Request, res: Response) => {
+  try {
+    const { token } = req.params;
+
+    if (!token || token.length < 32) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid onboarding token',
+      });
+    }
+
+    const result = await OnboardingService.uploadDocument(token, req);
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Error uploading onboarding document');
+    res.status(400).json({
+      success: false,
+      error: error.message || 'Failed to upload document',
     });
   }
 });
@@ -306,6 +478,47 @@ protectedRouter.post('/start', async (req: Request, res: Response) => {
     res.status(400).json({
       success: false,
       error: error.message || 'Failed to start onboarding',
+    });
+  }
+});
+
+/**
+ * POST /api/onboarding/resend - Resend onboarding email with new credentials
+ * Called by HR when candidate didn't receive or lost the email
+ */
+protectedRouter.post('/resend', async (req: Request, res: Response) => {
+  try {
+    const tenantSlug = req.headers['x-tenant-slug'] as string;
+    const { candidateId } = req.body;
+    
+    if (!tenantSlug) {
+      return res.status(400).json({
+        success: false,
+        error: 'Tenant slug is required',
+      });
+    }
+
+    if (!candidateId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Candidate ID is required',
+      });
+    }
+
+    const result = await OnboardingService.resendOnboardingEmail({
+      candidateId,
+      tenantSlug,
+    });
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Error resending onboarding email');
+    res.status(400).json({
+      success: false,
+      error: error.message || 'Failed to resend onboarding email',
     });
   }
 });

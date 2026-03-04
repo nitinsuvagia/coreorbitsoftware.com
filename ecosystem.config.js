@@ -130,9 +130,10 @@ module.exports = {
     },
     {
       name: 'billing-service',
-      script: 'npm',
-      args: 'run dev',
+      script: 'npx',
+      args: 'tsx src/index.ts',
       cwd: './services/billing-service',
+      interpreter: 'none',
       instances: 1,
       autorestart: true,
       watch: ['src'],
@@ -141,7 +142,12 @@ module.exports = {
       max_memory_restart: '300M',
       env: {
         NODE_ENV: 'development',
-        PORT: 3006
+        PORT: 3006,
+        MASTER_DATABASE_URL: 'postgresql://postgres:password@localhost:5432/oms_master',
+        // TODO: Add your Stripe API keys here
+        STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || '',
+        STRIPE_PUBLISHABLE_KEY: process.env.STRIPE_PUBLISHABLE_KEY || '',
+        STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || ''
       },
       error_file: './logs/billing-service-error.log',
       out_file: './logs/billing-service-out.log',
@@ -220,6 +226,27 @@ module.exports = {
       kill_timeout: 5000
     },
     {
+      name: 'ai-service',
+      script: 'npm',
+      args: 'run dev',
+      cwd: './services/ai-service',
+      instances: 1,
+      autorestart: true,
+      watch: ['src'],
+      ignore_watch: ['node_modules', 'logs', 'dist', '*.log', '.git'],
+      watch_delay: 1000,
+      max_memory_restart: '300M',
+      env: {
+        NODE_ENV: 'development',
+        PORT: 3012
+      },
+      error_file: './logs/ai-service-error.log',
+      out_file: './logs/ai-service-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      merge_logs: true,
+      kill_timeout: 5000
+    },
+    {
       name: 'web-app',
       script: 'npm',
       args: 'run dev',
@@ -230,7 +257,8 @@ module.exports = {
       max_memory_restart: '500M',
       env: {
         NODE_ENV: 'development',
-        PORT: 3000
+        PORT: 3000,
+        NEXT_PUBLIC_API_URL: 'http://localhost:4000'
       },
       error_file: './logs/web-app-error.log',
       out_file: './logs/web-app-out.log',

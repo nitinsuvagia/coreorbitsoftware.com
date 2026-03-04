@@ -21,6 +21,13 @@ import assessmentRoutes from './routes/assessment.routes';
 import integrationRoutes from './routes/integration.routes';
 import offerRoutes from './routes/offer.routes';
 import { publicOnboardingRouter, protectedOnboardingRouter } from './routes/onboarding.routes';
+import performanceRoutes from './routes/performance.routes';
+import badgeRoutes from './routes/badge.routes';
+import skillRoutes from './routes/skill.routes';
+import noteRoutes from './routes/note.routes';
+import setupStatusRoutes from './routes/setup-status.routes';
+import importRoutes from './routes/import.routes';
+import customFieldsRoutes from './routes/custom-fields.routes';
 
 // ============================================================================
 // CREATE APP
@@ -106,6 +113,13 @@ app.use('/api/v1/interviews', interviewRoutes);
 app.use('/api/v1/assessments', assessmentRoutes);
 app.use('/api/v1/organization/integrations', integrationRoutes);
 app.use('/api/v1/onboarding', protectedOnboardingRouter);
+app.use('/api/v1/performance-reviews', performanceRoutes);
+app.use('/api/v1/badges', badgeRoutes);
+app.use('/api/v1/employees/:employeeId/skills', skillRoutes);
+app.use('/api/v1/employees/:employeeId/notes', noteRoutes);
+app.use('/api/v1/employees', customFieldsRoutes); // Custom fields routes (handles /:employeeId/custom-fields)
+app.use('/api/v1/employees/import', importRoutes); // Import routes
+app.use('/api/v1/setup-status', setupStatusRoutes);
 
 // ============================================================================
 // ERROR HANDLING

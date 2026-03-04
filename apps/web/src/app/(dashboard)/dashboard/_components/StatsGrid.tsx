@@ -14,9 +14,9 @@ export function StatsGrid({ stats, limits, loading }: StatsGridProps) {
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
       <StatCard
-        title="Total Employees"
-        value={stats?.totalEmployees || 0}
-        description={`${stats?.activeEmployees || 0} active${limits ? ` / ${limits.maxUsers} max` : ''}`}
+        title="Active Employees"
+        value={stats?.activeEmployees || 0}
+        description={`${stats?.totalEmployees || 0} total (incl. ex)`}
         icon={<Users className="h-6 w-6" />}
         iconColor="blue"
         loading={loading}

@@ -536,7 +536,7 @@ export default function JobDescriptionsPage() {
               <div className="rounded-full bg-primary/10 p-6 mb-4">
                 <Briefcase className="h-16 w-16 text-primary" />
               </div>
-              <h3 className="text-xl font-semibold mb-2">No Job Openings Yet</h3>
+              <h3 className="text-xl font-semibold mb-2">No job openings yet</h3>
               <p className="text-muted-foreground text-center max-w-md mb-6">
                 Create your first job description to start attracting talented candidates. 
                 Define roles, requirements, and benefits to build your team.

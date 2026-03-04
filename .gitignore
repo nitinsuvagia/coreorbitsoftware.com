@@ -50,7 +50,23 @@ uploads/*
 # Misc
 *.pem
 *.log
+*.pid
 .vercel
+
+# Logs directory
+logs/
+
+# Backups
+backups/
 
 # Docker
 docker-compose.override.yml
+
+# MacOS
+.DS_Store
+**/.DS_Store
+
+# Temporary files
+*.tmp
+*.temp
+*.bak

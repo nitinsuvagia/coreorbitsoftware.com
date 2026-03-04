@@ -47,6 +47,43 @@ async function start(): Promise<void> {
     
     logger.info('Subscribed to employee.created events');
     
+    // Subscribe to candidate-hired event to move on-boarding documents to employee folder
+    await subscribeToEvent('candidate-hired', async (data) => {
+      try {
+        const { candidateId, employeeId, employeeCode, candidateName, tenantId, tenantSlug } = data;
+        logger.info({ candidateId, employeeId, tenantId }, 'Received candidate-hired event');
+        
+        // Set tenant context and get prisma client
+        const prisma = await getTenantPrisma(tenantSlug || tenantId);
+        
+        // Get system user for ownership (use any admin user)
+        const systemUser = await prisma.user.findFirst({
+          select: { id: true },
+        });
+        
+        if (!systemUser) {
+          logger.warn({ tenantId }, 'No user found for document migration');
+          return;
+        }
+        
+        // Move on-boarding documents to employee folder
+        await folderInitService.moveOnBoardingDocsToEmployee(
+          prisma,
+          candidateId,
+          employeeId,
+          employeeCode,
+          candidateName,
+          systemUser.id
+        );
+        
+        logger.info({ candidateId, employeeId }, 'Moved on-boarding documents to employee folder');
+      } catch (error) {
+        logger.error({ error, candidateId: data.candidateId, employeeId: data.employeeId }, 'Failed to move on-boarding documents');
+      }
+    });
+    
+    logger.info('Subscribed to candidate-hired events');
+    
     // Start HTTP server
     server.listen(config.port, () => {
       logger.info({

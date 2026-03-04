@@ -17,6 +17,7 @@ import {
   cancelLeave,
   listLeaveRequests,
   getPendingApprovals,
+  runMonthlyLeaveAccrual,
 } from '../services/leave.service';
 import { logger } from '../utils/logger';
 
@@ -177,7 +178,7 @@ router.get(
       
       const leaveTypes = await listLeaveTypes(prisma, activeOnly);
       
-      res.json({ data: leaveTypes });
+      res.json({ success: true, data: leaveTypes });
     } catch (error) {
       next(error);
     }
@@ -215,6 +216,56 @@ router.put(
 // ============================================================================
 
 /**
+ * GET /leaves/balances/me
+ * Get leave balances for the currently authenticated user
+ */
+router.get(
+  '/balances/me',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const tenantSlug = (req as any).tenantSlug;
+      const userId = (req as any).userId;
+      if (!userId) {
+        return res.status(401).json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Authentication required' } });
+      }
+
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
+
+      // Resolve employee ID from user
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { employeeId: true },
+      });
+
+      if (!user?.employeeId) {
+        return res.status(404).json({ success: false, error: { code: 'EMPLOYEE_NOT_FOUND', message: 'No employee record linked to this user' } });
+      }
+
+      const year = req.query.year ? parseInt(req.query.year as string) : undefined;
+      const balances = await getLeaveBalances(prisma, user.employeeId, year);
+
+      // Add computed alias fields expected by frontend
+      const mapped = balances.map((b: any) => ({
+        ...b,
+        totalDays: Number(b.totalDays),
+        usedDays: Number(b.usedDays),
+        pendingDays: Number(b.pendingDays || 0),
+        total: Number(b.totalDays),
+        used: Number(b.usedDays),
+        remaining: Number(b.totalDays) - Number(b.usedDays) - Number(b.pendingDays || 0),
+        entitled: Number(b.totalDays),
+        balance: Number(b.totalDays) - Number(b.usedDays) - Number(b.pendingDays || 0),
+        remainingDays: Number(b.totalDays) - Number(b.usedDays) - Number(b.pendingDays || 0),
+      }));
+
+      res.json({ success: true, data: mapped });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
  * GET /leaves/balances/:employeeId
  * Get leave balances for an employee
  */
@@ -229,7 +280,21 @@ router.get(
       
       const balances = await getLeaveBalances(prisma, employeeId, year);
       
-      res.json({ data: balances });
+      // Add computed alias fields expected by frontend (same mapping as /me endpoint)
+      const mapped = balances.map((b: any) => ({
+        ...b,
+        totalDays: Number(b.totalDays),
+        usedDays: Number(b.usedDays),
+        pendingDays: Number(b.pendingDays || 0),
+        total: Number(b.totalDays),
+        used: Number(b.usedDays),
+        remaining: Number(b.totalDays) - Number(b.usedDays) - Number(b.pendingDays || 0),
+        entitled: Number(b.totalDays),
+        balance: Number(b.totalDays) - Number(b.usedDays) - Number(b.pendingDays || 0),
+        remainingDays: Number(b.totalDays) - Number(b.usedDays) - Number(b.pendingDays || 0),
+      }));
+
+      res.json({ success: true, data: mapped });
     } catch (error) {
       next(error);
     }
@@ -306,6 +371,42 @@ router.post(
           (error as Error).message.includes('not found')) {
         return res.status(400).json({ error: (error as Error).message });
       }
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /leaves/requests/my
+ * Get leave requests for the currently authenticated user
+ */
+router.get(
+  '/requests/my',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const tenantSlug = (req as any).tenantSlug;
+      const userId = (req as any).userId;
+      if (!userId) {
+        return res.status(401).json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Authentication required' } });
+      }
+
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
+
+      // Resolve employee ID from user
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { employeeId: true },
+      });
+
+      if (!user?.employeeId) {
+        return res.status(404).json({ success: false, error: { code: 'EMPLOYEE_NOT_FOUND', message: 'No employee record linked to this user' } });
+      }
+
+      const filters = { ...req.query, employeeId: user.employeeId } as any;
+      const result = await listLeaveRequests(prisma, filters);
+
+      res.json({ success: true, ...result });
+    } catch (error) {
       next(error);
     }
   }
@@ -476,6 +577,48 @@ router.post(
           (error as Error).message.includes('reason is required')) {
         return res.status(400).json({ error: (error as Error).message });
       }
+      next(error);
+    }
+  }
+);
+
+// ============================================================================
+// LEAVE ACCRUAL ROUTES
+// ============================================================================
+
+/**
+ * POST /leaves/accrual/run-monthly
+ * Run monthly leave accrual for all eligible employees.
+ * Credits monthly leave (e.g., CL=1.5/month, SL=1.0/month) to employees
+ * who have completed their probation period.
+ * 
+ * Body (optional):
+ *   year: number (default: current year)
+ *   month: number 1-12 (default: current month)
+ */
+router.post(
+  '/accrual/run-monthly',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
+      
+      const year = req.body.year ? parseInt(req.body.year) : undefined;
+      const month = req.body.month ? parseInt(req.body.month) : undefined;
+      
+      if (month !== undefined && (month < 1 || month > 12)) {
+        return res.status(400).json({ error: 'Month must be between 1 and 12' });
+      }
+      
+      const result = await runMonthlyLeaveAccrual(prisma, year, month);
+      
+      res.json({
+        success: true,
+        message: `Monthly leave accrual completed for ${result.month}/${result.year}`,
+        data: result,
+      });
+    } catch (error) {
+      logger.error({ error: (error as Error).message }, 'Monthly leave accrual failed');
       next(error);
     }
   }

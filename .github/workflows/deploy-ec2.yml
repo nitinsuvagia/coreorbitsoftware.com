@@ -1,0 +1,130 @@
+name: Deploy to AWS EC2
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:  # Manual trigger
+
+env:
+  APP_DIR: /opt/office-management
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Create .env.production on server
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENVSSH'
+          cat > /tmp/.env.production << 'EOF'
+          NODE_ENV=production
+          
+          # Database
+          DATABASE_URL=${{ secrets.DATABASE_URL }}
+          DATABASE_HOST=postgres
+          DATABASE_PORT=5432
+          DATABASE_USER=postgres
+          DATABASE_PASSWORD=${{ secrets.DATABASE_PASSWORD }}
+          DATABASE_NAME=oms_master
+          
+          # Redis
+          REDIS_URL=redis://redis:6379
+          
+          # JWT
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
+          JWT_ACCESS_TOKEN_EXPIRY=15m
+          JWT_REFRESH_TOKEN_EXPIRY=7d
+          
+          # Domain
+          MAIN_DOMAIN=${{ secrets.MAIN_DOMAIN }}
+          NEXT_PUBLIC_API_URL=${{ secrets.API_URL }}
+          
+          # CORS
+          CORS_ORIGINS=*
+          
+          # Email
+          SMTP_HOST=${{ secrets.SMTP_HOST }}
+          SMTP_PORT=${{ secrets.SMTP_PORT }}
+          SMTP_USER=${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM=${{ secrets.SMTP_FROM }}
+          EOF
+          ENVSSH
+
+      - name: Deploy to EC2
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'DEPLOYSSH'
+          set -e
+          
+          echo "🚀 Starting deployment..."
+          
+          # Create app directory if not exists
+          sudo mkdir -p ${{ env.APP_DIR }}
+          sudo chown $USER:$USER ${{ env.APP_DIR }}
+          cd ${{ env.APP_DIR }}
+          
+          # Clone or pull latest code
+          if [ -d ".git" ]; then
+            echo "📥 Pulling latest changes..."
+            git fetch origin
+            git reset --hard origin/main || git reset --hard origin/master
+          else
+            echo "📦 Cloning repository..."
+            git clone ${{ secrets.GITHUB_REPO_URL }} .
+          fi
+          
+          # Copy env file
+          cp /tmp/.env.production .env.production
+          cp /tmp/.env.production .env
+          
+          # Build and deploy with Docker Compose
+          echo "🔨 Building Docker images..."
+          docker compose build --parallel
+          
+          echo "🔄 Restarting services..."
+          docker compose down || true
+          docker compose up -d
+          
+          echo "✅ Deployment complete!"
+          docker compose ps
+          DEPLOYSSH
+
+      - name: Health Check
+        run: |
+          echo "⏳ Waiting for services to start..."
+          sleep 30
+          
+          ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'HEALTHSSH'
+          # Check if services are running
+          if curl -s http://localhost:4000/health | grep -q "ok"; then
+            echo "✅ API Gateway is healthy"
+          else
+            echo "❌ API Gateway health check failed"
+            docker compose logs api-gateway --tail=50
+          fi
+          
+          if curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 | grep -q "200\|307"; then
+            echo "✅ Web App is healthy"
+          else
+            echo "❌ Web App health check failed"
+            docker compose logs web --tail=50
+          fi
+          HEALTHSSH
+
+      - name: Notify on Failure
+        if: failure()
+        run: |
+          echo "❌ Deployment failed! Check the logs above."

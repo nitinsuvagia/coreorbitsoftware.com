@@ -66,6 +66,7 @@ import {
   ClipboardCheck,
   DollarSign,
   Download,
+  X,
 } from 'lucide-react';
 
 interface Notification {
@@ -182,23 +183,15 @@ export default function NotificationsPage() {
       const response = await apiClient.get('/api/v1/notifications');
       const data = response.data as { success: boolean; data: Notification[] };
       if (data.success) {
-        setNotifications(data.data);
+        setNotifications(data.data || []);
+      } else {
+        setNotifications([]);
       }
     } catch (error: any) {
       console.error('Failed to fetch notifications:', error);
-      // Mock data for demo
-      const now = new Date();
-      setNotifications([
-        { id: '1', type: 'task', title: 'Task assigned', message: 'You have been assigned to "Update API documentation"', time: '5 mins ago', createdAt: new Date(now.getTime() - 5 * 60000).toISOString(), read: false, archived: false, actionUrl: '/tasks/1' },
-        { id: '2', type: 'project', title: 'Project update', message: 'Mobile App Redesign project has been marked as completed', time: '1 hour ago', createdAt: new Date(now.getTime() - 60 * 60000).toISOString(), read: false, archived: false, actionUrl: '/projects/1' },
-        { id: '3', type: 'mention', title: 'New mention', message: 'John Doe mentioned you in a comment on "Dashboard redesign"', time: '2 hours ago', createdAt: new Date(now.getTime() - 120 * 60000).toISOString(), read: false, archived: false },
-        { id: '4', type: 'leave', title: 'Leave approved', message: 'Your leave request for March 15-16 has been approved', time: '3 hours ago', createdAt: new Date(now.getTime() - 180 * 60000).toISOString(), read: true, archived: false },
-        { id: '5', type: 'system', title: 'System update', message: 'New features have been added. Check out the changelog!', time: '1 day ago', createdAt: new Date(now.getTime() - 24 * 60 * 60000).toISOString(), read: true, archived: false },
-        { id: '6', type: 'task', title: 'Task due soon', message: '"Code review for feature X" is due in 2 hours', time: '1 day ago', createdAt: new Date(now.getTime() - 24 * 60 * 60000).toISOString(), read: true, archived: false },
-        { id: '7', type: 'team', title: 'New team member', message: 'Sarah joined the "API Integration" project', time: '2 days ago', createdAt: new Date(now.getTime() - 48 * 60 * 60000).toISOString(), read: true, archived: false },
-        { id: '8', type: 'attendance', title: 'Attendance reminder', message: 'You forgot to clock out yesterday', time: '3 days ago', createdAt: new Date(now.getTime() - 72 * 60 * 60000).toISOString(), read: true, archived: false },
-        { id: '9', type: 'billing', title: 'Invoice generated', message: 'Your monthly invoice for January is ready', time: '1 week ago', createdAt: new Date(now.getTime() - 7 * 24 * 60 * 60000).toISOString(), read: true, archived: true },
-      ]);
+      // Show empty state on error instead of mock data
+      setNotifications([]);
+      toast.error('Failed to load notifications');
     } finally {
       setLoading(false);
     }
@@ -716,7 +709,7 @@ export default function NotificationsPage() {
                   <CardDescription>Choose how you want to receive notifications</CardDescription>
                 </div>
                 <Button variant="ghost" size="icon" onClick={() => setShowSettings(false)}>
-                  <Trash2 className="h-4 w-4" />
+                  <X className="h-4 w-4" />
                 </Button>
               </div>
             </CardHeader>

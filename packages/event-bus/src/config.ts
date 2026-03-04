@@ -129,6 +129,31 @@ export const SQS_QUEUES = {
   ATTENDANCE_CHECK_OUT: 'oms-attendance-check-out',
   ATTENDANCE_LEAVE_REQUESTED: 'oms-attendance-leave-requested',
   ATTENDANCE_LEAVE_APPROVED: 'oms-attendance-leave-approved',
+  ATTENDANCE_LEAVE_REJECTED: 'oms-attendance-leave-rejected',
+  
+  // Recruitment Events
+  JOB_DESCRIPTION_CREATED: 'oms-job-description-created',
+  JOB_DESCRIPTION_PUBLISHED: 'oms-job-description-published',
+  CANDIDATE_APPLIED: 'oms-candidate-applied',
+  CANDIDATE_SHORTLISTED: 'oms-candidate-shortlisted',
+  CANDIDATE_HIRED: 'oms-candidate-hired',
+  CANDIDATE_REJECTED: 'oms-candidate-rejected',
+  
+  // Interview Events
+  INTERVIEW_SCHEDULED: 'oms-interview-scheduled',
+  INTERVIEW_RESCHEDULED: 'oms-interview-rescheduled',
+  INTERVIEW_CANCELLED: 'oms-interview-cancelled',
+  INTERVIEW_COMPLETED: 'oms-interview-completed',
+  INTERVIEW_REMINDER: 'oms-interview-reminder',
+  
+  // Assessment Events
+  ASSESSMENT_ASSIGNED: 'oms-assessment-assigned',
+  ASSESSMENT_SUBMITTED: 'oms-assessment-submitted',
+  ASSESSMENT_EVALUATED: 'oms-assessment-evaluated',
+  
+  // Holiday Events
+  HOLIDAY_CREATED: 'oms-holiday-created',
+  HOLIDAY_REMINDER: 'oms-holiday-reminder',
   
   // Project Events
   PROJECT_CREATED: 'oms-project-created',
@@ -161,6 +186,8 @@ export const SQS_QUEUES = {
   DOCUMENT_UPLOADED: 'oms-document-uploaded',
   DOCUMENT_PROCESSED: 'oms-document-processed',
   DOCUMENT_DELETED: 'oms-document-deleted',
+  DOCUMENT_EXPIRING_SOON: 'oms-document-expiring-soon',
+  DOCUMENT_EXPIRED: 'oms-document-expired',
   
   // Report Events
   REPORT_REQUESTED: 'oms-report-requested',

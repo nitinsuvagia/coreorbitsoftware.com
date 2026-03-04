@@ -64,6 +64,8 @@ export interface TenantLoginResponse {
     code: string;
     message: string;
     remainingAttempts?: number;
+    firstName?: string;
+    expiresAt?: string;
   };
 }
 

@@ -78,12 +78,13 @@ router.get('/', async (req: Request, res: Response) => {
     });
     
     // Convert BigInt to number for JSON serialization
+    // maxStorage in DB is already stored as GB (not bytes)
     const formattedPlans = plans.map((plan: any) => ({
       ...plan,
       monthlyPrice: Number(plan.monthlyPrice),
       yearlyPrice: Number(plan.yearlyPrice),
       maxStorage: Number(plan.maxStorage),
-      maxStorageGB: Math.round(Number(plan.maxStorage) / (1024 * 1024 * 1024)),
+      maxStorageGB: Number(plan.maxStorage),
     }));
     
     res.json({ success: true, data: formattedPlans });
@@ -112,7 +113,7 @@ router.get('/:id', async (req: Request, res: Response) => {
         monthlyPrice: Number(plan.monthlyPrice),
         yearlyPrice: Number(plan.yearlyPrice),
         maxStorage: Number(plan.maxStorage),
-        maxStorageGB: Math.round(Number(plan.maxStorage) / (1024 * 1024 * 1024)),
+        maxStorageGB: Number(plan.maxStorage), // DB stores GB directly
       }
     });
   } catch (error: any) {

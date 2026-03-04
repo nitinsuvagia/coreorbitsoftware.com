@@ -139,6 +139,8 @@ const getPlanBadge = (tier: string) => {
       return <Badge className="bg-blue-500">Professional</Badge>;
     case 'STARTER':
       return <Badge variant="secondary">Starter</Badge>;
+    case 'FREE':
+      return <Badge className="bg-gray-500">Free</Badge>;
     case 'CUSTOM':
       return <Badge className="bg-amber-500">Custom</Badge>;
     default:

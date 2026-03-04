@@ -7,9 +7,10 @@ import type { TenantInfo } from '../types';
 interface WelcomeHeaderProps {
   firstName?: string;
   tenant?: TenantInfo;
+  isEmployee?: boolean;
 }
 
-export function WelcomeHeader({ firstName, tenant }: WelcomeHeaderProps) {
+export function WelcomeHeader({ firstName, tenant, isEmployee }: WelcomeHeaderProps) {
   return (
     <div className="flex items-start justify-between">
       <div>
@@ -17,10 +18,12 @@ export function WelcomeHeader({ firstName, tenant }: WelcomeHeaderProps) {
           Welcome back, {firstName}!
         </h2>
         <p className="text-muted-foreground">
-          Here's what's happening in your organization today.
+          {isEmployee
+            ? "Here's your personal dashboard for today."
+            : "Here's what's happening in your organization today."}
         </p>
       </div>
-      {tenant && (
+      {tenant && !isEmployee && (
         <div className="text-right">
           <div className="flex items-center gap-2">
             <Building2 className="h-4 w-4 text-muted-foreground" />

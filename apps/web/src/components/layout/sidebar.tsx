@@ -6,8 +6,6 @@ import { cn } from '@/lib/utils';
 import {
   LayoutDashboard,
   Users,
-  FolderKanban,
-  FileText,
   BarChart3,
   Settings,
   Bell,
@@ -24,19 +22,36 @@ import {
   Clock,
   File,
   Sparkles,
+  Award,
+  ClipboardList,
+  Landmark,
+  Wallet,
+  Receipt,
+  Monitor,
+  Armchair,
+  Cpu,
+  User,
+  CalendarClock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+import { usePermissions } from '@/hooks/use-permissions';
 
 interface NavItem {
   title: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
+  /** Permission(s) required. String = exact match, Array = any matches (OR). Omit = always visible. */
+  permission?: string | string[];
+  /** If true, hidden for tenant_admin (owner) who is not an employee */
+  employeeOnly?: boolean;
+  /** If true, only visible for tenant_admin */
+  adminOnly?: boolean;
 }
 
 interface NavCategory {
@@ -47,8 +62,10 @@ interface NavCategory {
 
 // Standalone items (no category)
 const standaloneItems: NavItem[] = [
-  { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { title: 'Admin 360°', href: '/admin-360', icon: Sparkles },
+  { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, permission: 'dashboard:view' },
+  { title: 'My 360°', href: '/my-360', icon: User, employeeOnly: true },
+  { title: 'Attendance', href: '/attendance', icon: Clock, employeeOnly: true },
+  { title: 'Admin 360°', href: '/admin-360', icon: Sparkles, permission: 'admin_360:view', adminOnly: true },
 ];
 
 // Categorized navigation
@@ -57,30 +74,49 @@ const categories: NavCategory[] = [
     title: 'HR',
     icon: Users,
     items: [
-      { title: 'HR 360°', href: '/hr/dashboard', icon: LayoutDashboard },
-      { title: 'Job Descriptions', href: '/hr/jobs', icon: Briefcase },
-      { title: 'Candidates', href: '/hr/candidates', icon: UserCheck },
-      { title: 'Interviews', href: '/hr/interviews', icon: Video },
-      { title: 'Assessment Tool', href: '/hr/assessments', icon: ClipboardCheck },
-      { title: 'Employees', href: '/employees', icon: Users },
-      { title: 'Holidays', href: '/hr/holidays', icon: CalendarDays },
-      { title: 'Leave Management', href: '/hr/leave-management', icon: Clock },
-      { title: 'Documents', href: '/documents', icon: File },
+      { title: 'HR Dashboard', href: '/hr/dashboard', icon: LayoutDashboard, permission: 'employees:read' },
+      { title: 'Job Descriptions', href: '/hr/jobs', icon: Briefcase, permission: 'hr_jobs:read' },
+      { title: 'Candidates', href: '/hr/candidates', icon: UserCheck, permission: 'hr_candidates:read' },
+      { title: 'Interviews', href: '/hr/interviews', icon: Video, permission: 'hr_interviews:read' },
+      { title: 'Assessments', href: '/hr/assessments', icon: ClipboardCheck, permission: 'hr_assessments:read' },
+      { title: 'Employees', href: '/employees', icon: Users, permission: 'employees:read' },
+      { title: 'Holidays', href: '/hr/holidays', icon: CalendarDays, permission: 'holidays:read' },
+      { title: 'Leave Management', href: '/hr/leave-management', icon: CalendarClock, permission: ['leave:read', 'leave:self'] },
+      { title: 'Performance', href: '/hr/performance-reviews', icon: ClipboardList, permission: ['performance:read', 'performance:self'] },
+      { title: 'Documents', href: '/documents', icon: File, permission: ['documents:read', 'documents:self'] },
+    ],
+  },
+  {
+    title: 'Backoffice',
+    icon: Landmark,
+    items: [
+      { title: 'Banks', href: '/backoffice/banks', icon: Landmark, permission: 'billing:view' },
+      { title: 'Accounts', href: '/backoffice/accounts', icon: Wallet, permission: 'billing:view' },
+      { title: 'Expenses', href: '/backoffice/expenses', icon: Receipt, permission: 'billing:view' },
+    ],
+  },
+  {
+    title: 'Inventory',
+    icon: Monitor,
+    items: [
+      { title: 'Hardware', href: '/inventory/hardware', icon: Monitor, permission: 'organization:view' },
+      { title: 'Furniture', href: '/inventory/furniture', icon: Armchair, permission: 'organization:view' },
+      { title: 'Electronics', href: '/inventory/electronics', icon: Cpu, permission: 'organization:view' },
     ],
   },
 ];
 
 // Items after categories
 const afterCategoryItems: NavItem[] = [
-  { title: 'Reports', href: '/reports', icon: BarChart3 },
+  { title: 'Reports', href: '/reports', icon: BarChart3, permission: 'reports:view' },
 ];
 
 // Secondary navigation (below divider)
 const secondaryNavItems: NavItem[] = [
-  { title: 'Notifications', href: '/notifications', icon: Bell },
-  { title: 'Billing', href: '/billing', icon: CreditCard },
-  { title: 'Organization', href: '/organization', icon: Building2 },
-  { title: 'Settings', href: '/settings', icon: Settings },
+  { title: 'Notifications', href: '/notifications', icon: Bell, permission: 'notifications:read' },
+  { title: 'Billing', href: '/billing', icon: CreditCard, permission: 'billing:view' },
+  { title: 'Organization', href: '/organization', icon: Building2, permission: 'organization:view' },
+  { title: 'Settings', href: '/settings', icon: Settings, permission: 'settings:view' },
 ];
 
 interface SidebarProps {
@@ -91,6 +127,29 @@ export function Sidebar({ className }: SidebarProps) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [openCategories, setOpenCategories] = useState<string[]>(['HR']);
+  const { can, canAny, isAdmin } = usePermissions();
+
+  // Filter nav items based on permissions (supports string or string[] for OR logic)
+  const filterItems = (items: NavItem[]) =>
+    items.filter((item) => {
+      // Hide employee-only items for tenant owner (not an employee)
+      if (item.employeeOnly && isAdmin) return false;
+      // Hide admin-only items for non-admin users
+      if (item.adminOnly && !isAdmin) return false;
+      if (!item.permission) return true;
+      if (Array.isArray(item.permission)) return canAny(...item.permission);
+      return can(item.permission);
+    });
+
+  const filteredStandalone = useMemo(() => filterItems(standaloneItems), [can, canAny, isAdmin]);
+  const filteredCategories = useMemo(() =>
+    categories
+      .map((cat) => ({ ...cat, items: filterItems(cat.items) }))
+      .filter((cat) => cat.items.length > 0),
+    [can, canAny, isAdmin]
+  );
+  const filteredAfterCategory = useMemo(() => filterItems(afterCategoryItems), [can, canAny]);
+  const filteredSecondary = useMemo(() => filterItems(secondaryNavItems), [can, canAny]);
 
   const toggleCategory = (category: string) => {
     setOpenCategories((prev) =>
@@ -132,7 +191,7 @@ export function Sidebar({ className }: SidebarProps) {
       <nav className="flex-1 space-y-1 overflow-y-auto p-2">
         {/* Standalone Items */}
         <div className="space-y-1">
-          {standaloneItems.map((item) => {
+          {filteredStandalone.map((item) => {
             const isActive = isItemActive(item.href);
             return (
               <Link
@@ -153,7 +212,7 @@ export function Sidebar({ className }: SidebarProps) {
         </div>
 
         {/* Categorized Items */}
-        {categories.map((category) => {
+        {filteredCategories.map((category) => {
           const isOpen = openCategories.includes(category.title);
           const categoryActive = isCategoryActive(category);
 
@@ -229,8 +288,8 @@ export function Sidebar({ className }: SidebarProps) {
         })}
 
         {/* After Category Items */}
-        <div className="space-y-1 pt-2">
-          {afterCategoryItems.map((item) => {
+        {filteredAfterCategory.length > 0 && <div className="space-y-1 pt-2">
+          {filteredAfterCategory.map((item) => {
             const isActive = isItemActive(item.href);
             return (
               <Link
@@ -248,13 +307,13 @@ export function Sidebar({ className }: SidebarProps) {
               </Link>
             );
           })}
-        </div>
+        </div>}
 
-        <div className="my-4 border-t" />
+        {filteredSecondary.length > 0 && <div className="my-4 border-t" />}
 
         {/* Secondary Navigation */}
         <div className="space-y-1">
-          {secondaryNavItems.map((item) => {
+          {filteredSecondary.map((item) => {
             const isActive = isItemActive(item.href);
             return (
               <Link

@@ -1,0 +1,67 @@
+<h2>Welcome to OMS, {{adminFirstName}}! 🎉</h2>
+
+<p>Thank you for registering <strong>{{organizationName}}</strong> with Office Management System. Your organization is now set up and ready to use.</p>
+
+<div class="info-box">
+  <p><strong>Your Organization Details:</strong></p>
+  <table style="width: 100%; border-collapse: collapse; margin: 10px 0;">
+    <tr>
+      <td style="padding: 8px 0; color: #6B7280;">Organization Name:</td>
+      <td style="padding: 8px 0; font-weight: 600;">{{organizationName}}</td>
+    </tr>
+    <tr>
+      <td style="padding: 8px 0; color: #6B7280;">Your Login URL:</td>
+      <td style="padding: 8px 0;"><a href="{{loginUrl}}" style="color: #4F46E5; font-weight: 600;">{{loginUrl}}</a></td>
+    </tr>
+    <tr>
+      <td style="padding: 8px 0; color: #6B7280;">Admin Email:</td>
+      <td style="padding: 8px 0;">{{adminEmail}}</td>
+    </tr>
+    <tr>
+      <td style="padding: 8px 0; color: #6B7280;">Trial Ends:</td>
+      <td style="padding: 8px 0; color: #EF4444; font-weight: 600;">{{trialEndDate}}</td>
+    </tr>
+  </table>
+</div>
+
+<a href="{{loginUrl}}" class="button">Login to Your Dashboard</a>
+
+<div class="divider"></div>
+
+<p><strong>Getting Started:</strong></p>
+<ul style="color: #4a5568; margin-left: 20px; line-height: 1.8;">
+  <li>Add your employees and define their roles</li>
+  <li>Set up departments and designations</li>
+  <li>Configure attendance policies</li>
+  <li>Create projects and assign tasks</li>
+  <li>Customize your organization settings</li>
+</ul>
+
+<div class="divider"></div>
+
+<p><strong>Your 14-Day Free Trial Includes:</strong></p>
+<ul style="color: #4a5568; margin-left: 20px; line-height: 1.8;">
+  <li>✅ Unlimited employees</li>
+  <li>✅ Full access to all features</li>
+  <li>✅ Document management</li>
+  <li>✅ HR & recruitment tools</li>
+  <li>✅ Attendance & leave tracking</li>
+  <li>✅ Project & task management</li>
+</ul>
+
+<p style="margin-top: 20px; padding: 15px; background-color: #FEF3C7; border-radius: 8px; color: #92400E;">
+  <strong>Important:</strong> Your trial will end on <strong>{{trialEndDate}}</strong>. 
+  To continue using OMS after the trial, please upgrade to a paid plan from your billing settings.
+</p>
+
+<div class="divider"></div>
+
+<p>If you have any questions or need help getting started, our support team is here to help!</p>
+
+<p>Best regards,<br>
+<strong>The OMS Team</strong></p>
+
+<p style="font-size: 12px; color: #9CA3AF; margin-top: 20px;">
+  You received this email because you registered for an OMS account. 
+  If you didn't create this account, please contact support immediately.
+</p>

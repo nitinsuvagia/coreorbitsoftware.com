@@ -52,6 +52,7 @@ import {
   Shield,
   Loader2,
 } from 'lucide-react';
+import { useAuth } from '@/lib/auth/auth-context';
 import type { PasswordForm, ShowPasswords, ActiveSession } from '../types';
 
 interface SecurityTabProps {
@@ -147,6 +148,8 @@ export function SecurityTab({
   onSetDeletePassword,
   onDeleteAccount,
 }: SecurityTabProps) {
+  const { user } = useAuth();
+  const isTenantAdmin = user?.roles?.includes('tenant_admin');
   const [copiedSecret, setCopiedSecret] = useState(false);
   const [copiedBackupCodes, setCopiedBackupCodes] = useState(false);
   const [showDeletePassword, setShowDeletePassword] = useState(false);
@@ -404,32 +407,34 @@ export function SecurityTab({
         </CardContent>
       </Card>
 
-      {/* Danger Zone */}
-      <Card className="border-red-200">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-red-600">
-            <AlertTriangle className="h-5 w-5" />
-            Danger Zone
-          </CardTitle>
-          <CardDescription>
-            Actions that will impact your account
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between p-4 border border-red-200 rounded-lg">
-            <div>
-              <p className="font-medium">Delete Account</p>
-              <p className="text-sm text-muted-foreground">
-                Your account will be frozen. You can reactivate it within 30 days via email.
-              </p>
+      {/* Danger Zone - Only visible to Tenant Admin (account owner) */}
+      {isTenantAdmin && (
+        <Card className="border-red-200">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-5 w-5" />
+              Danger Zone
+            </CardTitle>
+            <CardDescription>
+              Actions that will impact your account
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between p-4 border border-red-200 rounded-lg">
+              <div>
+                <p className="font-medium">Delete Account</p>
+                <p className="text-sm text-muted-foreground">
+                  Your account will be frozen. You can reactivate it within 30 days via email.
+                </p>
+              </div>
+              <Button variant="destructive" onClick={() => onSetShowDeleteDialog(true)}>
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete Account
+              </Button>
             </div>
-            <Button variant="destructive" onClick={() => onSetShowDeleteDialog(true)}>
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete Account
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       {/* 2FA Setup Dialog */}
       <Dialog open={show2FADialog} onOpenChange={onSetShow2FADialog}>
@@ -536,91 +541,95 @@ export function SecurityTab({
         </DialogContent>
       </Dialog>
 
-      {/* Delete Account Dialog */}
-      <AlertDialog open={showDeleteDialog} onOpenChange={onSetShowDeleteDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Account</AlertDialogTitle>
-            <AlertDialogDescription>
-              Your account will be frozen immediately. You will receive an email with instructions to reactivate within 30 days. After 30 days, your data will be permanently deleted.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="deletePassword">Current Password</Label>
-              <div className="relative">
-                <Input
-                  id="deletePassword"
-                  type={showDeletePassword ? 'text' : 'password'}
-                  value={deletePassword || ''}
-                  onChange={(e) => onSetDeletePassword?.(e.target.value)}
-                  placeholder="Enter your password"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-0 top-0 h-full px-3"
-                  onClick={() => setShowDeletePassword(!showDeletePassword)}
+      {/* Delete Account Dialog - Only for Tenant Admin */}
+      {isTenantAdmin && (
+        <>
+          <AlertDialog open={showDeleteDialog} onOpenChange={onSetShowDeleteDialog}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete Account</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Your account will be frozen immediately. You will receive an email with instructions to reactivate within 30 days. After 30 days, your data will be permanently deleted.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="deletePassword">Current Password</Label>
+                  <div className="relative">
+                    <Input
+                      id="deletePassword"
+                      type={showDeletePassword ? 'text' : 'password'}
+                      value={deletePassword || ''}
+                      onChange={(e) => onSetDeletePassword?.(e.target.value)}
+                      placeholder="Enter your password"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-0 top-0 h-full px-3"
+                      onClick={() => setShowDeletePassword(!showDeletePassword)}
+                    >
+                      {showDeletePassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="deleteConfirm">Type DELETE to confirm</Label>
+                  <Input
+                    id="deleteConfirm"
+                    value={deleteConfirmation}
+                    onChange={(e) => onSetDeleteConfirmation(e.target.value)}
+                    placeholder="DELETE"
+                  />
+                </div>
+              </div>
+              <AlertDialogFooter>
+                <AlertDialogCancel 
+                  onClick={() => {
+                    onSetDeleteConfirmation('');
+                    onSetDeletePassword?.('');
+                  }}
+                  disabled={deletingAccount}
                 >
-                  {showDeletePassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </Button>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction 
+                  onClick={onDeleteAccount} 
+                  className="bg-red-600 hover:bg-red-700"
+                  disabled={deleteConfirmation !== 'DELETE' || !deletePassword || deletingAccount}
+                >
+                  {deletingAccount ? (
+                    <>
+                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete Account
+                    </>
+                  )}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          {/* Full-page loading overlay when deleting account */}
+          {deletingAccount && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+              <div className="bg-white dark:bg-gray-900 rounded-lg p-8 shadow-2xl flex flex-col items-center space-y-4 max-w-sm mx-4">
+                <Loader2 className="h-12 w-12 animate-spin text-red-500" />
+                <div className="text-center">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Processing Account Deletion</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    Please wait while we freeze your account...
+                  </p>
+                </div>
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="deleteConfirm">Type DELETE to confirm</Label>
-              <Input
-                id="deleteConfirm"
-                value={deleteConfirmation}
-                onChange={(e) => onSetDeleteConfirmation(e.target.value)}
-                placeholder="DELETE"
-              />
-            </div>
-          </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel 
-              onClick={() => {
-                onSetDeleteConfirmation('');
-                onSetDeletePassword?.('');
-              }}
-              disabled={deletingAccount}
-            >
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={onDeleteAccount} 
-              className="bg-red-600 hover:bg-red-700"
-              disabled={deleteConfirmation !== 'DELETE' || !deletePassword || deletingAccount}
-            >
-              {deletingAccount ? (
-                <>
-                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                <>
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete Account
-                </>
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Full-page loading overlay when deleting account */}
-      {deletingAccount && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-white dark:bg-gray-900 rounded-lg p-8 shadow-2xl flex flex-col items-center space-y-4 max-w-sm mx-4">
-            <Loader2 className="h-12 w-12 animate-spin text-red-500" />
-            <div className="text-center">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Processing Account Deletion</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Please wait while we freeze your account...
-              </p>
-            </div>
-          </div>
-        </div>
+          )}
+        </>
       )}
     </div>
   );

@@ -15,9 +15,23 @@ import {
   addDays,
   getDay,
 } from 'date-fns';
-import { getEventBus, SQS_QUEUES } from '@oms/event-bus';
+import { getEventBus, SQS_QUEUES, SNS_TOPICS } from '@oms/event-bus';
 import { getMasterPrisma } from '@oms/database';
 import { logger } from '../utils/logger';
+
+/**
+ * Parse a date-only string (YYYY-MM-DD) as UTC midnight.
+ * date-fns parseISO treats date-only strings as local time, which causes
+ * timezone offset issues (e.g., 2026-03-10 in IST becomes 2026-03-09T18:30:00Z).
+ */
+function parseDateAsUTC(dateStr: string): Date {
+  // If already has time component or Z suffix, parse normally
+  if (dateStr.includes('T') || dateStr.includes('Z')) {
+    return parseISO(dateStr);
+  }
+  // Append T00:00:00Z to force UTC interpretation
+  return parseISO(dateStr + 'T00:00:00Z');
+}
 import { config } from '../config';
 import {
   logLeaveRequested,
@@ -334,7 +348,7 @@ export async function adjustLeaveBalance(
   const updated = await prisma.leaveBalance.update({
     where: { id: balance.id },
     data: {
-      adjustmentDays: balance.adjustmentDays + adjustmentDays,
+      adjustmentDays: Number(balance.adjustmentDays) + adjustmentDays,
       updatedAt: new Date(),
     },
     include: { leaveType: true },
@@ -345,7 +359,7 @@ export async function adjustLeaveBalance(
     data: {
       id: uuidv4(),
       leaveBalanceId: balance.id,
-      days: adjustmentDays,
+      adjustmentDays: adjustmentDays,
       reason,
       adjustedBy,
     },
@@ -493,8 +507,8 @@ export async function requestLeave(
 ): Promise<any> {
   const eventBus = getEventBus('attendance-service');
   
-  const fromDate = parseISO(input.fromDate);
-  const toDate = parseISO(input.toDate);
+  const fromDate = parseDateAsUTC(input.fromDate);
+  const toDate = parseDateAsUTC(input.toDate);
   
   // Validate dates
   if (fromDate > toDate) {
@@ -539,7 +553,7 @@ export async function requestLeave(
     },
   });
   
-  if (!employee || (employee.status !== 'active' && employee.status !== 'ACTIVE')) {
+  if (!employee || employee.status !== 'ACTIVE') {
     throw new Error('Employee not found or inactive');
   }
   
@@ -560,8 +574,8 @@ export async function requestLeave(
   }
   
   // Check available balance (skip for unpaid leave types like LWP)
-  const availableDays = balance.totalDays + balance.carryForwardDays + balance.adjustmentDays
-    - balance.usedDays - balance.pendingDays;
+  const availableDays = Number(balance.totalDays) + Number(balance.carryForwardDays) + Number(balance.adjustmentDays)
+    - Number(balance.usedDays) - Number(balance.pendingDays);
   
   if (leaveType.isPaid && leaveDays > availableDays && !config.leave.allowNegativeBalance) {
     throw new Error(
@@ -635,6 +649,20 @@ export async function requestLeave(
     },
     tenantContext
   );
+  
+  // Publish to topic for notification service
+  await eventBus.publishToTopic(SNS_TOPICS.EMPLOYEE_EVENTS, 'leave.requested', {
+    leaveId: leaveRequest.id,
+    employeeId: input.employeeId,
+    employeeName: `${leaveRequest.employee?.user?.firstName || ''} ${leaveRequest.employee?.user?.lastName || ''}`.trim(),
+    employeeUserId: (leaveRequest.employee as any)?.userId,
+    leaveType: leaveType.name,
+    startDate: input.fromDate,
+    endDate: input.toDate,
+    totalDays: leaveDays,
+    reason: input.reason,
+    managerIds: (employee.reportingManager as any)?.userId ? [(employee.reportingManager as any).userId] : [],
+  }, tenantContext);
   
   // Log activity
   await logLeaveRequested(
@@ -768,6 +796,22 @@ export async function approveLeave(
     tenantContext
   );
   
+  // Publish to topic for notification service
+  await eventBus.publishToTopic(SNS_TOPICS.EMPLOYEE_EVENTS, 'leave.approved', {
+    leaveId: input.leaveRequestId,
+    employeeId: leaveRequest.employeeId,
+    employeeName: leaveRequest.employee?.user
+      ? `${leaveRequest.employee.user.firstName} ${leaveRequest.employee.user.lastName}`.trim()
+      : leaveRequest.employee?.displayName || 'Employee',
+    employeeEmail: updated.employee?.user?.email,
+    leaveType: leaveRequest.leaveType?.name || 'Leave',
+    fromDate: leaveRequest.fromDate.toISOString(),
+    toDate: leaveRequest.toDate.toISOString(),
+    totalDays: Number(leaveRequest.totalDays),
+    approvedBy: input.approverId,
+    comments: input.comments,
+  }, tenantContext);
+  
   // Log activity
   const employeeName = leaveRequest.employee?.user
     ? `${leaveRequest.employee.user.firstName} ${leaveRequest.employee.user.lastName}`
@@ -861,6 +905,23 @@ export async function rejectLeave(
     rejectedBy: input.approverId,
     reason: input.reason,
   }, 'Leave rejected');
+  
+  // Publish to topic for notification service
+  const eventBus = getEventBus('attendance-service');
+  await eventBus.publishToTopic(SNS_TOPICS.EMPLOYEE_EVENTS, 'leave.rejected', {
+    leaveId: input.leaveRequestId,
+    employeeId: leaveRequest.employeeId,
+    employeeName: updated.employee?.user
+      ? `${updated.employee.user.firstName} ${updated.employee.user.lastName}`.trim()
+      : updated.employee?.displayName || 'Employee',
+    employeeEmail: updated.employee?.user?.email,
+    leaveType: updated.leaveType?.name || 'Leave',
+    fromDate: leaveRequest.fromDate.toISOString(),
+    toDate: leaveRequest.toDate.toISOString(),
+    totalDays: Number(leaveRequest.totalDays),
+    rejectedBy: input.approverId,
+    reason: input.reason,
+  }, tenantContext);
   
   return updated;
 }
@@ -1019,12 +1080,12 @@ export async function cancelLeave(
         where: {
           leaveRequestId,
           date: { gte: today },
-        },
+        } as any,
       });
     } else {
       // Delete all attendance records for this leave
       await prisma.attendance.deleteMany({
-        where: { leaveRequestId },
+        where: { leaveRequestId } as any,
       });
     }
   }
@@ -1088,10 +1149,10 @@ export async function listLeaveRequests(
   if (filters.dateFrom || filters.dateTo) {
     where.OR = [];
     if (filters.dateFrom) {
-      where.OR.push({ fromDate: { gte: parseISO(filters.dateFrom) } });
+      where.OR.push({ fromDate: { gte: parseDateAsUTC(filters.dateFrom) } });
     }
     if (filters.dateTo) {
-      where.OR.push({ toDate: { lte: parseISO(filters.dateTo) } });
+      where.OR.push({ toDate: { lte: parseDateAsUTC(filters.dateTo) } });
     }
   }
   
@@ -1108,6 +1169,7 @@ export async function listLeaveRequests(
             id: true,
             firstName: true,
             lastName: true,
+            email: true,
             employeeCode: true,
             avatar: true,
             department: { select: { name: true } },
@@ -1118,7 +1180,29 @@ export async function listLeaveRequests(
     prisma.leaveRequest.count({ where }),
   ]);
   
-  return { data, total, page, pageSize };
+  // Fetch approver details for requests that have approvedBy
+  const approverIds = data
+    .filter(r => r.approvedBy)
+    .map(r => r.approvedBy as string);
+  
+  let approverMap: Map<string, { firstName: string; lastName: string }> = new Map();
+  if (approverIds.length > 0) {
+    const approvers = await prisma.user.findMany({
+      where: { id: { in: approverIds } },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    approverMap = new Map(approvers.map(a => [a.id, { firstName: a.firstName, lastName: a.lastName }]));
+  }
+  
+  // Add approver details to each request
+  const enrichedData = data.map(request => ({
+    ...request,
+    approvedBy: request.approvedBy
+      ? approverMap.get(request.approvedBy) || request.approvedBy
+      : null,
+  }));
+  
+  return { data: enrichedData, total, page, pageSize };
 }
 
 /**
@@ -1158,4 +1242,267 @@ export async function getPendingApprovals(
     },
     orderBy: { createdAt: 'asc' },
   });
+}
+
+// ============================================================================
+// MONTHLY LEAVE ACCRUAL
+// ============================================================================
+
+/**
+ * Default probation period in months.
+ * Employees are eligible for leave accrual after this period from join date.
+ */
+const DEFAULT_PROBATION_MONTHS = 3;
+
+/**
+ * Run monthly leave accrual for all eligible employees.
+ * 
+ * Rules:
+ * - Only PAID leave types (isPaid = true) are accrued — unpaid leaves like LWP are excluded
+ * - Only leave types with accrualType = 'monthly' are accrued monthly
+ * - Monthly credit = defaultDaysPerYear / 12
+ * - Only ACTIVE employees who have completed probation are eligible
+ * - Probation = probationEndDate if set, else joinDate + DEFAULT_PROBATION_MONTHS
+ * - Creates/updates leave_balance for the current year
+ * - Tracks accrual to avoid double-crediting for the same month
+ * 
+ * @param prisma - Tenant Prisma client
+ * @param year - Target year (default: current year)
+ * @param month - Target month 1-12 (default: current month)
+ * @returns Summary of accrual results
+ */
+export async function runMonthlyLeaveAccrual(
+  prisma: PrismaClient,
+  year?: number,
+  month?: number,
+): Promise<{
+  year: number;
+  month: number;
+  employeesProcessed: number;
+  employeesSkipped: number;
+  balancesCreated: number;
+  balancesUpdated: number;
+  details: Array<{
+    employeeId: string;
+    employeeName: string;
+    leaveType: string;
+    monthlyCredit: number;
+    newTotal: number;
+  }>;
+}> {
+  const now = new Date();
+  const targetYear = year || now.getFullYear();
+  const targetMonth = month || (now.getMonth() + 1); // 1-based
+  
+  logger.info({ year: targetYear, month: targetMonth }, 'Starting monthly leave accrual');
+  
+  // 1. Get all monthly-accrual PAID leave types (only org-allowed paid leaves get accrued)
+  const monthlyLeaveTypes = await prisma.leaveType.findMany({
+    where: {
+      isActive: true,
+      isPaid: true,
+      accrualType: 'monthly',
+      defaultDaysPerYear: { gt: 0 },
+    },
+  });
+  
+  if (monthlyLeaveTypes.length === 0) {
+    logger.info('No monthly-accrual paid leave types found, skipping');
+    return {
+      year: targetYear,
+      month: targetMonth,
+      employeesProcessed: 0,
+      employeesSkipped: 0,
+      balancesCreated: 0,
+      balancesUpdated: 0,
+      details: [],
+    };
+  }
+  
+  // 2. Get all active employees
+  const employees = await prisma.employee.findMany({
+    where: {
+      status: 'ACTIVE',
+      deletedAt: null,
+    },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      joinDate: true,
+      probationEndDate: true,
+      confirmationDate: true,
+    },
+  });
+  
+  // 3. Determine accrual date (1st of target month)
+  const accrualDate = new Date(targetYear, targetMonth - 1, 1); // 1st of month
+  
+  let employeesProcessed = 0;
+  let employeesSkipped = 0;
+  let balancesCreated = 0;
+  let balancesUpdated = 0;
+  const details: Array<{
+    employeeId: string;
+    employeeName: string;
+    leaveType: string;
+    monthlyCredit: number;
+    newTotal: number;
+  }> = [];
+  
+  for (const employee of employees) {
+    // 4. Check if probation is completed
+    let probationEndDate: Date;
+    
+    if (employee.probationEndDate) {
+      probationEndDate = new Date(employee.probationEndDate);
+    } else if (employee.confirmationDate) {
+      // If confirmed, probation is done — use confirmation date
+      probationEndDate = new Date(employee.confirmationDate);
+    } else {
+      // Default: joinDate + DEFAULT_PROBATION_MONTHS
+      const joinDate = new Date(employee.joinDate);
+      probationEndDate = new Date(joinDate);
+      probationEndDate.setMonth(probationEndDate.getMonth() + DEFAULT_PROBATION_MONTHS);
+    }
+    
+    // Employee must have completed probation by the accrual date
+    if (probationEndDate > accrualDate) {
+      employeesSkipped++;
+      logger.debug(
+        { employeeId: employee.id, probationEndDate: probationEndDate.toISOString() },
+        'Employee still in probation, skipping accrual'
+      );
+      continue;
+    }
+    
+    // 5. For each monthly leave type, credit the balance
+    for (const leaveType of monthlyLeaveTypes) {
+      const monthlyCredit = Number((leaveType.defaultDaysPerYear / 12).toFixed(1));
+      // Max total for the year so far = monthlyCredit * targetMonth (cap at yearly max)
+      const maxTotalForMonth = Math.min(
+        Number((monthlyCredit * targetMonth).toFixed(1)),
+        leaveType.defaultDaysPerYear
+      );
+      
+      // Find or create leave balance
+      const existing = await prisma.leaveBalance.findFirst({
+        where: {
+          employeeId: employee.id,
+          leaveTypeId: leaveType.id,
+          year: targetYear,
+        },
+      });
+      
+      if (existing) {
+        const currentTotal = Number(existing.totalDays);
+        
+        // Only credit if not already at or above the expected total for this month
+        if (currentTotal < maxTotalForMonth) {
+          const newTotal = maxTotalForMonth;
+          
+          await prisma.leaveBalance.update({
+            where: { id: existing.id },
+            data: {
+              totalDays: newTotal,
+              updatedAt: new Date(),
+            },
+          });
+          
+          balancesUpdated++;
+          details.push({
+            employeeId: employee.id,
+            employeeName: `${employee.firstName} ${employee.lastName}`,
+            leaveType: leaveType.name,
+            monthlyCredit,
+            newTotal,
+          });
+        }
+        // If already at expected total, skip (already accrued for this month)
+      } else {
+        // Create new balance with the accrued amount
+        await prisma.leaveBalance.create({
+          data: {
+            id: uuidv4(),
+            employeeId: employee.id,
+            leaveTypeId: leaveType.id,
+            year: targetYear,
+            totalDays: maxTotalForMonth,
+            usedDays: 0,
+            pendingDays: 0,
+            carryForwardDays: 0,
+            adjustmentDays: 0,
+          },
+        });
+        
+        balancesCreated++;
+        details.push({
+          employeeId: employee.id,
+          employeeName: `${employee.firstName} ${employee.lastName}`,
+          leaveType: leaveType.name,
+          monthlyCredit,
+          newTotal: maxTotalForMonth,
+        });
+      }
+    }
+    
+    // Also initialize yearly-accrual PAID leave types (EL, BL, etc.) if not already done
+    // Unpaid leaves (LWP, Maternity etc.) are excluded — no balance allocation
+    const yearlyLeaveTypes = await prisma.leaveType.findMany({
+      where: {
+        isActive: true,
+        isPaid: true,
+        accrualType: { not: 'monthly' },
+        defaultDaysPerYear: { gt: 0 },
+      },
+    });
+    
+    for (const leaveType of yearlyLeaveTypes) {
+      const existing = await prisma.leaveBalance.findFirst({
+        where: {
+          employeeId: employee.id,
+          leaveTypeId: leaveType.id,
+          year: targetYear,
+        },
+      });
+      
+      if (!existing) {
+        await prisma.leaveBalance.create({
+          data: {
+            id: uuidv4(),
+            employeeId: employee.id,
+            leaveTypeId: leaveType.id,
+            year: targetYear,
+            totalDays: leaveType.defaultDaysPerYear,
+            usedDays: 0,
+            pendingDays: 0,
+            carryForwardDays: 0,
+            adjustmentDays: 0,
+          },
+        });
+        balancesCreated++;
+      }
+    }
+    
+    employeesProcessed++;
+  }
+  
+  logger.info({
+    year: targetYear,
+    month: targetMonth,
+    employeesProcessed,
+    employeesSkipped,
+    balancesCreated,
+    balancesUpdated,
+  }, 'Monthly leave accrual completed');
+  
+  return {
+    year: targetYear,
+    month: targetMonth,
+    employeesProcessed,
+    employeesSkipped,
+    balancesCreated,
+    balancesUpdated,
+    details,
+  };
 }

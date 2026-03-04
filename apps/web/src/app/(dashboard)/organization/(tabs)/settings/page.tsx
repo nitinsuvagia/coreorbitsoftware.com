@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useOrganizationContext } from '../../layout';
+import { useOrganizationContext } from '../../context';
 import { useEmployeeCodeSettings } from '../../hooks/useEmployeeCodeSettings';
 import { useLeaveTypes, useUpdateLeaveType, LeaveType } from '@/hooks/use-attendance';
 import { Loader2, Globe, Calendar, Clock, Coins, Save, RotateCcw, Hash, Eye, Palmtree, PartyPopper } from 'lucide-react';
@@ -28,6 +28,7 @@ interface LeaveTypeEdit {
   carryForwardAllowed: boolean;
   maxCarryForwardDays: number | null;
   isActive: boolean;
+  isPaid: boolean;
 }
 
 export default function OrganizationSettingsPage() {
@@ -49,8 +50,10 @@ export default function OrganizationSettingsPage() {
   const empCodeSettings = useEmployeeCodeSettings();
   
   // Leave Types hook - get all leave types including inactive
-  const { data: leaveTypesData, isLoading: loadingLeaveTypes } = useLeaveTypes(false);
-  const leaveTypes = (leaveTypesData as any)?.data || leaveTypesData || [];
+  const { data: leaveTypesData, isLoading: loadingLeaveTypes, error: leaveTypesError } = useLeaveTypes(false);
+  // leaveTypesData is directly LeaveType[] from the hook
+  const leaveTypes = leaveTypesData || [];
+  
   const updateLeaveTypeMutation = useUpdateLeaveType();
   
   // Local state for leave type edits (batch save)
@@ -66,6 +69,7 @@ export default function OrganizationSettingsPage() {
           carryForwardAllowed: lt.carryForwardAllowed,
           maxCarryForwardDays: lt.maxCarryForwardDays ?? null,
           isActive: lt.isActive,
+          isPaid: lt.isPaid,
         };
       });
       setLeaveTypeEdits(edits);
@@ -100,7 +104,8 @@ export default function OrganizationSettingsPage() {
         edit.defaultDaysPerYear !== lt.defaultDaysPerYear ||
         edit.carryForwardAllowed !== lt.carryForwardAllowed ||
         edit.maxCarryForwardDays !== (lt.maxCarryForwardDays ?? null) ||
-        edit.isActive !== lt.isActive
+        edit.isActive !== lt.isActive ||
+        edit.isPaid !== lt.isPaid
       );
     });
   };
@@ -114,7 +119,8 @@ export default function OrganizationSettingsPage() {
         edit.defaultDaysPerYear !== lt.defaultDaysPerYear ||
         edit.carryForwardAllowed !== lt.carryForwardAllowed ||
         edit.maxCarryForwardDays !== (lt.maxCarryForwardDays ?? null) ||
-        edit.isActive !== lt.isActive
+        edit.isActive !== lt.isActive ||
+        edit.isPaid !== lt.isPaid
       );
     });
     
@@ -127,6 +133,7 @@ export default function OrganizationSettingsPage() {
           carryForwardAllowed: edit.carryForwardAllowed,
           maxCarryForwardDays: edit.carryForwardAllowed && edit.maxCarryForwardDays != null ? edit.maxCarryForwardDays : undefined,
           isActive: edit.isActive,
+          isPaid: edit.isPaid,
         }
       });
     }
@@ -179,7 +186,7 @@ export default function OrganizationSettingsPage() {
           </CardTitle>
           <CardDescription>
             Configure how employee codes are automatically generated.
-            Format: <code className="bg-muted px-1 rounded">{'{PREFIX}-{YYYY}-{YEAR_SEQ}-{TOTAL_SEQ}'}</code>
+            Format: <code className="bg-muted px-1 rounded">{empCodeSettings.settingsForm.includeYear ? '{PREFIX}-{YYYY}-{YEAR_SEQ}-{TOTAL_SEQ}' : '{PREFIX}-{TOTAL_SEQ}'}</code>
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -199,6 +206,21 @@ export default function OrganizationSettingsPage() {
 
           {empCodeSettings.settingsForm.autoGenerate && (
             <>
+              {/* Include Year Toggle */}
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label>Include Year in Code</Label>
+                  <p className="text-sm text-muted-foreground">
+                    When enabled, employee codes will include the year and yearly sequence (e.g., EMP-2026-00001-00001).
+                    When disabled, codes will be simpler (e.g., EMP-00001).
+                  </p>
+                </div>
+                <Switch
+                  checked={empCodeSettings.settingsForm.includeYear}
+                  onCheckedChange={(checked) => empCodeSettings.updateFormField('includeYear', checked)}
+                />
+              </div>
+
               <div className="grid gap-6 md:grid-cols-2">
                 {/* Prefix */}
                 <div className="space-y-2">
@@ -233,28 +255,30 @@ export default function OrganizationSettingsPage() {
                   </Select>
                 </div>
 
-                {/* Year Sequence Digits */}
-                <div className="space-y-2">
-                  <Label htmlFor="yearSeqDigits">Year Sequence Digits</Label>
-                  <Select
-                    value={String(empCodeSettings.settingsForm.yearSeqDigits)}
-                    onValueChange={(value) => empCodeSettings.updateFormField('yearSeqDigits', parseInt(value))}
-                  >
-                    <SelectTrigger id="yearSeqDigits">
-                      <SelectValue placeholder="Select digits" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="3">3 digits (001)</SelectItem>
-                      <SelectItem value="4">4 digits (0001)</SelectItem>
-                      <SelectItem value="5">5 digits (00001)</SelectItem>
-                      <SelectItem value="6">6 digits (000001)</SelectItem>
-                      <SelectItem value="7">7 digits (0000001)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    Count of employees joined in the current year
-                  </p>
-                </div>
+                {/* Year Sequence Digits - Only show if includeYear is true */}
+                {empCodeSettings.settingsForm.includeYear && (
+                  <div className="space-y-2">
+                    <Label htmlFor="yearSeqDigits">Year Sequence Digits</Label>
+                    <Select
+                      value={String(empCodeSettings.settingsForm.yearSeqDigits)}
+                      onValueChange={(value) => empCodeSettings.updateFormField('yearSeqDigits', parseInt(value))}
+                    >
+                      <SelectTrigger id="yearSeqDigits">
+                        <SelectValue placeholder="Select digits" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="3">3 digits (001)</SelectItem>
+                        <SelectItem value="4">4 digits (0001)</SelectItem>
+                        <SelectItem value="5">5 digits (00001)</SelectItem>
+                        <SelectItem value="6">6 digits (000001)</SelectItem>
+                        <SelectItem value="7">7 digits (0000001)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Count of employees joined in the current year
+                    </p>
+                  </div>
+                )}
 
                 {/* Total Sequence Digits */}
                 <div className="space-y-2">
@@ -298,11 +322,17 @@ export default function OrganizationSettingsPage() {
                       <span> • <span className="font-medium">{empCodeSettings.settingsForm.separator}</span> = Separator</span>
                     )}
                   </p>
-                  <p>
-                    <span className="font-medium">{new Date().getFullYear()}</span> = Current Year
-                    • <span className="font-medium">{String(empCodeSettings.preview?.breakdown.yearSequence || 1).padStart(empCodeSettings.settingsForm.yearSeqDigits, '0')}</span> = {empCodeSettings.preview?.breakdown.yearSequence || 1}st employee this year
-                    • <span className="font-medium">{String(empCodeSettings.preview?.breakdown.totalSequence || 1).padStart(empCodeSettings.settingsForm.totalSeqDigits, '0')}</span> = {empCodeSettings.preview?.breakdown.totalSequence || 1}st employee total
-                  </p>
+                  {empCodeSettings.settingsForm.includeYear ? (
+                    <p>
+                      <span className="font-medium">{new Date().getFullYear()}</span> = Current Year
+                      • <span className="font-medium">{String(empCodeSettings.preview?.breakdown.yearSequence || 1).padStart(empCodeSettings.settingsForm.yearSeqDigits, '0')}</span> = {empCodeSettings.preview?.breakdown.yearSequence || 1}st employee this year
+                      • <span className="font-medium">{String(empCodeSettings.preview?.breakdown.totalSequence || 1).padStart(empCodeSettings.settingsForm.totalSeqDigits, '0')}</span> = {empCodeSettings.preview?.breakdown.totalSequence || 1}st employee total
+                    </p>
+                  ) : (
+                    <p>
+                      <span className="font-medium">{String(empCodeSettings.preview?.breakdown.totalSequence || 1).padStart(empCodeSettings.settingsForm.totalSeqDigits, '0')}</span> = {empCodeSettings.preview?.breakdown.totalSequence || 1}st employee total
+                    </p>
+                  )}
                 </div>
               </div>
             </>
@@ -816,15 +846,17 @@ export default function OrganizationSettingsPage() {
               <div className="rounded-lg border overflow-hidden">
                 {/* Header Row */}
                 <div className="grid grid-cols-12 gap-4 px-4 py-3 bg-muted/50 text-sm font-medium text-muted-foreground border-b">
-                  <div className="col-span-4">Leave Type</div>
+                  <div className="col-span-3">Leave Type</div>
                   <div className="col-span-2 text-center">Status</div>
-                  <div className="col-span-2 text-center">Days/Year</div>
-                  <div className="col-span-4 text-center">Carry Forward</div>
+                  <div className="col-span-2 text-center">Is Paid</div>
+                  <div className="col-span-2 text-center">Days</div>
+                  <div className="col-span-3 text-center">Carry Forward</div>
                 </div>
                 
                 {/* Leave Type Rows */}
                 {leaveTypes.map((lt: LeaveType, index: number) => {
                   const isActive = getLeaveTypeValue(lt, 'isActive') as boolean;
+                  const isPaid = getLeaveTypeValue(lt, 'isPaid') as boolean;
                   const carryForward = getLeaveTypeValue(lt, 'carryForwardAllowed') as boolean;
                   const daysPerYear = getLeaveTypeValue(lt, 'defaultDaysPerYear') as number;
                   const maxCarryDays = getLeaveTypeValue(lt, 'maxCarryForwardDays') as number | null;
@@ -837,16 +869,15 @@ export default function OrganizationSettingsPage() {
                       } ${!isActive ? 'bg-muted/30 opacity-60' : 'bg-background'}`}
                     >
                       {/* Leave Type Name */}
-                      <div className="col-span-4 flex items-center gap-3">
+                      <div className="col-span-3 flex items-center gap-2">
                         <div 
                           className="w-3 h-3 rounded-full flex-shrink-0"
                           style={{ backgroundColor: lt.color || '#3B82F6' }}
                         />
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="font-medium">{lt.name}</span>
+                            <span className="font-medium text-sm">{lt.name}</span>
                             <Badge variant="secondary" className="text-xs">{lt.code}</Badge>
-                            {!lt.isPaid && <Badge variant="outline" className="text-xs text-orange-600">Unpaid</Badge>}
                           </div>
                         </div>
                       </div>
@@ -862,6 +893,18 @@ export default function OrganizationSettingsPage() {
                         </span>
                       </div>
 
+                      {/* Is Paid Toggle */}
+                      <div className="col-span-2 flex justify-center items-center gap-2">
+                        <Switch
+                          checked={isPaid}
+                          onCheckedChange={(checked) => updateLeaveTypeEdit(lt.id, 'isPaid', checked)}
+                          disabled={!isActive}
+                        />
+                        <span className={`text-xs font-medium ${isPaid ? 'text-green-600' : 'text-orange-600'}`}>
+                          {isPaid ? 'Paid' : 'Unpaid'}
+                        </span>
+                      </div>
+
                       {/* Days Per Year */}
                       <div className="col-span-2 flex justify-center">
                         <Input
@@ -870,13 +913,13 @@ export default function OrganizationSettingsPage() {
                           max={365}
                           value={daysPerYear}
                           onChange={(e) => updateLeaveTypeEdit(lt.id, 'defaultDaysPerYear', parseInt(e.target.value) || 0)}
-                          className="w-16 h-8 text-center text-sm"
+                          className="w-28 h-8 text-center text-sm"
                           disabled={!isActive}
                         />
                       </div>
 
                       {/* Carry Forward */}
-                      <div className="col-span-4 flex justify-center items-center gap-3">
+                      <div className="col-span-3 flex justify-center items-center gap-3">
                         <div className="flex items-center gap-2">
                           <Switch
                             checked={carryForward}

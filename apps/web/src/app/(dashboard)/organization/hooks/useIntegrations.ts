@@ -180,6 +180,7 @@ export function useIntegrations() {
       const response = await apiClient.post('/api/v1/organization/integrations/openai', settings);
       
       if (response.success) {
+        // Immediately update local state for responsive UI
         setOpenAISettings(prev => ({ ...prev, ...settings, apiKey: settings.apiKey ? '********' : prev.apiKey }));
         setIntegrations(prev => prev.map(i => 
           i.id === 'openai' 
@@ -188,6 +189,12 @@ export function useIntegrations() {
         ));
         toast.success('OpenAI settings saved successfully');
         setOpenAIDialogOpen(false);
+        
+        // Refresh from server to ensure state is in sync
+        setTimeout(() => {
+          fetchIntegrations();
+        }, 500);
+        
         return true;
       } else {
         throw new Error(response.error?.message || 'Failed to save settings');
@@ -198,7 +205,7 @@ export function useIntegrations() {
     } finally {
       setSavingOpenAI(false);
     }
-  }, []);
+  }, [fetchIntegrations]);
 
   const testOpenAIConnection = useCallback(async (apiKey: string) => {
     try {

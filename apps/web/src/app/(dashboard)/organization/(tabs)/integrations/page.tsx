@@ -1,6 +1,6 @@
 'use client';
 
-import { useOrganizationContext } from '../../layout';
+import { useOrganizationContext } from '../../context';
 import { IntegrationsTab } from '../../_components';
 
 export default function IntegrationsPage() {

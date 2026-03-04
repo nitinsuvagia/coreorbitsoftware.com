@@ -71,12 +71,53 @@ function getTenantContext(req: Request) {
   const tenantSlug = req.headers['x-tenant-slug'] as string;
   const userIdHeader = req.headers['x-user-id'] as string;
   const userId = userIdHeader && userIdHeader.length > 0 ? userIdHeader : 'system';
+  const userRolesHeader = req.headers['x-user-roles'] as string;
+  const userRoles = userRolesHeader ? userRolesHeader.split(',').map(r => r.trim()).filter(Boolean) : [];
 
   if (!tenantId || !tenantSlug) {
     throw new Error('Tenant context not found');
   }
 
-  return { tenantId, tenantSlug, userId };
+  return { tenantId, tenantSlug, userId, userRoles };
+}
+
+// Roles that can see all document folders (Company Master, all Employee Documents, On-Boarding)
+const PRIVILEGED_ROLES = ['tenant_admin', 'hr_manager', 'owner', 'super_admin'];
+
+function isPrivilegedUser(roles: string[]): boolean {
+  return roles.some(role => PRIVILEGED_ROLES.includes(role));
+}
+
+/**
+ * Get the current user's employee info (employeeCode + name) for folder matching
+ */
+async function getUserEmployeeInfo(prisma: any, userId: string): Promise<{ employeeId: string; employeeCode: string; folderName: string } | null> {
+  if (!userId || userId === 'system') return null;
+  
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { employeeId: true },
+    });
+    
+    if (!user?.employeeId) return null;
+    
+    const employee = await prisma.employee.findUnique({
+      where: { id: user.employeeId },
+      select: { id: true, employeeCode: true, firstName: true, lastName: true },
+    });
+    
+    if (!employee) return null;
+    
+    return {
+      employeeId: employee.id,
+      employeeCode: employee.employeeCode,
+      folderName: `${employee.employeeCode} - ${employee.firstName} ${employee.lastName}`,
+    };
+  } catch (error) {
+    logger.error({ error, userId }, 'Failed to get user employee info for document access');
+    return null;
+  }
 }
 
 function asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => Promise<any>) {
@@ -141,6 +182,19 @@ router.post(
   })
 );
 
+// Create folders for employee directly by employee ID (used by import)
+router.post(
+  '/folders/employee-direct/:employeeId',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { userId } = getTenantContext(req);
+    const prisma = (req as any).prisma;
+    
+    await folderInitService.createFoldersForEmployeeDirectly(prisma, req.params.employeeId, userId);
+    
+    res.status(201).json({ success: true, message: 'Employee folders created' });
+  })
+);
+
 // Create folder
 router.post(
   '/folders',
@@ -161,9 +215,32 @@ router.get(
   '/folders/tree',
   asyncHandler(async (req: Request, res: Response) => {
     const prisma = (req as any).prisma;
+    const { userId, userRoles } = getTenantContext(req);
     
     const parentId = req.query.parentId as string | undefined;
-    const tree = await folderService.getFolderTree(prisma, parentId);
+    let tree = await folderService.getFolderTree(prisma, parentId);
+    
+    // Non-privileged users: filter the tree
+    if (!isPrivilegedUser(userRoles)) {
+      const employeeInfo = await getUserEmployeeInfo(prisma, userId);
+      
+      // At root level, only show "Employee Documents"
+      tree = tree.filter(node => node.name === 'Employee Documents');
+      
+      // Inside "Employee Documents", only show the user's own employee folder
+      if (employeeInfo && tree.length > 0) {
+        const empDocsNode = tree[0];
+        if (empDocsNode.children && Array.isArray(empDocsNode.children)) {
+          empDocsNode.children = empDocsNode.children.filter((child: any) => {
+            const folderCode = child.name.split(' - ')[0].trim();
+            return folderCode === employeeInfo.employeeCode;
+          });
+        }
+      } else if (tree.length > 0) {
+        // No employee record — hide all employee folders
+        tree[0].children = [];
+      }
+    }
     
     res.json({ success: true, data: tree });
   })
@@ -174,8 +251,14 @@ router.get(
   '/folders/root',
   asyncHandler(async (req: Request, res: Response) => {
     const prisma = (req as any).prisma;
+    const { userId, userRoles } = getTenantContext(req);
     
-    const folders = await folderService.listRootFolders(prisma);
+    let folders = await folderService.listRootFolders(prisma);
+    
+    // Non-privileged users only see "Employee Documents" root folder
+    if (!isPrivilegedUser(userRoles)) {
+      folders = folders.filter(f => f.name === 'Employee Documents');
+    }
     
     res.json({ success: true, data: folders });
   })
@@ -186,6 +269,7 @@ router.get(
   '/folders/root/contents',
   asyncHandler(async (req: Request, res: Response) => {
     const prisma = (req as any).prisma;
+    const { userId, userRoles } = getTenantContext(req);
     
     if (!prisma) {
       console.error('[/folders/root/contents] ERROR: No Prisma client attached to request!');
@@ -193,6 +277,12 @@ router.get(
     }
     
     const contents = await folderService.listFolderContents(prisma, null);
+    
+    // Non-privileged users: only show "Employee Documents" at root level
+    if (!isPrivilegedUser(userRoles)) {
+      contents.folders = contents.folders.filter(f => f.name === 'Employee Documents');
+      contents.files = []; // No files at root for non-privileged users
+    }
     
     res.json({ success: true, data: contents });
   })
@@ -203,11 +293,50 @@ router.get(
   '/folders/:id',
   asyncHandler(async (req: Request, res: Response) => {
     const prisma = (req as any).prisma;
+    const { userId, userRoles } = getTenantContext(req);
     
     const folder = await folderService.getFolderById(prisma, req.params.id);
     
     if (!folder) {
       return res.status(404).json({ success: false, error: 'Folder not found' });
+    }
+    
+    // Non-privileged users: block access to restricted folders
+    if (!isPrivilegedUser(userRoles)) {
+      const restrictedRoots = ['Company Master', 'Company Documents', 'On-Boarding'];
+      
+      // Block restricted root folders
+      if (restrictedRoots.includes(folder.name) && !folder.parentId) {
+        return res.status(403).json({ success: false, error: 'Access denied' });
+      }
+      
+      // Block folders under restricted roots
+      if (folder.path) {
+        const isUnderRestricted = restrictedRoots.some((root: string) => 
+          folder.path.startsWith(`/${root}/`) || folder.path === `/${root}`
+        );
+        if (isUnderRestricted) {
+          return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+      }
+      
+      // If under Employee Documents, verify it belongs to the user
+      if (folder.path?.includes('/Employee Documents/')) {
+        const employeeInfo = await getUserEmployeeInfo(prisma, userId);
+        if (employeeInfo) {
+          const pathParts = folder.path.split('/').filter(Boolean);
+          const empDocsIdx = pathParts.indexOf('Employee Documents');
+          if (empDocsIdx >= 0 && empDocsIdx + 1 < pathParts.length) {
+            const employeeFolderName = pathParts[empDocsIdx + 1];
+            const folderCode = employeeFolderName.split(' - ')[0].trim();
+            if (folderCode !== employeeInfo.employeeCode) {
+              return res.status(403).json({ success: false, error: 'Access denied' });
+            }
+          }
+        } else {
+          return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+      }
     }
     
     res.json({ success: true, data: folder });
@@ -220,6 +349,75 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const prisma = (req as any).prisma;
     const folderId = req.params.id;
+    const { userId, userRoles } = getTenantContext(req);
+    
+    // For non-privileged users, check folder access
+    if (!isPrivilegedUser(userRoles)) {
+      // Get the folder being accessed and its ancestry
+      const folder = await prisma.folder.findUnique({
+        where: { id: folderId },
+        select: { id: true, name: true, parentId: true, path: true },
+      });
+      
+      if (!folder) {
+        return res.status(404).json({ success: false, error: 'Folder not found' });
+      }
+      
+      // Block access to Company Master and On-Boarding root folders and their children
+      const restrictedRoots = ['Company Master', 'Company Documents', 'On-Boarding'];
+      if (restrictedRoots.includes(folder.name) && !folder.parentId) {
+        return res.status(403).json({ success: false, error: 'Access denied' });
+      }
+      
+      // Check if the folder is nested under a restricted root
+      if (folder.path) {
+        const isUnderRestricted = restrictedRoots.some(root => 
+          folder.path!.startsWith(`/${root}/`) || folder.path === `/${root}`
+        );
+        if (isUnderRestricted) {
+          return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+      }
+      
+      // If navigating into "Employee Documents", filter to only show the user's own folder
+      if (folder.name === 'Employee Documents' && !folder.parentId) {
+        const employeeInfo = await getUserEmployeeInfo(prisma, userId);
+        const contents = await folderService.listFolderContents(prisma, folderId);
+        
+        if (employeeInfo) {
+          // Only show the folder matching the current user's employee code
+          contents.folders = contents.folders.filter(f => {
+            const folderCode = f.name.split(' - ')[0].trim();
+            return folderCode === employeeInfo.employeeCode;
+          });
+        } else {
+          // No employee record found — show no folders
+          contents.folders = [];
+        }
+        contents.files = [];
+        
+        return res.json({ success: true, data: contents });
+      }
+      
+      // If inside an employee subfolder, verify it belongs to the current user
+      if (folder.path?.includes('/Employee Documents/')) {
+        const employeeInfo = await getUserEmployeeInfo(prisma, userId);
+        if (employeeInfo) {
+          // Extract employee code from the first subfolder after "Employee Documents"
+          const pathParts = folder.path.split('/').filter(Boolean);
+          const empDocsIdx = pathParts.indexOf('Employee Documents');
+          if (empDocsIdx >= 0 && empDocsIdx + 1 < pathParts.length) {
+            const employeeFolderName = pathParts[empDocsIdx + 1];
+            const folderCode = employeeFolderName.split(' - ')[0].trim();
+            if (folderCode !== employeeInfo.employeeCode) {
+              return res.status(403).json({ success: false, error: 'Access denied' });
+            }
+          }
+        } else {
+          return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+      }
+    }
     
     const contents = await folderService.listFolderContents(prisma, folderId);
     

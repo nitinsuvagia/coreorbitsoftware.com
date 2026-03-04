@@ -41,7 +41,7 @@ const createTeamSchema = z.object({
   code: z.string().min(2).max(20),
   description: z.string().optional(),
   departmentId: z.string().uuid(),
-  leadId: z.string().uuid().optional(),
+  leaderId: z.string().uuid().optional(),
   isActive: z.boolean().optional(),
   metadata: z.record(z.unknown()).optional(),
 });
@@ -51,7 +51,7 @@ const updateTeamSchema = z.object({
   code: z.string().min(2).max(20).optional(),
   description: z.string().optional(),
   departmentId: z.string().uuid().optional(),
-  leadId: z.string().uuid().nullable().optional(),
+  leaderId: z.string().uuid().nullable().optional(),
   isActive: z.boolean().optional(),
   metadata: z.record(z.unknown()).optional(),
 });

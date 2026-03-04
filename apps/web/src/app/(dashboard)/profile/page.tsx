@@ -1,115 +1,72 @@
 'use client';
 
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardFooter,
   CardHeader,
-  CardTitle,
 } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { formatDate, getInitials, getAvatarColor } from '@/lib/utils';
+import { Skeleton } from '@/components/ui/skeleton';
+import { PhoneDisplay } from '@/components/ui/phone-input';
+import { getInitials, getStatusColor, getAvatarColor } from '@/lib/utils';
+import { useOrgFormatters } from '@/hooks/use-org-settings';
+import { useMyEmployee } from '@/hooks/use-employees';
 import {
-  User,
   Mail,
   Phone,
-  MapPin,
-  Briefcase,
+  Building,
   Calendar,
-  Shield,
-  Bell,
-  Clock,
-  Camera,
-  Save,
-  RefreshCw,
-  Key,
-  Smartphone,
-  LogOut,
-  X,
+  MapPin,
+  AlertCircle,
+  GraduationCap,
+  CreditCard,
 } from 'lucide-react';
-import { useProfile, useSecurity } from '../settings/hooks';
-
-const mockSessions = [
-  { id: '1', device: 'Chrome on macOS', location: 'San Francisco, CA', lastActive: 'Now', current: true },
-  { id: '2', device: 'Safari on iPhone', location: 'San Francisco, CA', lastActive: '2 hours ago', current: false },
-  { id: '3', device: 'Firefox on Windows', location: 'New York, NY', lastActive: '1 day ago', current: false },
-];
-
-const mockActivity = [
-  { action: 'Updated task status', target: 'API Documentation', time: '10 minutes ago' },
-  { action: 'Commented on', target: 'Dashboard Redesign', time: '2 hours ago' },
-  { action: 'Completed task', target: 'Bug Fix #1234', time: '5 hours ago' },
-  { action: 'Clocked in', target: '', time: 'Today at 9:00 AM' },
-  { action: 'Requested leave', target: 'March 20-22', time: 'Yesterday' },
-];
 
 export default function ProfilePage() {
-  const {
-    profile,
-    profileForm,
-    loading,
-    saving,
-    avatarPreview,
-    handleAvatarChange,
-    updateProfileForm,
-    saveProfile,
-  } = useProfile();
-  const {
-    passwordForm,
-    savingPassword,
-    updatePasswordForm,
-    changePassword,
-  } = useSecurity();
-  const [newSkill, setNewSkill] = useState('');
+  const { formatDate } = useOrgFormatters();
+  const { data: employee, isLoading, error } = useMyEmployee();
 
-  const displayName = [profileForm.firstName, profileForm.lastName].filter(Boolean).join(' ').trim();
-  const skills = profileForm.skills || [];
-
-  const handleNameChange = (value: string) => {
-    const parts = value.trim().split(/\s+/);
-    const firstName = parts.shift() || '';
-    const lastName = parts.join(' ');
-    updateProfileForm('firstName', firstName);
-    updateProfileForm('lastName', lastName);
-  };
-
-  const handleAddSkill = () => {
-    const trimmed = newSkill.trim();
-    if (!trimmed) return;
-    if (!skills.includes(trimmed)) {
-      updateProfileForm('skills', [...skills, trimmed]);
-    }
-    setNewSkill('');
-  };
-
-  const handleRemoveSkill = (skill: string) => {
-    updateProfileForm('skills', skills.filter((item) => item !== skill));
-  };
-
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-3xl font-bold tracking-tight">My Profile</h2>
-            <p className="text-muted-foreground">
-              View and manage your personal information
-            </p>
+            <p className="text-muted-foreground">View your personal and employment information</p>
           </div>
         </div>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-muted-foreground">Loading profile...</p>
-          </CardContent>
-        </Card>
+        <div className="grid gap-6 md:grid-cols-3">
+          <Card className="md:col-span-1">
+            <CardContent className="pt-6">
+              <div className="flex flex-col items-center gap-4">
+                <Skeleton className="h-24 w-24 rounded-full" />
+                <Skeleton className="h-6 w-32" />
+                <Skeleton className="h-4 w-24" />
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="md:col-span-2">
+            <CardContent className="pt-6 space-y-4">
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-3/4" />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !employee) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12">
+        <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+        <h2 className="text-xl font-semibold">Profile Not Found</h2>
+        <p className="text-muted-foreground mb-4">
+          Your employee profile could not be loaded. Please contact HR.
+        </p>
       </div>
     );
   }
@@ -120,349 +77,377 @@ export default function ProfilePage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">My Profile</h2>
-          <p className="text-muted-foreground">
-            View and manage your personal information
-          </p>
+          <p className="text-muted-foreground">View your personal and employment information</p>
         </div>
       </div>
 
-      {/* Profile Overview Card */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-col md:flex-row gap-6 items-start">
-            <div className="relative">
+      {/* Main Content */}
+      <div className="grid gap-6 md:grid-cols-3">
+        {/* Profile Card */}
+        <Card className="md:col-span-1">
+          <CardContent className="pt-6">
+            <div className="flex flex-col items-center gap-4">
               <Avatar className="h-24 w-24">
-                <AvatarImage src={avatarPreview || profile?.avatar || ''} />
-                <AvatarFallback className={`${getAvatarColor((profile?.email || '') + displayName).className} text-2xl font-semibold`}>
-                  {displayName ? getInitials(displayName) : 'U'}
+                <AvatarImage src={employee.avatar} />
+                <AvatarFallback className={`${getAvatarColor((employee.email || '') + employee.firstName + employee.lastName).className} text-2xl font-semibold`}>
+                  {getInitials(`${employee.firstName} ${employee.lastName}`)}
                 </AvatarFallback>
               </Avatar>
-              <label
-                htmlFor="profile-avatar-upload"
-                className="absolute bottom-0 right-0 h-8 w-8 rounded-full border border-input bg-background flex items-center justify-center cursor-pointer hover:bg-accent"
-              >
-                <Camera className="h-4 w-4" />
-                <input
-                  id="profile-avatar-upload"
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleAvatarChange}
-                />
-              </label>
+              <div className="text-center">
+                <h3 className="text-xl font-semibold">{employee.displayName}</h3>
+                <p className="text-muted-foreground">
+                  {employee.designation?.name}
+                </p>
+              </div>
+              <Badge className={getStatusColor(employee.status)}>
+                {employee.status}
+              </Badge>
             </div>
-            <div className="flex-1">
+
+            <div className="mt-6 space-y-4">
               <div className="flex items-center gap-3">
-                <h3 className="text-2xl font-bold">{displayName || profile?.email || 'User'}</h3>
-                <Badge variant="success">Active</Badge>
+                <Mail className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm truncate">{employee.email}</span>
               </div>
-              <p className="text-muted-foreground">{profileForm.role || 'Employee'}</p>
-              <div className="flex flex-wrap gap-4 mt-4 text-sm text-muted-foreground">
-                <span className="flex items-center gap-1">
-                  <Mail className="h-4 w-4" />
-                  {profile?.email || ''}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Phone className="h-4 w-4" />
-                  {profileForm.phone || '-'}
-                </span>
-                <span className="flex items-center gap-1">
-                  <MapPin className="h-4 w-4" />
-                  {profileForm.location || '-'}
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-4 mt-2 text-sm text-muted-foreground">
-                <span className="flex items-center gap-1">
-                  <Briefcase className="h-4 w-4" />
-                  {profileForm.department || '-'}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Calendar className="h-4 w-4" />
-                  Joined {profileForm.joinDate ? formatDate(profileForm.joinDate) : '-'}
+              {employee.phone && (
+                <div className="flex items-center gap-3">
+                  <Phone className="h-4 w-4 text-muted-foreground" />
+                  <PhoneDisplay value={employee.phone} className="text-sm" />
+                </div>
+              )}
+              {employee.department && (
+                <div className="flex items-center gap-3">
+                  <Building className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm">{employee.department.name}</span>
+                </div>
+              )}
+              <div className="flex items-center gap-3">
+                <Calendar className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm">
+                  Joined {formatDate(employee.joinDate)}
                 </span>
               </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
 
-      <Tabs defaultValue="personal" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="personal">Personal Info</TabsTrigger>
-          <TabsTrigger value="security">Security</TabsTrigger>
-          <TabsTrigger value="sessions">Sessions</TabsTrigger>
-          <TabsTrigger value="activity">Activity</TabsTrigger>
-        </TabsList>
+            {/* Employee Code */}
+            <div className="mt-6 pt-4 border-t">
+              <p className="text-xs text-muted-foreground">Employee Code</p>
+              <p className="text-sm font-medium">{employee.employeeCode}</p>
+            </div>
+          </CardContent>
+        </Card>
 
-        {/* Personal Info Tab */}
-        <TabsContent value="personal" className="space-y-4">
-          <Card>
+        {/* Details Tabs */}
+        <Card className="md:col-span-2">
+          <Tabs defaultValue="personal" className="w-full">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <User className="h-5 w-5" />
-                Personal Information
-              </CardTitle>
-              <CardDescription>Update your personal details</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Full Name</Label>
-                  <Input
-                    id="name"
-                    value={displayName}
-                    onChange={(e) => handleNameChange(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input id="email" value={profile?.email || ''} disabled />
-                  <p className="text-xs text-muted-foreground">Contact IT to change email</p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Phone</Label>
-                  <Input
-                    id="phone"
-                    value={profileForm.phone || ''}
-                    onChange={(e) => updateProfileForm('phone', e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="location">Location</Label>
-                  <Input
-                    id="location"
-                    value={profileForm.location || ''}
-                    onChange={(e) => updateProfileForm('location', e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="bio">Bio</Label>
-                <Textarea
-                  id="bio"
-                  value={profileForm.bio || ''}
-                  onChange={(e) => updateProfileForm('bio', e.target.value)}
-                  rows={3}
-                />
-              </div>
-            </CardContent>
-            <CardFooter>
-              <Button onClick={saveProfile} disabled={saving}>
-                {saving ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                Save Changes
-              </Button>
-            </CardFooter>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Skills & Expertise</CardTitle>
-              <CardDescription>Your professional skills</CardDescription>
+              <TabsList className="grid w-full grid-cols-6">
+                <TabsTrigger value="personal">Personal</TabsTrigger>
+                <TabsTrigger value="employment">Employment</TabsTrigger>
+                <TabsTrigger value="address">Address</TabsTrigger>
+                <TabsTrigger value="emergency">Emergency</TabsTrigger>
+                <TabsTrigger value="bank">Bank</TabsTrigger>
+                <TabsTrigger value="education">Education</TabsTrigger>
+              </TabsList>
             </CardHeader>
             <CardContent>
-              <div className="flex flex-wrap gap-2">
-                {skills.map((skill) => (
-                  <Badge key={skill} variant="secondary" className="flex items-center gap-2">
-                    {skill}
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveSkill(skill)}
-                      className="rounded-full p-0.5 hover:bg-muted"
-                      aria-label={`Remove ${skill}`}
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                ))}
-              </div>
-              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                <Input
-                  value={newSkill}
-                  onChange={(e) => setNewSkill(e.target.value)}
-                  placeholder="Add a skill"
-                />
-                <Button variant="outline" onClick={handleAddSkill}>
-                  + Add Skill
-                </Button>
-              </div>
-            </CardContent>
-            <CardFooter>
-              <Button onClick={saveProfile} disabled={saving}>
-                {saving ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                Save Skills
-              </Button>
-            </CardFooter>
-          </Card>
+              {/* Personal Tab */}
+              <TabsContent value="personal" className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">First Name</label>
+                    <p className="text-sm">{employee.firstName}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Last Name</label>
+                    <p className="text-sm">{employee.lastName}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Personal Email</label>
+                    <p className="text-sm">{employee.personalEmail || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Mobile</label>
+                    <p className="text-sm">
+                      {employee.mobile ? <PhoneDisplay value={employee.mobile} /> : '-'}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Date of Birth</label>
+                    <p className="text-sm">
+                      {employee.dateOfBirth ? formatDate(employee.dateOfBirth) : '-'}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Gender</label>
+                    <p className="text-sm">{employee.gender || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Marital Status</label>
+                    <p className="text-sm">{employee.maritalStatus || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Nationality</label>
+                    <p className="text-sm">{employee.nationality || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Blood Group</label>
+                    <p className="text-sm">{employee.bloodGroup || '-'}</p>
+                  </div>
+                </div>
+              </TabsContent>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Work Information</CardTitle>
-              <CardDescription>Your employment details (read-only)</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-1">
-                  <Label className="text-muted-foreground">Employee ID</Label>
-                  <p className="font-medium">{profileForm.employeeId || '-'}</p>
+              {/* Employment Tab */}
+              <TabsContent value="employment" className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Employee Code</label>
+                    <p className="text-sm">{employee.employeeCode}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Department</label>
+                    <p className="text-sm">{employee.department?.name || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Designation</label>
+                    <p className="text-sm">{employee.designation?.name || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Reporting Manager</label>
+                    <p className="text-sm">
+                      {employee.reportingManager
+                        ? `${employee.reportingManager.firstName} ${employee.reportingManager.lastName}`
+                        : '-'}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Employment Type</label>
+                    <p className="text-sm">{employee.employmentType || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Join Date</label>
+                    <p className="text-sm">{formatDate(employee.joinDate)}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Confirmation Date</label>
+                    <p className="text-sm">
+                      {employee.confirmationDate ? formatDate(employee.confirmationDate) : '-'}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Probation End Date</label>
+                    <p className="text-sm">
+                      {employee.probationEndDate ? formatDate(employee.probationEndDate) : '-'}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Work Location</label>
+                    <p className="text-sm">{employee.workLocation || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Work Shift</label>
+                    <p className="text-sm">{employee.workShift || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Timezone</label>
+                    <p className="text-sm">{employee.timezone || '-'}</p>
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-muted-foreground">Department</Label>
-                  <p className="font-medium">{profileForm.department || '-'}</p>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-muted-foreground">Role</Label>
-                  <p className="font-medium">{profileForm.role || '-'}</p>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-muted-foreground">Reports To</Label>
-                  <p className="font-medium">{profileForm.manager || '-'}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+              </TabsContent>
 
-        {/* Security Tab */}
-        <TabsContent value="security" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Key className="h-5 w-5" />
-                Change Password
-              </CardTitle>
-              <CardDescription>Update your password regularly</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="currentPassword">Current Password</Label>
-                <Input
-                  id="currentPassword"
-                  type="password"
-                  value={passwordForm.currentPassword}
-                  onChange={(e) => updatePasswordForm('currentPassword', e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="newPassword">New Password</Label>
-                <Input
-                  id="newPassword"
-                  type="password"
-                  value={passwordForm.newPassword}
-                  onChange={(e) => updatePasswordForm('newPassword', e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="confirmPassword">Confirm New Password</Label>
-                <Input
-                  id="confirmPassword"
-                  type="password"
-                  value={passwordForm.confirmPassword}
-                  onChange={(e) => updatePasswordForm('confirmPassword', e.target.value)}
-                />
-              </div>
-            </CardContent>
-            <CardFooter>
-              <Button onClick={changePassword} disabled={savingPassword}>
-                {savingPassword ? (
-                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Save className="mr-2 h-4 w-4" />
-                )}
-                Update Password
-              </Button>
-            </CardFooter>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Smartphone className="h-5 w-5" />
-                Two-Factor Authentication
-              </CardTitle>
-              <CardDescription>Add extra security to your account</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between p-4 border rounded-lg">
-                <div>
-                  <p className="font-medium">Authenticator App</p>
-                  <p className="text-sm text-muted-foreground">Use an app like Google Authenticator</p>
-                </div>
-                <Badge variant="success">Enabled</Badge>
-              </div>
-            </CardContent>
-            <CardFooter>
-              <Button variant="outline">Manage 2FA</Button>
-            </CardFooter>
-          </Card>
-        </TabsContent>
-
-        {/* Sessions Tab */}
-        <TabsContent value="sessions">
-          <Card>
-            <CardHeader>
-              <CardTitle>Active Sessions</CardTitle>
-              <CardDescription>Manage your active login sessions</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {mockSessions.map((session) => (
-                <div key={session.id} className="flex items-center justify-between p-4 border rounded-lg">
-                  <div className="flex items-center gap-4">
-                    <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
-                      <Smartphone className="h-5 w-5" />
+              {/* Address Tab */}
+              <TabsContent value="address" className="space-y-4">
+                {employee.addressLine1 || employee.city || employee.state || employee.country ? (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="col-span-2">
+                      <label className="text-sm font-medium text-muted-foreground">Address Line 1</label>
+                      <p className="text-sm">{employee.addressLine1 || '-'}</p>
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-sm font-medium text-muted-foreground">Address Line 2</label>
+                      <p className="text-sm">{employee.addressLine2 || '-'}</p>
                     </div>
                     <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium">{session.device}</p>
-                        {session.current && <Badge variant="success">Current</Badge>}
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        {session.location} • {session.lastActive}
-                      </p>
+                      <label className="text-sm font-medium text-muted-foreground">City</label>
+                      <p className="text-sm">{employee.city || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">State</label>
+                      <p className="text-sm">{employee.state || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Country</label>
+                      <p className="text-sm">{employee.country || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Postal Code</label>
+                      <p className="text-sm">{employee.postalCode || '-'}</p>
                     </div>
                   </div>
-                  {!session.current && (
-                    <Button variant="ghost" size="sm" className="text-red-500">
-                      <LogOut className="mr-2 h-4 w-4" />
-                      Sign Out
-                    </Button>
-                  )}
-                </div>
-              ))}
-            </CardContent>
-            <CardFooter>
-              <Button variant="destructive">Sign Out All Other Sessions</Button>
-            </CardFooter>
-          </Card>
-        </TabsContent>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12">
+                    <div className="rounded-full bg-muted p-4 mb-4">
+                      <MapPin className="h-8 w-8 text-muted-foreground" />
+                    </div>
+                    <h4 className="font-medium text-muted-foreground mb-1">No address information</h4>
+                    <p className="text-sm text-muted-foreground text-center">
+                      Address details have not been added yet.
+                    </p>
+                  </div>
+                )}
+              </TabsContent>
 
-        {/* Activity Tab */}
-        <TabsContent value="activity">
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent Activity</CardTitle>
-              <CardDescription>Your recent actions and updates</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {mockActivity.map((activity, i) => (
-                  <div key={i} className="flex items-start gap-4">
-                    <div className="h-2 w-2 mt-2 rounded-full bg-primary" />
-                    <div className="flex-1">
-                      <p>
-                        <span className="font-medium">{activity.action}</span>
-                        {activity.target && (
-                          <span className="text-muted-foreground"> {activity.target}</span>
+              {/* Emergency Contacts Tab */}
+              <TabsContent value="emergency" className="space-y-4">
+                {(employee as any).emergencyContacts?.length > 0 ? (
+                  (employee as any).emergencyContacts.map((contact: any, index: number) => (
+                    <div key={contact.id || index} className="p-4 border rounded-lg">
+                      <h4 className="font-medium mb-2">
+                        Contact {index + 1}
+                        {contact.isPrimary && (
+                          <Badge variant="secondary" className="ml-2">Primary</Badge>
                         )}
-                      </p>
-                      <p className="text-sm text-muted-foreground">{activity.time}</p>
+                      </h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground">Name</label>
+                          <p className="text-sm">{contact.name}</p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground">Relationship</label>
+                          <p className="text-sm">{contact.relationship}</p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground">Phone</label>
+                          <p className="text-sm">
+                            <PhoneDisplay value={contact.phone} />
+                          </p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground">Email</label>
+                          <p className="text-sm">{contact.email || '-'}</p>
+                        </div>
+                      </div>
                     </div>
+                  ))
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12">
+                    <div className="rounded-full bg-muted p-4 mb-4">
+                      <AlertCircle className="h-8 w-8 text-muted-foreground" />
+                    </div>
+                    <h4 className="font-medium text-muted-foreground mb-1">No emergency contacts</h4>
+                    <p className="text-sm text-muted-foreground text-center">
+                      Emergency contact information has not been added yet.
+                    </p>
                   </div>
-                ))}
-              </div>
+                )}
+              </TabsContent>
+
+              {/* Bank Details Tab */}
+              <TabsContent value="bank" className="space-y-4">
+                {(employee as any).bankDetails?.length > 0 ? (
+                  (employee as any).bankDetails.map((bank: any, index: number) => (
+                    <div key={bank.id || index} className="p-4 border rounded-lg">
+                      <h4 className="font-medium mb-2">
+                        Bank Account {index + 1}
+                        {bank.isPrimary && (
+                          <Badge variant="secondary" className="ml-2">Primary</Badge>
+                        )}
+                      </h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground">Account Holder Name</label>
+                          <p className="text-sm">{bank.accountHolderName || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground">Bank Name</label>
+                          <p className="text-sm">{bank.bankName}</p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground">Branch Name</label>
+                          <p className="text-sm">{bank.branchName || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground">Account Number</label>
+                          <p className="text-sm">{bank.accountNumber}</p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground">Account Type</label>
+                          <p className="text-sm">{bank.accountType || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground">IFSC Code</label>
+                          <p className="text-sm">{bank.ifscCode || '-'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12">
+                    <div className="rounded-full bg-muted p-4 mb-4">
+                      <CreditCard className="h-8 w-8 text-muted-foreground" />
+                    </div>
+                    <h4 className="font-medium text-muted-foreground mb-1">No bank details</h4>
+                    <p className="text-sm text-muted-foreground text-center">
+                      Bank account information has not been added yet.
+                    </p>
+                  </div>
+                )}
+              </TabsContent>
+
+              {/* Education Tab */}
+              <TabsContent value="education" className="space-y-4">
+                {(employee as any).educations?.length > 0 ? (
+                  (employee as any).educations.map((edu: any, index: number) => (
+                    <div key={edu.id || index} className="p-4 border rounded-lg">
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <h4 className="font-medium">{edu.degree || edu.educationType}</h4>
+                          <p className="text-sm text-muted-foreground">{edu.institutionName}</p>
+                        </div>
+                        <Badge variant="outline">
+                          {edu.enrollmentYear} - {edu.isOngoing ? 'Present' : edu.completionYear}
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4 mt-4">
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground">Field of Study</label>
+                          <p className="text-sm">{edu.fieldOfStudy || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground">Specialization</label>
+                          <p className="text-sm">{edu.specialization || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground">Grade</label>
+                          <p className="text-sm">
+                            {edu.grade || edu.percentage ? `${edu.grade || edu.percentage}%` : '-'}
+                          </p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground">Board / University</label>
+                          <p className="text-sm">{edu.boardUniversity || '-'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12">
+                    <div className="rounded-full bg-muted p-4 mb-4">
+                      <GraduationCap className="h-8 w-8 text-muted-foreground" />
+                    </div>
+                    <h4 className="font-medium text-muted-foreground mb-1">No education records</h4>
+                    <p className="text-sm text-muted-foreground text-center">
+                      Education history has not been added yet.
+                    </p>
+                  </div>
+                )}
+              </TabsContent>
+
             </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+          </Tabs>
+        </Card>
+      </div>
     </div>
   );
 }

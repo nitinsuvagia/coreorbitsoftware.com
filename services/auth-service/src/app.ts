@@ -12,6 +12,7 @@ import { logger } from './utils/logger';
 import authRoutes from './routes/auth.routes';
 import platformAdminRoutes from './routes/platform-admin.routes';
 import securityRoutes from './routes/security.routes';
+import rolesRoutes from './routes/roles.routes';
 
 // ============================================================================
 // CREATE APP
@@ -78,6 +79,7 @@ app.get('/ready', (req: Request, res: Response) => {
 
 app.use('/api/v1', authRoutes);
 app.use('/api/v1', securityRoutes);
+app.use('/api/v1', rolesRoutes);
 app.use('/api/v1/platform-admins', platformAdminRoutes);
 
 // ============================================================================

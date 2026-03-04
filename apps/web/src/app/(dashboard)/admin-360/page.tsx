@@ -9,11 +9,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAuth } from '@/lib/auth/auth-context';
 import { api } from '@/lib/api/client';
 import { 
   Users, 
-  Building2, 
   DollarSign, 
   TrendingUp, 
   TrendingDown,
@@ -30,23 +31,19 @@ import {
   Trophy,
   Activity,
   Percent,
-  ClipboardList,
   Download,
   RefreshCw,
   ArrowUpRight,
-  ArrowDownRight,
   BarChart3,
-  PieChart,
   Home,
-  MapPin,
   Timer,
   Star,
-  Award,
   Bell,
   CheckSquare,
   XCircle,
   Loader2,
   Sparkles,
+  Mail,
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -117,10 +114,21 @@ interface TaskMetrics {
   completionRate: number;
 }
 
+interface PerformanceEmployee {
+  id: string;
+  name: string;
+  score: number;
+  department: string;
+  avatar?: string | null;
+  email?: string | null;
+  reviewCount: number;
+}
+
 interface PerformanceMetrics {
   avgTeamScore: number;
-  topPerformers: { name: string; score: number; department: string }[];
+  topPerformers: PerformanceEmployee[];
   improvementNeeded: number;
+  needsImprovementList: PerformanceEmployee[];
   departmentScores: { dept: string; score: number }[];
 }
 
@@ -231,20 +239,24 @@ function ProgressCard({ title, items }: ProgressCardProps) {
         <CardTitle className="text-lg">{title}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {items.map((item, index) => (
-          <div key={index} className="space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="font-medium">{item.label}</span>
-              <span className="text-muted-foreground">
-                {item.value}/{item.max}
-              </span>
+        {items.map((item, index) => {
+          const percentage = item.max > 0 ? (item.value / item.max) * 100 : 0;
+          const isZero = item.value === 0 || item.max === 0;
+          return (
+            <div key={index} className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium">{item.label}</span>
+                <span className="text-muted-foreground">
+                  {item.value}/{item.max}
+                </span>
+              </div>
+              <Progress 
+                value={percentage} 
+                className={isZero ? "h-2 bg-muted" : "h-2"}
+              />
             </div>
-            <Progress 
-              value={(item.value / item.max) * 100} 
-              className="h-2"
-            />
-          </div>
-        ))}
+          );
+        })}
       </CardContent>
     </Card>
   );
@@ -255,10 +267,11 @@ interface ChartCardProps {
   data: { label: string; value: number; color?: string }[];
   type: 'bar' | 'pie';
   maxValue?: number; // Optional: if provided, bars scale relative to this value
+  formatValue?: (value: number) => string; // Optional: custom value formatter
 }
 
-function ChartCard({ title, data, type, maxValue: propMaxValue }: ChartCardProps) {
-  const maxValue = propMaxValue || Math.max(...data.map(d => d.value));
+function ChartCard({ title, data, type, maxValue: propMaxValue, formatValue }: ChartCardProps) {
+  const maxValue = propMaxValue || Math.max(...data.map(d => d.value), 1); // Ensure at least 1 to avoid division by zero
 
   return (
     <Card>
@@ -266,25 +279,36 @@ function ChartCard({ title, data, type, maxValue: propMaxValue }: ChartCardProps
         <CardTitle className="text-lg">{title}</CardTitle>
       </CardHeader>
       <CardContent>
-        {type === 'bar' ? (
+        {data.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <BarChart3 className="h-12 w-12 mx-auto mb-3 opacity-50" />
+            <p>No data available</p>
+          </div>
+        ) : type === 'bar' ? (
           <div className="space-y-4">
-            {data.map((item, index) => (
-              <div key={index} className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium truncate flex-1">{item.label}</span>
-                  <span className="text-muted-foreground ml-2">{item.value}</span>
+            {data.map((item, index) => {
+              const isZero = item.value === 0;
+              const displayValue = formatValue ? formatValue(item.value) : item.value;
+              return (
+                <div key={index} className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium truncate flex-1">{item.label}</span>
+                    <span className="text-muted-foreground ml-2">{displayValue}</span>
+                  </div>
+                  <div className={`w-full rounded-full h-2 ${isZero ? 'bg-gray-200 dark:bg-gray-700' : 'bg-muted'}`}>
+                    {!isZero && (
+                      <div
+                        className="h-2 rounded-full transition-all"
+                        style={{
+                          width: `${(item.value / maxValue) * 100}%`,
+                          backgroundColor: item.color || 'hsl(var(--primary))',
+                        }}
+                      />
+                    )}
+                  </div>
                 </div>
-                <div className="w-full bg-muted rounded-full h-2">
-                  <div
-                    className="h-2 rounded-full transition-all"
-                    style={{
-                      width: `${(item.value / maxValue) * 100}%`,
-                      backgroundColor: item.color || 'hsl(var(--primary))',
-                    }}
-                  />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="space-y-3">
@@ -307,6 +331,129 @@ function ChartCard({ title, data, type, maxValue: propMaxValue }: ChartCardProps
   );
 }
 
+// Simple Stat Card for attendance and quick stats
+interface SimpleStatCardProps {
+  title: string;
+  value: string | number;
+  subtitle?: string;
+  icon: React.ElementType;
+  color: 'blue' | 'green' | 'orange' | 'purple' | 'red' | 'yellow';
+}
+
+const colorClasses = {
+  blue: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+  green: 'bg-green-500/10 text-green-600 dark:text-green-400',
+  orange: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
+  purple: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
+  red: 'bg-red-500/10 text-red-600 dark:text-red-400',
+  yellow: 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400',
+};
+
+function SimpleStatCard({ title, value, subtitle, icon: Icon, color }: SimpleStatCardProps) {
+  return (
+    <Card>
+      <CardContent className="p-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-muted-foreground">{title}</p>
+            <h3 className="text-3xl font-bold mt-2">{value}</h3>
+            {subtitle && <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>}
+          </div>
+          <div className={`p-4 rounded-full ${colorClasses[color]}`}>
+            <Icon className="h-6 w-6" />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Financial Summary Row component
+interface FinancialSummaryRowProps {
+  label: string;
+  value: string | number;
+  color: 'green' | 'blue' | 'purple' | 'orange';
+}
+
+function FinancialSummaryRow({ label, value, color }: FinancialSummaryRowProps) {
+  const bgColors = {
+    green: 'bg-green-50 dark:bg-green-950/20',
+    blue: 'bg-blue-50 dark:bg-blue-950/20',
+    purple: 'bg-purple-50 dark:bg-purple-950/20',
+    orange: 'bg-orange-50 dark:bg-orange-950/20',
+  };
+  const dotColors = {
+    green: 'bg-green-500',
+    blue: 'bg-blue-500',
+    purple: 'bg-purple-500',
+    orange: 'bg-orange-500',
+  };
+  const textColors = {
+    green: 'text-green-600',
+    blue: 'text-blue-600',
+    purple: 'text-purple-600',
+    orange: 'text-orange-600',
+  };
+  return (
+    <div className={`flex items-center justify-between p-3 ${bgColors[color]} rounded-lg`}>
+      <div className="flex items-center gap-3">
+        <div className={`w-3 h-3 rounded-full ${dotColors[color]}`} />
+        <span className="text-sm font-medium">{label}</span>
+      </div>
+      <span className={`text-sm font-bold ${textColors[color]}`}>{value}</span>
+    </div>
+  );
+}
+
+// Performer List Item component for modals
+interface PerformerListItemProps {
+  performer: PerformanceEmployee;
+  index: number;
+  variant: 'top' | 'needs-improvement';
+}
+
+function PerformerListItem({ performer, index, variant }: PerformerListItemProps) {
+  const isTop = variant === 'top';
+  return (
+    <div className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors">
+      <div className="flex items-center gap-4">
+        {isTop && (
+          <div className="flex items-center justify-center w-8 h-8 rounded-full bg-yellow-500/10 text-yellow-600 font-bold text-sm">
+            #{index + 1}
+          </div>
+        )}
+        <Avatar className="h-12 w-12">
+          {performer.avatar && <AvatarImage src={performer.avatar} />}
+          <AvatarFallback className={isTop ? "bg-primary/10 text-primary" : "bg-orange-500/10 text-orange-600"}>
+            {performer.name.split(' ').map(n => n[0]).join('')}
+          </AvatarFallback>
+        </Avatar>
+        <div className="space-y-1">
+          <p className="font-semibold">{performer.name}</p>
+          <p className="text-sm text-muted-foreground">{performer.department}</p>
+          {performer.email && (
+            <p className="text-xs text-muted-foreground flex items-center gap-1">
+              <Mail className="h-3 w-3" />
+              {performer.email}
+            </p>
+          )}
+        </div>
+      </div>
+      <div className="text-right space-y-1">
+        <div className="flex items-center gap-1 justify-end">
+          <Star className={`h-5 w-5 ${isTop ? 'fill-yellow-500 text-yellow-500' : 'text-orange-500'}`} />
+          <span className={`text-xl font-bold ${isTop ? '' : 'text-orange-600'}`}>{performer.score}</span>
+          <span className="text-muted-foreground">/10</span>
+        </div>
+        <p className="text-xs text-muted-foreground">{performer.reviewCount} reviews</p>
+        <Badge variant="outline" className={isTop ? "bg-green-500/10 text-green-600 border-green-600/20" : "bg-orange-500/10 text-orange-600 border-orange-600/20"}>
+          {isTop ? 'Excellent' : 'Needs Support'}
+        </Badge>
+      </div>
+    </div>
+  );
+}
+
 export default function TenantAdmin360Page() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -314,10 +461,14 @@ export default function TenantAdmin360Page() {
   const pageRef = useRef<HTMLDivElement>(null);
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  
+  // Modal state for performance tab
+  const [showTopPerformersModal, setShowTopPerformersModal] = useState(false);
+  const [showNeedsImprovementModal, setShowNeedsImprovementModal] = useState(false);
 
   // Currency formatter based on organization settings
+  const currencyCode = data?.settings?.currency || 'INR';
   const formatCurrency = (amount: number, compact: boolean = false) => {
-    const currency = data?.settings?.currency || 'INR';
     const currencySymbols: Record<string, string> = {
       INR: '₹',
       USD: '$',
@@ -330,13 +481,13 @@ export default function TenantAdmin360Page() {
       AUD: 'A$',
       CAD: 'C$',
     };
-    const symbol = currencySymbols[currency] || currency + ' ';
+    const symbol = currencySymbols[currencyCode] || currencyCode + ' ';
     
     if (compact) {
       if (amount >= 10000000) { // 1 Crore for INR or 10M for others
-        return `${symbol}${(amount / (currency === 'INR' ? 10000000 : 1000000)).toFixed(2)}${currency === 'INR' ? 'Cr' : 'M'}`;
+        return `${symbol}${(amount / (currencyCode === 'INR' ? 10000000 : 1000000)).toFixed(2)}${currencyCode === 'INR' ? 'Cr' : 'M'}`;
       } else if (amount >= 100000) { // 1 Lakh for INR or 100K for others  
-        return `${symbol}${(amount / (currency === 'INR' ? 100000 : 1000)).toFixed(currency === 'INR' ? 2 : 0)}${currency === 'INR' ? 'L' : 'K'}`;
+        return `${symbol}${(amount / (currencyCode === 'INR' ? 100000 : 1000)).toFixed(currencyCode === 'INR' ? 2 : 0)}${currencyCode === 'INR' ? 'L' : 'K'}`;
       } else if (amount >= 1000) {
         return `${symbol}${(amount / 1000).toFixed(0)}K`;
       }
@@ -358,101 +509,13 @@ export default function TenantAdmin360Page() {
       if (response.data.success) {
         setData(response.data.data);
       } else {
-        console.error('[Admin-360] API returned error:', response.data.error);
         setError(response.data.error?.message || 'Failed to load dashboard data');
       }
     } catch (err: any) {
-      console.error('[Admin-360] API call failed:', err.response?.data || err.message);
       setError(err.response?.data?.error?.message || err.message || 'Failed to load dashboard data');
     } finally {
       setLoading(false);
     }
-  };
-  
-  const setMockDataFallback = () => {
-    setData({
-      organization: {
-        totalEmployees: 247,
-        activeEmployees: 235,
-        onLeave: 12,
-        departments: 8,
-        activeProjects: 24,
-        completedProjects: 156,
-        totalRevenue: 2450000,
-        monthlyBudget: 450000,
-        budgetUtilized: 62,
-        growthRate: 12.5,
-      },
-      attendance: {
-        todayPresent: 218,
-        todayAbsent: 5,
-        todayLate: 8,
-        todayRemote: 14,
-        attendanceRate: 92.8,
-        avgWorkHours: 8.2,
-        onTimePercentage: 88.5,
-      },
-      financial: {
-        totalPayroll: 1850000,
-        pendingPayments: 45000,
-        monthlyExpenses: 380000,
-        departmentSalaries: [
-          { name: 'Engineering', annualSalary: 850000, monthlySalary: 70833 },
-          { name: 'Sales', annualSalary: 620000, monthlySalary: 51667 },
-          { name: 'Marketing', annualSalary: 380000, monthlySalary: 31667 },
-          { name: 'Support', annualSalary: 290000, monthlySalary: 24167 },
-          { name: 'HR', annualSalary: 180000, monthlySalary: 15000 },
-        ],
-        budgetAlerts: 3,
-      },
-      projects: {
-        onTrack: 18,
-        atRisk: 4,
-        delayed: 2,
-        resourceUtilization: 78,
-        avgCompletion: 67,
-        upcomingDeadlines: 7,
-      },
-      tasks: {
-        totalTasks: 1847,
-        completed: 1245,
-        inProgress: 478,
-        overdue: 124,
-        completionRate: 67.4,
-      },
-      performance: {
-        avgTeamScore: 8.2,
-        topPerformers: [
-          { name: 'Sarah Johnson', score: 9.5, department: 'Engineering' },
-          { name: 'Michael Chen', score: 9.3, department: 'Sales' },
-          { name: 'Emily Davis', score: 9.1, department: 'Marketing' },
-          { name: 'David Miller', score: 8.9, department: 'Support' },
-          { name: 'Jessica Lee', score: 8.7, department: 'HR' },
-        ],
-        improvementNeeded: 18,
-        departmentScores: [
-          { dept: 'Engineering', score: 8.5 },
-          { dept: 'Sales', score: 8.8 },
-          { dept: 'Marketing', score: 8.1 },
-          { dept: 'Support', score: 8.3 },
-          { dept: 'HR', score: 8.0 },
-          { dept: 'Finance', score: 8.4 },
-        ],
-      },
-      recentActivities: [
-        { id: '1', type: 'project', user: 'John Doe', action: 'completed Project Alpha milestone', timestamp: '2 min ago' },
-        { id: '2', type: 'employee', user: 'Jane Smith', action: 'joined Engineering team', timestamp: '15 min ago' },
-        { id: '3', type: 'task', user: 'Mike Wilson', action: 'submitted Q1 report', timestamp: '1 hour ago' },
-        { id: '4', type: 'leave', user: 'Sarah Brown', action: 'requested leave for 3 days', timestamp: '2 hours ago' },
-        { id: '5', type: 'document', user: 'Tom Davis', action: 'uploaded compliance document', timestamp: '3 hours ago' },
-      ],
-      alerts: [
-        { id: '1', type: 'warning', title: 'Budget Alert', message: 'Engineering dept at 85% budget utilization', timestamp: '10 min ago' },
-        { id: '2', type: 'error', title: 'Project Delayed', message: 'Project Beta is 5 days behind schedule', timestamp: '1 hour ago' },
-        { id: '3', type: 'info', title: 'New Hire', message: '3 employees joining next week', timestamp: '2 hours ago' },
-        { id: '4', type: 'warning', title: 'Document Expiring', message: '12 documents expiring this month', timestamp: '4 hours ago' },
-      ],
-    });
   };
 
   const handleDownloadPDF = async () => {
@@ -636,12 +699,12 @@ export default function TenantAdmin360Page() {
       {/* Key Metrics Row */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <MetricCard
-          title="Total Employees"
-          value={org.totalEmployees}
+          title="Active Employees"
+          value={org.activeEmployees}
           change={org.growthRate}
           icon={Users}
           color="blue"
-          subtitle={`${org.activeEmployees} active • ${org.onLeave} on leave`}
+          subtitle={`${org.totalEmployees} total (incl. ex) • ${org.onLeave} on leave`}
         />
         <MetricCard
           title="Active Projects"
@@ -669,69 +732,34 @@ export default function TenantAdmin360Page() {
 
       {/* Attendance & Presence */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Today's Attendance</p>
-                <h3 className="text-3xl font-bold mt-2">{attendance.attendanceRate}%</h3>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {attendance.todayPresent} present • {attendance.todayAbsent} absent
-                </p>
-              </div>
-              <div className="p-4 rounded-full bg-green-500/10 text-green-600">
-                <UserCheck className="h-6 w-6" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Remote Workers</p>
-                <h3 className="text-3xl font-bold mt-2">{attendance.todayRemote}</h3>
-                <p className="text-xs text-muted-foreground mt-1">Working from home today</p>
-              </div>
-              <div className="p-4 rounded-full bg-blue-500/10 text-blue-600">
-                <Home className="h-6 w-6" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Late Arrivals</p>
-                <h3 className="text-3xl font-bold mt-2">{attendance.todayLate}</h3>
-                <p className="text-xs text-muted-foreground mt-1">
-                  On-time: {attendance.onTimePercentage}%
-                </p>
-              </div>
-              <div className="p-4 rounded-full bg-orange-500/10 text-orange-600">
-                <Clock className="h-6 w-6" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Avg Work Hours</p>
-                <h3 className="text-3xl font-bold mt-2">{attendance.avgWorkHours}</h3>
-                <p className="text-xs text-muted-foreground mt-1">Hours per employee/day</p>
-              </div>
-              <div className="p-4 rounded-full bg-purple-500/10 text-purple-600">
-                <Timer className="h-6 w-6" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <SimpleStatCard
+          title="Today's Attendance"
+          value={`${attendance.attendanceRate}%`}
+          subtitle={`${attendance.todayPresent} present • ${attendance.todayAbsent} absent`}
+          icon={UserCheck}
+          color="green"
+        />
+        <SimpleStatCard
+          title="Remote Workers"
+          value={attendance.todayRemote}
+          subtitle="Working from home today"
+          icon={Home}
+          color="blue"
+        />
+        <SimpleStatCard
+          title="Late Arrivals"
+          value={attendance.todayLate}
+          subtitle={`On-time: ${attendance.onTimePercentage}%`}
+          icon={Clock}
+          color="orange"
+        />
+        <SimpleStatCard
+          title="Avg Work Hours"
+          value={attendance.avgWorkHours}
+          subtitle="Hours per employee/day"
+          icon={Timer}
+          color="purple"
+        />
       </div>
 
       {/* Main Content Tabs */}
@@ -751,7 +779,7 @@ export default function TenantAdmin360Page() {
             <ChartCard
               title="Employees by Department"
               type="bar"
-              maxValue={org.totalEmployees || org.activeEmployees}
+              maxValue={org.activeEmployees}
               data={(data.employeesByDepartment || []).slice(0, 7).map((dept, index) => {
                 const colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
                 return {
@@ -811,7 +839,7 @@ export default function TenantAdmin360Page() {
                     <span className="font-medium">Avg Completion</span>
                     <span className="text-muted-foreground">{projects.avgCompletion}%</span>
                   </div>
-                  <Progress value={projects.avgCompletion} className="h-2" />
+                  <Progress value={projects.avgCompletion} className={projects.avgCompletion === 0 ? "h-2 bg-muted" : "h-2"} />
                 </div>
               </CardContent>
             </Card>
@@ -820,13 +848,14 @@ export default function TenantAdmin360Page() {
           {/* Revenue & Performance */}
           <div className="grid gap-4 md:grid-cols-2">
             <ChartCard
-              title="Salaries by Department (Annual)"
+              title={`Salaries by Department (Annual) - ${currencyCode}`}
               type="bar"
               data={(financial.departmentSalaries || []).map((dept, idx) => ({
                 label: dept.name,
-                value: dept.annualSalary / 1000,
+                value: dept.annualSalary,
                 color: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'][idx % 5],
               }))}
+              formatValue={(value) => formatCurrency(value)}
             />
 
             <ChartCard
@@ -855,11 +884,11 @@ export default function TenantAdmin360Page() {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-3xl font-bold">{projects.resourceUtilization}%</span>
-                    <Badge variant={projects.resourceUtilization > 80 ? 'destructive' : 'default'}>
-                      {projects.resourceUtilization > 80 ? 'High' : 'Optimal'}
+                    <Badge variant={projects.resourceUtilization > 80 ? 'destructive' : projects.resourceUtilization === 0 ? 'secondary' : 'default'}>
+                      {projects.resourceUtilization > 80 ? 'High' : projects.resourceUtilization === 0 ? 'No Data' : 'Optimal'}
                     </Badge>
                   </div>
-                  <Progress value={projects.resourceUtilization} className="h-2" />
+                  <Progress value={projects.resourceUtilization} className={projects.resourceUtilization === 0 ? "h-2 bg-muted" : "h-2"} />
                   <p className="text-xs text-muted-foreground">
                     {projects.resourceUtilization > 75 ? 'Consider resource reallocation' : 'Resources well balanced'}
                   </p>
@@ -897,9 +926,13 @@ export default function TenantAdmin360Page() {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-3xl font-bold">{projects.avgCompletion}%</span>
-                    <TrendingUp className="h-5 w-5 text-green-600" />
+                    {projects.avgCompletion === 0 ? (
+                      <span className="text-xs text-muted-foreground">No projects</span>
+                    ) : (
+                      <TrendingUp className="h-5 w-5 text-green-600" />
+                    )}
                   </div>
-                  <Progress value={projects.avgCompletion} className="h-2" />
+                  <Progress value={projects.avgCompletion} className={projects.avgCompletion === 0 ? "h-2 bg-muted" : "h-2"} />
                   <p className="text-xs text-muted-foreground">Average completion across all projects</p>
                 </div>
               </CardContent>
@@ -947,14 +980,14 @@ export default function TenantAdmin360Page() {
                           <p className="font-medium">{project.completion}%</p>
                         </div>
                       </div>
-                      <Progress value={project.completion} className="h-1.5" />
+                      <Progress value={project.completion} className={project.completion === 0 ? "h-1.5 bg-muted" : "h-1.5"} />
                     </div>
                   ))}
                 </div>
               ) : (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <Folder className="h-12 w-12 text-muted-foreground/50 mb-4" />
-                  <h4 className="font-semibold text-lg">No Active Projects</h4>
+                  <h4 className="font-semibold text-lg">No active projects</h4>
                   <p className="text-muted-foreground text-sm mt-1">
                     Projects will appear here once created in the system.
                   </p>
@@ -974,7 +1007,7 @@ export default function TenantAdmin360Page() {
             <MetricCard
               title="Monthly Payroll"
               value={financial.totalPayroll > 0 
-                ? formatCurrency(financial.totalPayroll, true)
+                ? formatCurrency(financial.totalPayroll)
                 : formatCurrency(0)}
               icon={DollarSign}
               color="green"
@@ -983,7 +1016,7 @@ export default function TenantAdmin360Page() {
             <MetricCard
               title="Annual Payroll"
               value={financial.totalAnnualPayroll 
-                ? formatCurrency(financial.totalAnnualPayroll, true)
+                ? formatCurrency(financial.totalAnnualPayroll)
                 : formatCurrency(0)}
               icon={Briefcase}
               color="blue"
@@ -992,7 +1025,7 @@ export default function TenantAdmin360Page() {
             <MetricCard
               title="Pending Payments"
               value={financial.pendingPayments > 0 
-                ? formatCurrency(financial.pendingPayments, true)
+                ? formatCurrency(financial.pendingPayments)
                 : formatCurrency(0)}
               icon={Clock}
               color="orange"
@@ -1025,13 +1058,13 @@ export default function TenantAdmin360Page() {
                           <div className="flex items-center justify-between text-sm">
                             <span className="font-medium">{dept.name}</span>
                             <span className="text-muted-foreground">
-                              {formatCurrency(dept.monthlySalary, true)}/mo
+                              {formatCurrency(dept.monthlySalary)}/mo
                             </span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <Progress value={percent} className="h-2 flex-1" />
-                            <span className="text-xs text-muted-foreground w-20 text-right">
-                              {formatCurrency(dept.annualSalary, true)}/yr
+                            <Progress value={percent} className={percent === 0 ? "h-2 flex-1 bg-muted" : "h-2 flex-1"} />
+                            <span className="text-xs text-muted-foreground w-24 text-right">
+                              {formatCurrency(dept.annualSalary)}/yr
                             </span>
                           </div>
                         </div>
@@ -1056,44 +1089,28 @@ export default function TenantAdmin360Page() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-950/20 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <div className="w-3 h-3 rounded-full bg-green-500" />
-                      <span className="text-sm font-medium">Total Monthly Payroll</span>
-                    </div>
-                    <span className="text-sm font-bold text-green-600">
-                      {formatCurrency(financial.totalPayroll, true)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <div className="w-3 h-3 rounded-full bg-blue-500" />
-                      <span className="text-sm font-medium">Total Annual Payroll</span>
-                    </div>
-                    <span className="text-sm font-bold text-blue-600">
-                      {formatCurrency(financial.totalAnnualPayroll || 0, true)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-purple-50 dark:bg-purple-950/20 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <div className="w-3 h-3 rounded-full bg-purple-500" />
-                      <span className="text-sm font-medium">Departments with Payroll</span>
-                    </div>
-                    <span className="text-sm font-bold text-purple-600">
-                      {financial.departmentSalaries?.length || 0}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-orange-50 dark:bg-orange-950/20 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <div className="w-3 h-3 rounded-full bg-orange-500" />
-                      <span className="text-sm font-medium">Avg Salary per Employee</span>
-                    </div>
-                    <span className="text-sm font-bold text-orange-600">
-                      ${org.activeEmployees > 0 
-                        ? ((financial.totalAnnualPayroll || 0) / org.activeEmployees / 1000).toFixed(0) 
-                        : 0}K/yr
-                    </span>
-                  </div>
+                  <FinancialSummaryRow
+                    label="Total Monthly Payroll"
+                    value={formatCurrency(financial.totalPayroll)}
+                    color="green"
+                  />
+                  <FinancialSummaryRow
+                    label="Total Annual Payroll"
+                    value={formatCurrency(financial.totalAnnualPayroll || 0)}
+                    color="blue"
+                  />
+                  <FinancialSummaryRow
+                    label="Departments with Payroll"
+                    value={financial.departmentSalaries?.length || 0}
+                    color="purple"
+                  />
+                  <FinancialSummaryRow
+                    label="Avg Salary per Employee"
+                    value={`${org.activeEmployees > 0 
+                      ? formatCurrency(Math.round((financial.totalAnnualPayroll || 0) / org.activeEmployees))
+                      : formatCurrency(0)}/yr`}
+                    color="orange"
+                  />
                 </div>
               </CardContent>
             </Card>
@@ -1134,7 +1151,7 @@ export default function TenantAdmin360Page() {
                     <span className="text-4xl font-bold">{performance.avgTeamScore}</span>
                     <span className="text-2xl text-muted-foreground">/10</span>
                   </div>
-                  <Progress value={performance.avgTeamScore * 10} className="h-2" />
+                  <Progress value={performance.avgTeamScore * 10} className={performance.avgTeamScore === 0 ? "h-2 bg-muted" : "h-2"} />
                   <p className="text-xs text-muted-foreground">Across all departments</p>
                 </div>
               </CardContent>
@@ -1151,7 +1168,13 @@ export default function TenantAdmin360Page() {
                 <div className="space-y-3">
                   <div className="text-3xl font-bold">{performance.topPerformers.length}</div>
                   <p className="text-sm text-muted-foreground">Employees with 8.5+ rating</p>
-                  <Button variant="outline" className="w-full" size="sm">
+                  <Button 
+                    variant="outline" 
+                    className="w-full" 
+                    size="sm"
+                    onClick={() => setShowTopPerformersModal(true)}
+                    disabled={performance.topPerformers.length === 0}
+                  >
                     View All
                     <ArrowUpRight className="ml-2 h-3 w-3" />
                   </Button>
@@ -1170,8 +1193,14 @@ export default function TenantAdmin360Page() {
                 <div className="space-y-3">
                   <div className="text-3xl font-bold">{performance.improvementNeeded}</div>
                   <p className="text-sm text-muted-foreground">Employees below 7.0 rating</p>
-                  <Button variant="outline" className="w-full" size="sm">
-                    Review Plans
+                  <Button 
+                    variant="outline" 
+                    className="w-full" 
+                    size="sm"
+                    onClick={() => setShowNeedsImprovementModal(true)}
+                    disabled={performance.improvementNeeded === 0}
+                  >
+                    Review Employees
                     <ArrowUpRight className="ml-2 h-3 w-3" />
                   </Button>
                 </div>
@@ -1189,23 +1218,24 @@ export default function TenantAdmin360Page() {
               {performance.topPerformers.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Star className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                  <p>No performance reviews available yet</p>
-                  <p className="text-xs mt-1">Performance data will appear after reviews are completed</p>
+                  <p>No top performers yet</p>
+                  <p className="text-xs mt-1">Employees with 8.5+ average rating will appear here</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {performance.topPerformers.map((performer, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-3 border rounded-lg">
+                  {performance.topPerformers.slice(0, 5).map((performer, idx) => (
+                    <div key={performer.id || idx} className="flex items-center justify-between p-3 border rounded-lg">
                       <div className="flex items-center gap-3">
                         <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold">
                           #{idx + 1}
                         </div>
                         <Avatar className="h-10 w-10">
+                          {performer.avatar && <AvatarImage src={performer.avatar} />}
                           <AvatarFallback>{performer.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
                         </Avatar>
                         <div>
                           <p className="font-semibold">{performer.name}</p>
-                          <p className="text-xs text-muted-foreground">{performer.department}</p>
+                          <p className="text-xs text-muted-foreground">{performer.department} • {performer.reviewCount} reviews</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -1242,12 +1272,12 @@ export default function TenantAdmin360Page() {
                       <span className="font-medium">{dept.dept}</span>
                       <div className="flex items-center gap-2">
                         <span className="text-muted-foreground">{dept.score}/10</span>
-                        <Badge variant={dept.score >= 8.5 ? 'default' : dept.score >= 7.5 ? 'secondary' : 'outline'}>
-                          {dept.score >= 8.5 ? 'Excellent' : dept.score >= 7.5 ? 'Good' : 'Average'}
+                        <Badge variant={dept.score >= 8.5 ? 'default' : dept.score >= 7.5 ? 'secondary' : dept.score === 0 ? 'outline' : 'outline'}>
+                          {dept.score >= 8.5 ? 'Excellent' : dept.score >= 7.5 ? 'Good' : dept.score === 0 ? 'No Data' : 'Average'}
                         </Badge>
                       </div>
                     </div>
-                    <Progress value={dept.score * 10} className="h-2" />
+                    <Progress value={dept.score * 10} className={dept.score === 0 ? "h-2 bg-muted" : "h-2"} />
                   </div>
                 ))
               )}
@@ -1324,72 +1354,116 @@ export default function TenantAdmin360Page() {
 
           {/* Quick Stats */}
           <div className="grid gap-4 md:grid-cols-4">
-            <Card>
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-muted-foreground">Pending Approvals</p>
-                    <div className="flex items-baseline gap-2 mt-2">
-                      <h3 className="text-3xl font-bold">{data?.quickStats?.pendingApprovals || 0}</h3>
-                    </div>
-                  </div>
-                  <div className="p-4 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400">
-                    <CheckSquare className="h-6 w-6" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-muted-foreground">Documents Expiring</p>
-                    <div className="flex items-baseline gap-2 mt-2">
-                      <h3 className="text-3xl font-bold">{data?.quickStats?.documentsExpiring || 0}</h3>
-                    </div>
-                  </div>
-                  <div className="p-4 rounded-full bg-orange-500/10 text-orange-600 dark:text-orange-400">
-                    <FileText className="h-6 w-6" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-muted-foreground">New Hire Onboarding</p>
-                    <div className="flex items-baseline gap-2 mt-2">
-                      <h3 className="text-3xl font-bold">{data?.quickStats?.newHireOnboarding || 0}</h3>
-                    </div>
-                  </div>
-                  <div className="p-4 rounded-full bg-green-500/10 text-green-600 dark:text-green-400">
-                    <UserCheck className="h-6 w-6" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-muted-foreground">Exit Interviews</p>
-                    <div className="flex items-baseline gap-2 mt-2">
-                      <h3 className="text-3xl font-bold">{data?.quickStats?.exitInterviews || 0}</h3>
-                    </div>
-                  </div>
-                  <div className="p-4 rounded-full bg-red-500/10 text-red-600 dark:text-red-400">
-                    <UserX className="h-6 w-6" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <SimpleStatCard
+              title="Pending Approvals"
+              value={data?.quickStats?.pendingApprovals || 0}
+              icon={CheckSquare}
+              color="blue"
+            />
+            <SimpleStatCard
+              title="Documents Expiring"
+              value={data?.quickStats?.documentsExpiring || 0}
+              icon={FileText}
+              color="orange"
+            />
+            <SimpleStatCard
+              title="New Hire Onboarding"
+              value={data?.quickStats?.newHireOnboarding || 0}
+              icon={UserCheck}
+              color="green"
+            />
+            <SimpleStatCard
+              title="Exit Interviews"
+              value={data?.quickStats?.exitInterviews || 0}
+              icon={UserX}
+              color="red"
+            />
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Top Performers Modal */}
+      <Dialog open={showTopPerformersModal} onOpenChange={setShowTopPerformersModal}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trophy className="h-5 w-5 text-yellow-600" />
+              All Top Performers
+            </DialogTitle>
+            <DialogDescription>
+              Employees with an average rating of 8.5 or higher
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="max-h-[60vh]">
+            {performance.topPerformers.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Star className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                <p>No top performers found</p>
+              </div>
+            ) : (
+              <div className="space-y-3 pr-4">
+                {performance.topPerformers.map((performer, idx) => (
+                  <PerformerListItem
+                    key={performer.id || idx}
+                    performer={performer}
+                    index={idx}
+                    variant="top"
+                  />
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      {/* Needs Improvement Modal */}
+      <Dialog open={showNeedsImprovementModal} onOpenChange={setShowNeedsImprovementModal}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-orange-600" />
+              Employees Needing Improvement
+            </DialogTitle>
+            <DialogDescription>
+              Employees with an average rating below 7.0 who may benefit from additional support, training, or performance improvement plans
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="max-h-[60vh]">
+            {(performance.needsImprovementList || []).length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <CheckCircle2 className="h-12 w-12 mx-auto mb-3 opacity-50 text-green-600" />
+                <p>No employees need improvement</p>
+                <p className="text-sm mt-1">All employees are performing at or above 7.0</p>
+              </div>
+            ) : (
+              <div className="space-y-3 pr-4">
+                {(performance.needsImprovementList || []).map((employee, idx) => (
+                  <PerformerListItem
+                    key={employee.id || idx}
+                    performer={employee}
+                    index={idx}
+                    variant="needs-improvement"
+                  />
+                ))}
+                <Separator className="my-4" />
+                <div className="p-4 bg-muted/50 rounded-lg">
+                  <h4 className="font-semibold mb-2 flex items-center gap-2">
+                    <Target className="h-4 w-4" />
+                    Recommended Actions
+                  </h4>
+                  <ul className="text-sm text-muted-foreground space-y-2">
+                    <li>• Schedule one-on-one meetings to discuss performance concerns</li>
+                    <li>• Create personalized Performance Improvement Plans (PIPs)</li>
+                    <li>• Identify training or skill development opportunities</li>
+                    <li>• Set clear, measurable goals with regular check-ins</li>
+                    <li>• Provide mentorship or coaching support</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

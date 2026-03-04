@@ -175,7 +175,7 @@ router.get('/stats', async (req: Request, res: Response) => {
     const plans = await masterPrisma.subscriptionPlan.findMany({
       select: { id: true, name: true, tier: true },
     });
-    const planMap = new Map(plans.map((p: any) => [p.id, p]));
+    const planMap = new Map<string, any>(plans.map((p: any) => [p.id, p]));
     
     // Calculate MRR
     const activeSubscriptions = await masterPrisma.subscription.findMany({
@@ -212,12 +212,15 @@ router.get('/stats', async (req: Request, res: Response) => {
         acc[item.status.toLowerCase()] = item._count.status;
         return acc;
       }, {}),
-      byPlan: planDistribution.map((item: any) => ({
-        planId: item.planId,
-        planName: planMap.get(item.planId)?.name || 'Unknown',
-        planTier: planMap.get(item.planId)?.tier || 'Unknown',
-        count: item._count.planId,
-      })),
+      byPlan: planDistribution.map((item: any) => {
+        const planData = planMap.get(item.planId);
+        return {
+          planId: item.planId,
+          planName: planData?.name || 'Unknown',
+          planTier: planData?.tier || 'Unknown',
+          count: item._count.planId,
+        };
+      }),
       mrr: Math.round(mrr * 100) / 100,
       arr: Math.round(mrr * 12 * 100) / 100,
       expiringTrials,

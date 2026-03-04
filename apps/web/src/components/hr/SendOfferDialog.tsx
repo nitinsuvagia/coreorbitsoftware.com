@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/select';
 import { Award, Mail } from 'lucide-react';
 import { candidateApi } from '@/lib/api/candidates';
+import { useDepartments } from '@/hooks/use-employees';
 
 interface CandidateForOffer {
   id: string;
@@ -54,6 +55,7 @@ export function SendOfferDialog({
   currency = 'INR',
   onSuccess,
 }: SendOfferDialogProps) {
+  const { data: departments = [] } = useDepartments();
   const [offerData, setOfferData] = useState({
     salary: 0,
     currency: currency,
@@ -178,12 +180,21 @@ export function SendOfferDialog({
           </div>
           <div className="space-y-2">
             <Label htmlFor="offer-department">Department</Label>
-            <Input
-              id="offer-department"
+            <Select
               value={offerData.department}
-              onChange={(e) => setOfferData({ ...offerData, department: e.target.value })}
-              placeholder="e.g. Engineering"
-            />
+              onValueChange={(value) => setOfferData({ ...offerData, department: value })}
+            >
+              <SelectTrigger id="offer-department">
+                <SelectValue placeholder="Select department" />
+              </SelectTrigger>
+              <SelectContent>
+                {departments.map((dept) => (
+                  <SelectItem key={dept.id} value={dept.name}>
+                    {dept.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg text-sm text-amber-800 dark:text-amber-200">
             <p className="font-medium mb-1">📧 What happens next?</p>

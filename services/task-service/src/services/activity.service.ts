@@ -60,7 +60,7 @@ export async function logActivity(
   prisma: PrismaClient,
   input: LogActivityInput
 ): Promise<any> {
-  const activity = await prisma.taskActivity.create({
+  const activity = await (prisma as any).taskActivity.create({
     data: {
       id: uuidv4(),
       taskId: input.taskId,
@@ -93,7 +93,7 @@ export async function getActivityById(
   prisma: PrismaClient,
   id: string
 ): Promise<any | null> {
-  return prisma.taskActivity.findUnique({
+  return (prisma as any).taskActivity.findUnique({
     where: { id },
     include: {
       user: {
@@ -134,7 +134,7 @@ export async function listActivities(
   }
   
   const [activities, total] = await Promise.all([
-    prisma.taskActivity.findMany({
+    (prisma as any).taskActivity.findMany({
       where,
       skip,
       take: pageSize,
@@ -148,7 +148,7 @@ export async function listActivities(
         },
       },
     }),
-    prisma.taskActivity.count({ where }),
+    (prisma as any).taskActivity.count({ where }),
   ]);
   
   return { data: activities, total, page, pageSize };
@@ -164,7 +164,7 @@ export async function getTaskTimeline(
 ): Promise<any[]> {
   const limit = options?.limit || 100;
   
-  const activities = await prisma.taskActivity.findMany({
+  const activities = await (prisma as any).taskActivity.findMany({
     where: { taskId },
     orderBy: { createdAt: 'desc' },
     take: limit,
@@ -189,13 +189,13 @@ export async function getUserActivityFeed(
   const limit = options?.limit || 50;
   
   // Get tasks assigned to or reported by the user
-  const myTasks = await prisma.task.findMany({
+  const myTasks = await (prisma as any).task.findMany({
     where: {
       OR: [
         { reporterId: userId },
         { assignees: { some: { employeeId: userId, isActive: true } } },
       ],
-    },
+    } as any,
     select: { id: true },
   });
   
@@ -209,7 +209,7 @@ export async function getUserActivityFeed(
     where.userId = { not: userId };
   }
   
-  const activities = await prisma.taskActivity.findMany({
+  const activities = await (prisma as any).taskActivity.findMany({
     where,
     orderBy: { createdAt: 'desc' },
     take: limit,
@@ -249,7 +249,7 @@ export async function getProjectActivityFeed(
     where.action = { in: options.actions };
   }
   
-  const activities = await prisma.taskActivity.findMany({
+  const activities = await (prisma as any).taskActivity.findMany({
     where,
     orderBy: { createdAt: 'desc' },
     take: limit,
@@ -279,7 +279,7 @@ export async function getTaskActivitySummary(
   firstActivity?: Date;
   lastActivity?: Date;
 }> {
-  const activities = await prisma.taskActivity.findMany({
+  const activities = await (prisma as any).taskActivity.findMany({
     where: { taskId },
     include: {
       user: {
@@ -339,7 +339,7 @@ export async function cleanupOldActivities(
 ): Promise<number> {
   const cutoffDate = subDays(new Date(), config.activity.retentionDays);
   
-  const result = await prisma.taskActivity.deleteMany({
+  const result = await (prisma as any).taskActivity.deleteMany({
     where: {
       createdAt: { lt: cutoffDate },
     },
@@ -367,11 +367,11 @@ export async function getActivityStats(
   topContributors: { userId: string; name: string; count: number }[];
   mostActiveActions: { action: string; count: number }[];
 }> {
-  const activities = await prisma.taskActivity.findMany({
+  const activities = await (prisma as any).taskActivity.findMany({
     where: {
       task: { projectId },
       createdAt: { gte: from, lte: to },
-    },
+    } as any,
     include: {
       user: {
         select: { id: true, firstName: true, lastName: true },

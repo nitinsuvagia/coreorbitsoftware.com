@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth/session';
 import { Sidebar } from '@/components/layout/sidebar';
 import { Header } from '@/components/layout/header';
+import { DashboardClientWrapper } from '@/components/layout/DashboardClientWrapper';
 
 export default async function DashboardLayout({
   children,
@@ -25,7 +26,9 @@ export default async function DashboardLayout({
       <div className="flex flex-1 flex-col overflow-hidden print:block print:overflow-visible">
         <Header />
         <main className="flex-1 overflow-y-auto bg-muted/30 p-6 print:p-0 print:bg-white print:overflow-visible">
-          {children}
+          <DashboardClientWrapper>
+            {children}
+          </DashboardClientWrapper>
         </main>
       </div>
     </div>

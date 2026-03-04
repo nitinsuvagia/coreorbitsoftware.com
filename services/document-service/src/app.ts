@@ -13,6 +13,7 @@ import { logger } from './utils/logger';
 import { config } from './config';
 import documentRoutes from './routes/document.routes';
 import onboardingRoutes from './routes/onboarding.routes';
+import publicOnboardingRoutes from './routes/public-onboarding.routes';
 import tenantContextMiddleware from './middleware/tenant-context';
 import * as storageService from './services/storage.service';
 
@@ -134,6 +135,9 @@ app.use('/api/documents', tenantContextMiddleware, documentRoutes);
 
 // Onboarding routes (require tenant context)
 app.use('/api/v1/onboarding', tenantContextMiddleware, onboardingRoutes);
+
+// Public onboarding routes (NO tenant context - validated via token)
+app.use('/api/v1/public/onboarding', publicOnboardingRoutes);
 
 // ============================================================================
 // ERROR HANDLING

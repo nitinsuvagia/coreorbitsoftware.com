@@ -3,9 +3,10 @@
  * Handles all interview-related business logic
  */
 
-import { getTenantPrismaBySlug } from '../utils/database';
+import { getTenantPrismaBySlug, getMasterPrisma } from '../utils/database';
 import { logger } from '../utils/logger';
 import { logInterviewActivity, logCandidateStatusChange } from './activity.service';
+import { getEventBus, SNS_TOPICS } from '@oms/event-bus';
 
 // ============================================================================
 // DTOs
@@ -456,6 +457,32 @@ export class InterviewService {
       userId
     );
 
+    // Publish interview scheduled event for notifications
+    try {
+      const masterPrisma = getMasterPrisma();
+      const tenant = await masterPrisma.tenant.findFirst({
+        where: { slug: tenantSlug },
+        select: { id: true },
+      });
+      
+      if (tenant) {
+        const eventBus = getEventBus('employee-service');
+        await eventBus.publishToTopic(SNS_TOPICS.EMPLOYEE_EVENTS, 'interview.scheduled', {
+          interviewId: interview.id,
+          candidateName: `${interview.candidate?.firstName} ${interview.candidate?.lastName}`,
+          jobTitle: interview.candidate?.job?.title,
+          scheduledAt: new Date(data.scheduledAt).toISOString(),
+          interviewType: data.type,
+          mode: data.mode,
+          meetingLink: interview.meetingLink,
+          location: data.location,
+          interviewerIds: data.panelistIds,
+        }, { tenantId: tenant.id, tenantSlug });
+      }
+    } catch (eventError) {
+      logger.warn({ error: eventError }, 'Failed to publish interview scheduled event');
+    }
+
     return {
       ...interview,
       job: (interview as any).candidate?.job,
@@ -644,6 +671,28 @@ export class InterviewService {
     });
 
     logger.info({ interviewId: id, newDate }, 'Interview rescheduled');
+
+    // Publish interview rescheduled event for notifications
+    try {
+      const masterPrisma = getMasterPrisma();
+      const tenant = await masterPrisma.tenant.findFirst({
+        where: { slug: tenantSlug },
+        select: { id: true },
+      });
+      
+      if (tenant) {
+        const eventBus = getEventBus('employee-service');
+        await eventBus.publishToTopic(SNS_TOPICS.EMPLOYEE_EVENTS, 'interview.rescheduled', {
+          interviewId: id,
+          candidateName: `${interview.candidate?.firstName} ${interview.candidate?.lastName}`,
+          newScheduledAt: new Date(newDate).toISOString(),
+          interviewerIds: interview.panelists.map(p => p.employee?.id).filter(Boolean),
+        }, { tenantId: tenant.id, tenantSlug });
+      }
+    } catch (eventError) {
+      logger.warn({ error: eventError }, 'Failed to publish interview rescheduled event');
+    }
+
     return interview;
   }
 

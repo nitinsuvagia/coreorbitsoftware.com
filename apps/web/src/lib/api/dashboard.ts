@@ -322,3 +322,96 @@ export async function getDashboardAlerts(): Promise<Alert[]> {
     return [];
   }
 }
+
+// ============================================================================
+// TYPES - Employee Dashboard (Personal Stats)
+// ============================================================================
+
+export interface EmployeeAttendanceInfo {
+  today: {
+    status: 'not_checked_in' | 'checked_in' | 'checked_out';
+    checkInTime: string | null;
+    checkOutTime: string | null;
+    workMinutes: number;
+    isLate: boolean;
+    isRemote: boolean;
+  };
+  monthlyPresent: number;
+  monthlyTotal: number;
+  monthlyRate: number;
+}
+
+export interface EmployeeLeaveInfo {
+  totalAllotted: number;
+  totalUsed: number;
+  totalPending: number;
+  totalRemaining: number;
+  pendingRequests: number;
+  balances: Array<{
+    leaveType: string;
+    leaveCode: string;
+    total: number;
+    used: number;
+    pending: number;
+    remaining: number;
+  }>;
+}
+
+export interface EmployeeTasksInfo {
+  pending: number;
+  completed: number;
+  total: number;
+}
+
+export interface EmployeeProjectsInfo {
+  active: number;
+}
+
+export interface EmployeeInfo {
+  id: string;
+  employeeCode?: string;
+  firstName: string;
+  lastName: string;
+  displayName: string;
+  email: string;
+  avatar?: string | null;
+  status?: string;
+  joinDate?: string;
+  employmentType?: string;
+  department?: { id: string; name: string } | null;
+  designation?: { id: string; name: string } | null;
+  reportingManager?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    displayName: string;
+    avatar?: string | null;
+  } | null;
+}
+
+export interface EmployeeDashboardData {
+  employee: EmployeeInfo;
+  attendance: EmployeeAttendanceInfo;
+  leave: EmployeeLeaveInfo;
+  tasks: EmployeeTasksInfo;
+  projects: EmployeeProjectsInfo;
+}
+
+// ============================================================================
+// API FUNCTIONS - Employee Dashboard
+// ============================================================================
+
+/**
+ * Get employee dashboard stats (personal data)
+ */
+export async function getEmployeeDashboardStats(): Promise<EmployeeDashboardData | null> {
+  try {
+    const response = await api.get<{ success: boolean; data: EmployeeDashboardData }>(
+      '/api/v1/dashboard/my-stats'
+    );
+    return response.data.data;
+  } catch (error) {
+    console.error('Failed to fetch employee dashboard stats:', error);
+    return null;
+  }
+}

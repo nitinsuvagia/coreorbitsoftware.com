@@ -35,7 +35,7 @@ export interface CreateTeamInput {
   code: string;
   description?: string;
   departmentId: string;
-  leadId?: string;
+  leaderId?: string;
   isActive?: boolean;
   metadata?: Record<string, unknown>;
 }
@@ -45,7 +45,7 @@ export interface UpdateTeamInput {
   code?: string;
   description?: string;
   departmentId?: string;
-  leadId?: string | null;
+  leaderId?: string | null;
   isActive?: boolean;
   metadata?: Record<string, unknown>;
 }
@@ -109,7 +109,7 @@ export async function createDepartment(
       parentId: input.parentId,
       managerId: input.managerId,
       isActive: input.isActive ?? true,
-      metadata: input.metadata || {},
+      metadata: input.metadata as any || {},
     },
     include: {
       parent: true,
@@ -260,7 +260,7 @@ export async function updateDepartment(
       ...input,
       code: input.code?.toUpperCase(),
       updatedAt: new Date(),
-    },
+    } as any,
     include: {
       parent: true,
       manager: {
@@ -438,15 +438,13 @@ export async function createTeam(
       code: input.code.toUpperCase(),
       description: input.description,
       departmentId: input.departmentId,
-      leadId: input.leadId,
+      leaderId: input.leaderId,
       isActive: input.isActive ?? true,
-      metadata: input.metadata || {},
-      createdBy: userId,
-      updatedBy: userId,
-    },
+      metadata: input.metadata as any || {},
+    } as any,
     include: {
       department: { select: { id: true, name: true, code: true } },
-      lead: {
+      leader: {
         include: {
           user: {
             select: { id: true, firstName: true, lastName: true, email: true },
@@ -473,7 +471,7 @@ export async function getTeamById(
     where: { id },
     include: {
       department: { select: { id: true, name: true, code: true } },
-      lead: {
+      leader: {
         include: {
           user: {
             select: { id: true, firstName: true, lastName: true, email: true },
@@ -482,13 +480,17 @@ export async function getTeamById(
       },
       members: {
         include: {
-          user: {
-            select: { id: true, firstName: true, lastName: true, email: true },
+          employee: {
+            include: {
+              user: {
+                select: { id: true, firstName: true, lastName: true, email: true },
+              },
+            },
           },
         },
       },
       _count: { select: { members: true } },
-    },
+    } as any,
   });
   
   if (!team) {
@@ -534,7 +536,7 @@ export async function listTeams(
       orderBy: { name: 'asc' },
       include: {
         department: { select: { id: true, name: true, code: true } },
-        lead: {
+        leader: {
           include: {
             user: {
               select: { id: true, firstName: true, lastName: true },
@@ -546,7 +548,7 @@ export async function listTeams(
     }),
     prisma.team.count({ where }),
   ]);
-  
+
   return { data, total, page, pageSize };
 }
 
@@ -569,12 +571,11 @@ export async function updateTeam(
     data: {
       ...input,
       code: input.code?.toUpperCase(),
-      updatedBy: userId,
       updatedAt: new Date(),
-    },
+    } as any,
     include: {
       department: { select: { id: true, name: true, code: true } },
-      lead: {
+      leader: {
         include: {
           user: {
             select: { id: true, firstName: true, lastName: true, email: true },
@@ -616,7 +617,6 @@ export async function deleteTeam(
     data: {
       isActive: false,
       deletedAt: new Date(),
-      updatedBy: userId,
     },
   });
   

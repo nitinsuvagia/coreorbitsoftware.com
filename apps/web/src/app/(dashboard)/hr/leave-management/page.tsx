@@ -25,6 +25,7 @@ import {
   MoreVertical,
   Eye,
   Plus,
+  RotateCcw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -69,12 +70,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth/auth-context';
+import { usePermissions } from '@/hooks/use-permissions';
 import { getAvatarColor } from '@/lib/utils';
 import {
   useLeaves,
   useLeaveTypes,
   useApproveLeave,
   useRejectLeave,
+  useCancelLeave,
   useCreateLeave,
   useAttendance,
   LeaveRequest,
@@ -141,6 +144,8 @@ const HOLIDAY_COLORS: Record<string, { bg: string; text: string; cellBg: string 
 
 export default function LeaveManagementPage() {
   const { user } = useAuth();
+  const { can } = usePermissions();
+  const canManageLeaves = can('leave:write');
   const [activeTab, setActiveTab] = useState<'requests' | 'calendar'>('requests');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState<string>('all');
@@ -150,7 +155,7 @@ export default function LeaveManagementPage() {
   const [selectedLeave, setSelectedLeave] = useState<LeaveRequest | null>(null);
   const [isActionDialogOpen, setIsActionDialogOpen] = useState(false);
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
-  const [actionType, setActionType] = useState<'approve' | 'reject'>('approve');
+  const [actionType, setActionType] = useState<'approve' | 'reject' | 'cancel'>('approve');
   const [rejectionReason, setRejectionReason] = useState('');
   // Duration types based on date selection
   type DurationType = 
@@ -196,7 +201,7 @@ export default function LeaveManagementPage() {
   const { data: departmentsResponse } = useDepartments();
   const departments = (departmentsResponse as any)?.data || departmentsResponse || [];
 
-  const { data: employeesResponse } = useEmployees({});
+  const { data: employeesResponse } = useEmployees({ excludeStatuses: 'TERMINATED,RESIGNED,RETIRED', limit: 1000 });
   const employees = (employeesResponse as any)?.data || (employeesResponse as any)?.items || [];
 
   // Fetch organization settings for working days
@@ -232,21 +237,46 @@ export default function LeaveManagementPage() {
   });
   const holidays = (holidaysResponse as any)?.data || holidaysResponse || [];
 
-  // Fetch attendance for calendar
+  // Fetch attendance for calendar (all records for the month)
   const { data: attendanceResponse } = useAttendance({
     startDate: format(startOfMonth(calendarMonth), 'yyyy-MM-dd'),
     endDate: format(endOfMonth(calendarMonth), 'yyyy-MM-dd'),
+    limit: 5000,
   });
-  const attendanceRecords = (attendanceResponse as any)?.items || attendanceResponse || [];
+  const attendanceRecords = (attendanceResponse as any)?.data || (attendanceResponse as any)?.items || [];
 
   // Mutations
   const approveLeave = useApproveLeave();
   const rejectLeave = useRejectLeave();
+  const cancelLeave = useCancelLeave();
   const createLeave = useCreateLeave();
+
+  // Determine current user's employee ID (always resolve, needed for self-leave detection)
+  const currentEmployeeId = useMemo(() => {
+    if (!user?.email) return null;
+    const emp = (employees as any[]).find((e: any) => e.email === user.email);
+    return emp?.id || null;
+  }, [employees, user]);
+
+  // Check if a leave request belongs to the current user
+  // Uses multiple checks for robustness (employee ID match OR email match)
+  const isOwnLeave = (leave: any) => {
+    if (!user?.email) return false;
+    // Check by employeeId if we have it
+    if (currentEmployeeId && leave.employeeId === currentEmployeeId) return true;
+    // Fallback: check by email from embedded employee object
+    if (leave.employee?.email && leave.employee.email === user.email) return true;
+    return false;
+  };
 
   // Filter leaves
   const filteredLeaves = useMemo(() => {
     let result = leaves;
+
+    // For employees: show only their own leave requests
+    if (!canManageLeaves && currentEmployeeId) {
+      result = result.filter((leave: any) => leave.employeeId === currentEmployeeId);
+    }
 
     // Search filter
     if (searchTerm) {
@@ -269,7 +299,7 @@ export default function LeaveManagementPage() {
     }
 
     return result;
-  }, [leaves, selectedDepartment, selectedEmployee, searchTerm]);
+  }, [leaves, selectedDepartment, selectedEmployee, searchTerm, canManageLeaves, currentEmployeeId]);
 
   // Categorize leaves
   const pendingLeaves = useMemo(() => 
@@ -319,9 +349,13 @@ export default function LeaveManagementPage() {
     const map: Record<string, Record<string, string>> = {};
     (attendanceRecords || []).forEach((record: any) => {
       const empId = record.employeeId;
-      const dateKey = format(parseISO(record.date), 'yyyy-MM-dd');
+      const rawDate = typeof record.date === 'string' ? record.date : record.date?.toISOString?.() || '';
+      if (!rawDate || !empId) return;
+      const dateKey = rawDate.slice(0, 10);
       if (!map[empId]) map[empId] = {};
-      map[empId][dateKey] = record.status; // 'present', 'absent', 'late', 'half-day', 'on-leave'
+      // Normalise status: DB uses half_day/on_leave, calendar UI uses half-day/on-leave
+      const status = (record.status || '').replace(/_/g, '-');
+      map[empId][dateKey] = status;
     });
     return map;
   }, [attendanceRecords]);
@@ -438,11 +472,30 @@ export default function LeaveManagementPage() {
     setIsDetailDialogOpen(true);
   };
 
-  const handleAction = (leave: LeaveRequest, action: 'approve' | 'reject') => {
+  const handleAction = (leave: LeaveRequest, action: 'approve' | 'reject' | 'cancel') => {
     setSelectedLeave(leave);
     setActionType(action);
     setRejectionReason('');
     setIsActionDialogOpen(true);
+  };
+
+  // Check if an employee can cancel a pending leave (before the leave start date)
+  const canCancelLeave = (leave: any) => {
+    if (leave.status !== 'pending') return false;
+    const fromDate = parseISO(leave.fromDate || leave.startDate || '');
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return fromDate > today;
+  };
+  
+  // Check if an employee can withdraw an approved leave (on or before the leave start date)
+  const canWithdrawLeave = (leave: any) => {
+    if (leave.status !== 'approved') return false;
+    const fromDate = parseISO(leave.fromDate || leave.startDate || '');
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    fromDate.setHours(0, 0, 0, 0);
+    return fromDate >= today; // Allow withdrawal on the start date itself
   };
 
   const confirmAction = async () => {
@@ -455,7 +508,7 @@ export default function LeaveManagementPage() {
           approverId: user.id,
         });
         toast.success(`Leave request for ${getEmployeeName(selectedLeave)} has been approved.`);
-      } else {
+      } else if (actionType === 'reject') {
         if (!rejectionReason.trim()) {
           toast.error('Please provide a reason for rejection.');
           return;
@@ -466,6 +519,12 @@ export default function LeaveManagementPage() {
           reason: rejectionReason,
         });
         toast.success(`Leave request for ${getEmployeeName(selectedLeave)} has been rejected.`);
+      } else if (actionType === 'cancel') {
+        await cancelLeave.mutateAsync({
+          id: selectedLeave.id,
+          reason: rejectionReason.trim() || undefined,
+        });
+        toast.success('Leave request has been cancelled.');
       }
       setIsActionDialogOpen(false);
       setSelectedLeave(null);
@@ -654,80 +713,112 @@ export default function LeaveManagementPage() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Leave Management</h1>
+          <h1 className="text-3xl font-bold tracking-tight">
+            {canManageLeaves ? 'Leave Management' : 'My Leave Requests'}
+          </h1>
           <p className="text-muted-foreground mt-2">
-            Manage employee leave requests, balances, and calendar
+            {canManageLeaves 
+              ? 'Manage employee leave requests, balances, and calendar'
+              : 'View and manage your leave requests'}
           </p>
         </div>
-        <Button onClick={() => { resetCreateForm(); setIsCreateDialogOpen(true); }}>
-          <Plus className="h-4 w-4 mr-2" />
-          Add Leave
-        </Button>
+        {canManageLeaves && (
+          <Button onClick={() => { resetCreateForm(); setIsCreateDialogOpen(true); }}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Leave
+          </Button>
+        )}
       </div>
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Requests</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {isLoadingLeaves ? <Skeleton className="h-8 w-16" /> : stats.total}
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-muted-foreground">Total Requests</p>
+                <div className="flex items-baseline gap-2 mt-2">
+                  <h3 className="text-3xl font-bold">
+                    {isLoadingLeaves ? <Skeleton className="h-9 w-16" /> : stats.total}
+                  </h3>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">All leave requests</p>
+              </div>
+              <div className="p-4 rounded-full bg-blue-500/10">
+                <FileText className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground">All leave requests</p>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending</CardTitle>
-            <CalendarClock className="h-4 w-4 text-amber-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-amber-600">
-              {isLoadingLeaves ? <Skeleton className="h-8 w-16" /> : stats.pending}
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-muted-foreground">Pending</p>
+                <div className="flex items-baseline gap-2 mt-2">
+                  <h3 className="text-3xl font-bold text-amber-600">
+                    {isLoadingLeaves ? <Skeleton className="h-9 w-16" /> : stats.pending}
+                  </h3>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Awaiting approval</p>
+              </div>
+              <div className="p-4 rounded-full bg-amber-500/10">
+                <CalendarClock className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground">Awaiting approval</p>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Approved</CardTitle>
-            <UserCheck className="h-4 w-4 text-green-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">
-              {isLoadingLeaves ? <Skeleton className="h-8 w-16" /> : stats.approved}
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-muted-foreground">Approved</p>
+                <div className="flex items-baseline gap-2 mt-2">
+                  <h3 className="text-3xl font-bold text-green-600">
+                    {isLoadingLeaves ? <Skeleton className="h-9 w-16" /> : stats.approved}
+                  </h3>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Approved requests</p>
+              </div>
+              <div className="p-4 rounded-full bg-green-500/10">
+                <UserCheck className="h-6 w-6 text-green-600 dark:text-green-400" />
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground">Approved requests</p>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Rejected</CardTitle>
-            <UserX className="h-4 w-4 text-red-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600">
-              {isLoadingLeaves ? <Skeleton className="h-8 w-16" /> : stats.rejected}
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-muted-foreground">Rejected</p>
+                <div className="flex items-baseline gap-2 mt-2">
+                  <h3 className="text-3xl font-bold text-red-600">
+                    {isLoadingLeaves ? <Skeleton className="h-9 w-16" /> : stats.rejected}
+                  </h3>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Rejected requests</p>
+              </div>
+              <div className="p-4 rounded-full bg-red-500/10">
+                <UserX className="h-6 w-6 text-red-600 dark:text-red-400" />
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground">Rejected requests</p>
           </CardContent>
         </Card>
       </div>
 
       {/* Filters - JD Listing Style */}
       <div className="flex items-center gap-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search employee name or ID..."
-            className="pl-8"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
+        {canManageLeaves && (
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search employee name or ID..."
+              className="pl-8"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline">
@@ -750,24 +841,26 @@ export default function LeaveManagementPage() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline">
-              <Building2 className="mr-2 h-4 w-4" />
-              {selectedDepartment === 'all' ? 'All Departments' : selectedDepartment}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => setSelectedDepartment('all')}>
-              All Departments
-            </DropdownMenuItem>
-            {(departments as any[]).map((dept: any) => (
-              <DropdownMenuItem key={dept.id} onClick={() => setSelectedDepartment(dept.name)}>
-                {dept.name}
+        {canManageLeaves && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline">
+                <Building2 className="mr-2 h-4 w-4" />
+                {selectedDepartment === 'all' ? 'All Departments' : selectedDepartment}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setSelectedDepartment('all')}>
+                All Departments
               </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+              {(departments as any[]).map((dept: any) => (
+                <DropdownMenuItem key={dept.id} onClick={() => setSelectedDepartment(dept.name)}>
+                  {dept.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'requests' | 'calendar')}>
           <TabsList>
             <TabsTrigger value="requests" className="flex items-center gap-1">
@@ -820,7 +913,7 @@ export default function LeaveManagementPage() {
                 <div className="rounded-full bg-primary/10 p-6 mb-4">
                   <FileText className="h-16 w-16 text-primary" />
                 </div>
-                <h3 className="text-xl font-semibold mb-2">No Leave Requests Found</h3>
+                <h3 className="text-xl font-semibold mb-2">No leave requests found</h3>
                 <p className="text-muted-foreground text-center max-w-md mb-6">
                   {selectedStatus === 'pending' 
                     ? 'No pending leave requests to review.'
@@ -893,7 +986,27 @@ export default function LeaveManagementPage() {
                         </span>
                       </td>
                       <td className="p-4 text-right" onClick={(e) => e.stopPropagation()}>
-                        {leave.status === 'pending' ? (
+                        {leave.status === 'pending' && isOwnLeave(leave) && canCancelLeave(leave) ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-red-600 border-red-600 hover:bg-red-50"
+                            onClick={() => handleAction(leave, 'cancel')}
+                          >
+                            <X className="h-4 w-4 mr-1" />
+                            Cancel
+                          </Button>
+                        ) : leave.status === 'approved' && isOwnLeave(leave) && canWithdrawLeave(leave) ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-orange-600 border-orange-600 hover:bg-orange-50"
+                            onClick={() => handleAction(leave, 'cancel')}
+                          >
+                            <RotateCcw className="h-4 w-4 mr-1" />
+                            Withdraw
+                          </Button>
+                        ) : canManageLeaves && leave.status === 'pending' && !isOwnLeave(leave) ? (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="sm">
@@ -970,11 +1083,23 @@ export default function LeaveManagementPage() {
           <CardContent>
             {/* Legend */}
             <div className="space-y-3 mb-6 pb-4 border-b">
-              {/* Row 1: Present, Weekends and Holidays */}
+              {/* Row 1: Present, Half Day, Absent, Weekends and Holidays */}
               <div className="flex flex-wrap gap-4">
                 <div className="flex items-center gap-2">
                   <div className="w-6 h-6 rounded bg-green-100 text-green-700 flex items-center justify-center text-xs font-bold">P</div>
                   <span className="text-sm text-muted-foreground">Present</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded bg-yellow-100 text-yellow-700 flex items-center justify-center text-xs font-bold">½</div>
+                  <span className="text-sm text-muted-foreground">Half Day</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded bg-orange-100 text-orange-700 flex items-center justify-center text-xs font-bold">HL</div>
+                  <span className="text-sm text-muted-foreground">Half Day Leave</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded bg-red-100 text-red-700 flex items-center justify-center text-xs font-bold">A</div>
+                  <span className="text-sm text-muted-foreground">Absent</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="w-6 h-6 rounded bg-gray-200 flex items-center justify-center text-xs text-gray-500 font-medium">W</div>
@@ -1054,7 +1179,7 @@ export default function LeaveManagementPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(employees as any[]).slice(0, 50).map((emp: any) => {
+                  {((canManageLeaves ? employees : (employees as any[]).filter((e: any) => e.id === currentEmployeeId)) as any[]).map((emp: any) => {
                     return (
                       <tr key={emp.id}>
                         <td className="sticky left-0 bg-background p-2 border font-medium z-10">
@@ -1097,14 +1222,18 @@ export default function LeaveManagementPage() {
                             );
                             title = `Holiday: ${holiday.name} (${holiday.type || 'public'})`;
                           } else if (empLeave) {
+                            const isHalfDayLeave = empLeave.leave.isHalfDay;
+                            const displayCode = isHalfDayLeave ? 'HL' : empLeave.code;
                             cellContent = (
                               <div 
-                                className={`w-full h-6 rounded ${empLeave.colors.bg} flex items-center justify-center text-xs ${empLeave.colors.text} font-bold`}
+                                className={`w-full h-6 rounded ${isHalfDayLeave ? 'bg-orange-100' : empLeave.colors.bg} flex items-center justify-center text-xs ${isHalfDayLeave ? 'text-orange-700' : empLeave.colors.text} font-bold`}
                               >
-                                {empLeave.code}
+                                {displayCode}
                               </div>
                             );
-                            title = `${getLeaveTypeName(empLeave.leave)} (${empLeave.leave.status})`;
+                            title = isHalfDayLeave 
+                              ? `Half Day Leave - ${getLeaveTypeName(empLeave.leave)} (${empLeave.leave.status})`
+                              : `${getLeaveTypeName(empLeave.leave)} (${empLeave.leave.status})`;
                           } else if (attendance === 'present' || attendance === 'late') {
                             cellContent = (
                               <div className="w-full h-6 rounded bg-green-100 flex items-center justify-center text-xs text-green-700 font-bold">
@@ -1127,10 +1256,16 @@ export default function LeaveManagementPage() {
                             );
                             title = 'Absent';
                           } else {
-                            // No data - show empty or dash for past dates
+                            // No data - show Absent for past working days, empty for future
                             const today = new Date();
+                            today.setHours(0, 0, 0, 0);
                             if (day < today) {
-                              cellContent = <span className="text-gray-300 text-xs">-</span>;
+                              cellContent = (
+                                <div className="w-full h-6 rounded bg-red-100 flex items-center justify-center text-xs text-red-700 font-bold">
+                                  A
+                                </div>
+                              );
+                              title = 'Absent';
                             }
                           }
 
@@ -1161,17 +1296,19 @@ export default function LeaveManagementPage() {
         </Card>
       )}
 
-      {/* Approve/Reject Dialog */}
+      {/* Approve/Reject/Cancel Dialog */}
       <Dialog open={isActionDialogOpen} onOpenChange={setIsActionDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {actionType === 'approve' ? 'Approve Leave Request' : 'Reject Leave Request'}
+              {actionType === 'approve' ? 'Approve Leave Request' : actionType === 'reject' ? 'Reject Leave Request' : 'Cancel Leave Request'}
             </DialogTitle>
             <DialogDescription>
               {actionType === 'approve'
                 ? 'Are you sure you want to approve this leave request?'
-                : 'Please provide a reason for rejecting this leave request.'}
+                : actionType === 'reject'
+                ? 'Please provide a reason for rejecting this leave request.'
+                : 'Are you sure you want to cancel this leave request?'}
             </DialogDescription>
           </DialogHeader>
 
@@ -1216,22 +1353,35 @@ export default function LeaveManagementPage() {
                   />
                 </div>
               )}
+
+              {actionType === 'cancel' && (
+                <div className="grid gap-2">
+                  <Label htmlFor="cancelReason">Reason (optional)</Label>
+                  <Textarea
+                    id="cancelReason"
+                    placeholder="Reason for cancellation..."
+                    value={rejectionReason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    rows={3}
+                  />
+                </div>
+              )}
             </div>
           )}
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsActionDialogOpen(false)}>
-              Cancel
+              Close
             </Button>
             <Button
               onClick={confirmAction}
-              disabled={approveLeave.isPending || rejectLeave.isPending}
+              disabled={approveLeave.isPending || rejectLeave.isPending || cancelLeave.isPending}
               className={actionType === 'approve' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}
             >
-              {(approveLeave.isPending || rejectLeave.isPending) && (
+              {(approveLeave.isPending || rejectLeave.isPending || cancelLeave.isPending) && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
-              {actionType === 'approve' ? 'Approve' : 'Reject'}
+              {actionType === 'approve' ? 'Approve' : actionType === 'reject' ? 'Reject' : 'Cancel Leave'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1579,7 +1729,33 @@ export default function LeaveManagementPage() {
             <Button variant="outline" onClick={() => setIsDetailDialogOpen(false)}>
               Close
             </Button>
-            {selectedLeave?.status === 'pending' && (
+            {selectedLeave?.status === 'pending' && isOwnLeave(selectedLeave) && canCancelLeave(selectedLeave) && (
+              <Button
+                variant="outline"
+                className="text-red-600 border-red-600 hover:bg-red-50"
+                onClick={() => {
+                  setIsDetailDialogOpen(false);
+                  handleAction(selectedLeave!, 'cancel');
+                }}
+              >
+                <X className="h-4 w-4 mr-1" />
+                Cancel Leave
+              </Button>
+            )}
+            {selectedLeave?.status === 'approved' && isOwnLeave(selectedLeave) && canWithdrawLeave(selectedLeave) && (
+              <Button
+                variant="outline"
+                className="text-orange-600 border-orange-600 hover:bg-orange-50"
+                onClick={() => {
+                  setIsDetailDialogOpen(false);
+                  handleAction(selectedLeave!, 'cancel');
+                }}
+              >
+                <RotateCcw className="h-4 w-4 mr-1" />
+                Withdraw Leave
+              </Button>
+            )}
+            {selectedLeave?.status === 'pending' && canManageLeaves && !isOwnLeave(selectedLeave) && (
               <div className="flex gap-2">
                 <Button
                   variant="outline"

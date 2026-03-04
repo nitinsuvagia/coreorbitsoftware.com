@@ -18,6 +18,27 @@ export const DEFAULT_LOCALE_SETTINGS: OrganizationLocaleSettings = {
   currency: 'INR',
 };
 
+/**
+ * Get today's date string (YYYY-MM-DD) in a given IANA timezone.
+ * Uses Intl.DateTimeFormat for reliable timezone conversion.
+ * Falls back to browser local date if timezone is invalid.
+ */
+export function getTodayInTimezone(timezone?: string): string {
+  const tz = timezone || 'Asia/Kolkata';
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+  } catch {
+    // Invalid timezone — fall back to local date
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  }
+}
+
 // Common currency symbols
 const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: '$',

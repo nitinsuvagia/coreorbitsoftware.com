@@ -155,42 +155,42 @@ export async function createTimeEntry(
   durationMinutes = roundDuration(durationMinutes);
   
   // Get existing minutes for the day
-  const existingEntries = await prisma.timeEntry.aggregate({
+  const existingEntries = await (prisma as any).timeEntry.aggregate({
     where: {
       employeeId: input.employeeId,
       date,
       status: { not: 'rejected' },
-    },
+    } as any,
     _sum: { durationMinutes: true },
   });
   
-  const existingMinutes = existingEntries._sum.durationMinutes || 0;
+  const existingMinutes = (existingEntries as any)._sum.durationMinutes || 0;
   
   // Validate
   validateTimeEntry(date, durationMinutes, existingMinutes);
   
   // Verify project membership
-  const teamMember = await prisma.projectTeamMember.findFirst({
+  const teamMember = await (prisma as any).projectTeamMember.findFirst({
     where: {
       projectId: input.projectId,
       employeeId: input.employeeId,
       isActive: true,
     },
-  });
+  }) as any;
   
   if (!teamMember) {
     throw new Error('You are not a member of this project');
   }
   
   // Get project for billable default
-  const project = await prisma.project.findUnique({
+  const project = await (prisma as any).project.findUnique({
     where: { id: input.projectId },
     select: { isBillable: true, hourlyRateCents: true },
-  });
+  }) as any;
   
   const isBillable = input.isBillable ?? project?.isBillable ?? config.billing.defaultBillable;
   
-  const timeEntry = await prisma.timeEntry.create({
+  const timeEntry = await (prisma as any).timeEntry.create({
     data: {
       id,
       employeeId: input.employeeId,
@@ -233,7 +233,7 @@ export async function updateTimeEntry(
   input: UpdateTimeEntryInput,
   userId: string
 ): Promise<any> {
-  const existing = await prisma.timeEntry.findUnique({ where: { id } });
+  const existing = await (prisma as any).timeEntry.findUnique({ where: { id } }) as any;
   
   if (!existing) {
     throw new Error('Time entry not found');
@@ -263,17 +263,17 @@ export async function updateTimeEntry(
     durationMinutes = roundDuration(durationMinutes);
     
     // Get existing minutes for the day (excluding this entry)
-    const existingEntries = await prisma.timeEntry.aggregate({
+    const existingEntries = await (prisma as any).timeEntry.aggregate({
       where: {
         employeeId: existing.employeeId,
         date,
         status: { not: 'rejected' },
         id: { not: id },
-      },
+      } as any,
       _sum: { durationMinutes: true },
     });
     
-    const existingMinutes = existingEntries._sum.durationMinutes || 0;
+    const existingMinutes = (existingEntries as any)._sum.durationMinutes || 0;
     validateTimeEntry(date, durationMinutes, existingMinutes);
     
     data.durationMinutes = durationMinutes;
@@ -294,7 +294,7 @@ export async function updateTimeEntry(
     data.rejectionReason = null;
   }
   
-  const timeEntry = await prisma.timeEntry.update({
+  const timeEntry = await (prisma as any).timeEntry.update({
     where: { id },
     data,
     include: {
@@ -315,7 +315,7 @@ export async function deleteTimeEntry(
   prisma: PrismaClient,
   id: string
 ): Promise<void> {
-  const entry = await prisma.timeEntry.findUnique({ where: { id } });
+  const entry = await (prisma as any).timeEntry.findUnique({ where: { id } }) as any;
   
   if (!entry) {
     throw new Error('Time entry not found');
@@ -325,7 +325,7 @@ export async function deleteTimeEntry(
     throw new Error('Cannot delete approved time entries');
   }
   
-  await prisma.timeEntry.delete({ where: { id } });
+  await (prisma as any).timeEntry.delete({ where: { id } });
   
   logger.info({ timeEntryId: id }, 'Time entry deleted');
 }
@@ -339,9 +339,9 @@ export async function submitTimeEntries(
   employeeId: string
 ): Promise<any[]> {
   // Verify ownership
-  const entries = await prisma.timeEntry.findMany({
+  const entries = await (prisma as any).timeEntry.findMany({
     where: { id: { in: timeEntryIds } },
-  });
+  }) as any[];
   
   const unauthorized = entries.filter(e => e.employeeId !== employeeId);
   if (unauthorized.length > 0) {
@@ -353,7 +353,7 @@ export async function submitTimeEntries(
     throw new Error('Some entries are not in draft status');
   }
   
-  await prisma.timeEntry.updateMany({
+  await (prisma as any).timeEntry.updateMany({
     where: { id: { in: timeEntryIds } },
     data: {
       status: 'submitted',
@@ -364,7 +364,7 @@ export async function submitTimeEntries(
   
   logger.info({ count: timeEntryIds.length, employeeId }, 'Time entries submitted');
   
-  return prisma.timeEntry.findMany({
+  return (prisma as any).timeEntry.findMany({
     where: { id: { in: timeEntryIds } },
     include: {
       project: { select: { id: true, name: true } },
@@ -382,16 +382,16 @@ export async function approveTimeEntries(
 ): Promise<any[]> {
   const eventBus = getEventBus('project-service');
   
-  const entries = await prisma.timeEntry.findMany({
+  const entries = await (prisma as any).timeEntry.findMany({
     where: { id: { in: input.timeEntryIds } },
-  });
+  }) as any[];
   
   const invalidStatus = entries.filter(e => e.status !== 'submitted');
   if (invalidStatus.length > 0) {
     throw new Error('Some entries are not in submitted status');
   }
   
-  await prisma.timeEntry.updateMany({
+  await (prisma as any).timeEntry.updateMany({
     where: { id: { in: input.timeEntryIds } },
     data: {
       status: 'approved',
@@ -424,7 +424,7 @@ export async function approveTimeEntries(
     approvedBy: input.approverId 
   }, 'Time entries approved');
   
-  return prisma.timeEntry.findMany({
+  return (prisma as any).timeEntry.findMany({
     where: { id: { in: input.timeEntryIds } },
   });
 }
@@ -436,16 +436,16 @@ export async function rejectTimeEntries(
   prisma: PrismaClient,
   input: RejectTimeEntriesInput
 ): Promise<any[]> {
-  const entries = await prisma.timeEntry.findMany({
+  const entries = await (prisma as any).timeEntry.findMany({
     where: { id: { in: input.timeEntryIds } },
-  });
+  }) as any[];
   
   const invalidStatus = entries.filter(e => e.status !== 'submitted');
   if (invalidStatus.length > 0) {
     throw new Error('Some entries are not in submitted status');
   }
   
-  await prisma.timeEntry.updateMany({
+  await (prisma as any).timeEntry.updateMany({
     where: { id: { in: input.timeEntryIds } },
     data: {
       status: 'rejected',
@@ -462,7 +462,7 @@ export async function rejectTimeEntries(
     reason: input.reason,
   }, 'Time entries rejected');
   
-  return prisma.timeEntry.findMany({
+  return (prisma as any).timeEntry.findMany({
     where: { id: { in: input.timeEntryIds } },
   });
 }
@@ -493,7 +493,7 @@ export async function listTimeEntries(
   }
   
   const [entries, total] = await Promise.all([
-    prisma.timeEntry.findMany({
+    (prisma as any).timeEntry.findMany({
       where,
       skip,
       take: pageSize,
@@ -509,7 +509,7 @@ export async function listTimeEntries(
         },
       },
     }),
-    prisma.timeEntry.count({ where }),
+    (prisma as any).timeEntry.count({ where }),
   ]);
   
   return { data: entries, total, page, pageSize };
@@ -527,17 +527,17 @@ export async function getWeeklyTimesheet(
   const weekStart = startOfWeek(date, { weekStartsOn: 1 }); // Monday
   const weekEnd = endOfWeek(date, { weekStartsOn: 1 });
   
-  const entries = await prisma.timeEntry.findMany({
+  const entries = await (prisma as any).timeEntry.findMany({
     where: {
       employeeId,
       date: { gte: weekStart, lte: weekEnd },
-    },
+    } as any,
     include: {
       project: { select: { id: true, name: true, code: true } },
       task: { select: { id: true, title: true } },
     },
     orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
-  });
+  }) as any[];
   
   // Calculate totals
   const totalMinutes = entries.reduce((sum, e) => sum + e.durationMinutes, 0);
@@ -604,18 +604,18 @@ export async function getPendingTimeEntriesForApproval(
   managerId: string
 ): Promise<any[]> {
   // Get projects managed by this user
-  const managedProjects = await prisma.project.findMany({
+  const managedProjects = await (prisma as any).project.findMany({
     where: { managerId },
     select: { id: true },
-  });
+  }) as any[];
   
   const projectIds = managedProjects.map(p => p.id);
   
-  return prisma.timeEntry.findMany({
+  return (prisma as any).timeEntry.findMany({
     where: {
       projectId: { in: projectIds },
       status: 'submitted',
-    },
+    } as any,
     include: {
       project: { select: { id: true, name: true, code: true } },
       employee: {
@@ -656,8 +656,8 @@ export async function getProjectTimeSummary(
     if (dateTo) where.date.lte = parseISO(dateTo);
   }
   
-  const entries = await prisma.timeEntry.findMany({
-    where,
+  const entries = await (prisma as any).timeEntry.findMany({
+    where: where as any,
     include: {
       employee: {
         select: {
@@ -666,7 +666,7 @@ export async function getProjectTimeSummary(
         },
       },
     },
-  });
+  }) as any[];
   
   const totalMinutes = entries.reduce((sum, e) => sum + e.durationMinutes, 0);
   const billableMinutes = entries

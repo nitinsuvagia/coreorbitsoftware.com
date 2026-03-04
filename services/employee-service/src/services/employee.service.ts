@@ -187,7 +187,7 @@ export async function onboardEmployee(
     const manager = await prisma.employee.findUnique({
       where: { id: input.reportingToId },
     });
-    if (!manager || manager.status !== 'active') {
+    if (!manager || manager.status !== 'ACTIVE') {
       throw new Error('Reporting manager not found or inactive');
     }
   }
@@ -196,7 +196,7 @@ export async function onboardEmployee(
   const role = await prisma.role.findUnique({
     where: { id: input.roleId },
   });
-  if (!role || !role.isActive) {
+  if (!role || !(role as any).isActive) {
     throw new Error('Role not found or inactive');
   }
   
@@ -236,10 +236,10 @@ export async function onboardEmployee(
         lastName: input.lastName,
         phone: input.phone,
         roleId: input.roleId,
-        status: 'active',
+        status: 'ACTIVE',
         createdBy: performedBy,
         updatedBy: performedBy,
-      },
+      } as any,
     });
     
     // Create employee
@@ -262,11 +262,11 @@ export async function onboardEmployee(
         gender: input.gender,
         address: input.address || {},
         emergencyContact: input.emergencyContact || {},
-        status: 'active',
+        status: 'ACTIVE',
         metadata: input.metadata || {},
         createdBy: performedBy,
         updatedBy: performedBy,
-      },
+      } as any,
       include: {
         user: {
           select: { id: true, email: true, firstName: true, lastName: true },
@@ -279,7 +279,7 @@ export async function onboardEmployee(
             user: { select: { firstName: true, lastName: true } },
           },
         },
-      },
+      } as any,
     });
     
     return { user, employee };
@@ -343,13 +343,13 @@ export async function getEmployeeById(
         },
       },
       directReports: {
-        where: { status: 'active' },
+        where: { status: 'ACTIVE' },
         include: {
           user: { select: { firstName: true, lastName: true } },
           designation: { select: { name: true } },
         },
       },
-    },
+    } as any,
   });
   
   if (!employee) {
@@ -453,7 +453,7 @@ export async function listEmployees(
   
   const [data, total] = await Promise.all([
     prisma.employee.findMany({
-      where,
+      where: where as any,
       skip,
       take: pageSize,
       orderBy: [{ employeeCode: 'asc' }],
@@ -464,9 +464,9 @@ export async function listEmployees(
         department: { select: { id: true, name: true, code: true } },
         designation: { select: { id: true, name: true, code: true } },
         team: { select: { id: true, name: true } },
-      },
+      } as any,
     }),
-    prisma.employee.count({ where }),
+    prisma.employee.count({ where: where as any }),
   ]);
   
   return { data, total, page, pageSize };
@@ -528,7 +528,7 @@ export async function updateEmployee(
   }
   
   // Validate reporting manager change
-  if (input.reportingToId !== undefined && input.reportingToId !== existing.reportingToId) {
+  if (input.reportingToId !== undefined && input.reportingToId !== (existing as any).reportingToId) {
     if (input.reportingToId === id) {
       throw new Error('Employee cannot report to themselves');
     }
@@ -536,12 +536,12 @@ export async function updateEmployee(
       const manager = await prisma.employee.findUnique({
         where: { id: input.reportingToId },
       });
-      if (!manager || manager.status !== 'active') {
+      if (!manager || manager.status !== 'ACTIVE') {
         throw new Error('Reporting manager not found or inactive');
       }
     }
     changes.reportingToId = {
-      old: existing.reportingToId,
+      old: (existing as any).reportingToId,
       new: input.reportingToId,
     };
   }
@@ -552,7 +552,7 @@ export async function updateEmployee(
       ...input,
       updatedBy: performedBy,
       updatedAt: new Date(),
-    },
+    } as any,
     include: {
       user: {
         select: { id: true, email: true, firstName: true, lastName: true },
@@ -565,7 +565,7 @@ export async function updateEmployee(
           user: { select: { firstName: true, lastName: true } },
         },
       },
-    },
+    } as any,
   });
   
   // Emit department change event if applicable
@@ -604,7 +604,7 @@ export async function offboardEmployee(
     where: { id },
     include: {
       user: { select: { id: true, email: true, firstName: true, lastName: true } },
-      directReports: { where: { status: 'active' } },
+      directReports: { where: { status: 'ACTIVE' } },
     },
   });
   
@@ -612,7 +612,7 @@ export async function offboardEmployee(
     throw new Error('Employee not found');
   }
   
-  if (employee.status === 'offboarded') {
+  if (employee.status === 'TERMINATED') {
     throw new Error('Employee already offboarded');
   }
   
@@ -630,7 +630,7 @@ export async function offboardEmployee(
     const updatedEmployee = await tx.employee.update({
       where: { id },
       data: {
-        status: 'offboarded',
+        status: 'TERMINATED',
         lastWorkingDate: new Date(input.lastWorkingDate),
         offboardingReason: input.reason,
         offboardingNotes: input.notes,
@@ -638,17 +638,17 @@ export async function offboardEmployee(
         offboardedBy: performedBy,
         updatedBy: performedBy,
         updatedAt: new Date(),
-      },
+      } as any,
     });
     
     // Deactivate user account
     await tx.user.update({
-      where: { id: employee.userId },
+      where: { id: (employee as any).userId },
       data: {
-        status: 'inactive',
+        status: 'INACTIVE',
         updatedBy: performedBy,
         updatedAt: new Date(),
-      },
+      } as any,
     });
     
     return updatedEmployee;
@@ -660,7 +660,7 @@ export async function offboardEmployee(
     'employee.offboarded',
     {
       employeeId: id,
-      userId: employee.userId,
+      userId: (employee as any).userId,
       lastWorkingDate: input.lastWorkingDate,
       reason: input.reason,
       offboardedBy: performedBy,
@@ -687,8 +687,8 @@ export async function getDirectReports(
   return prisma.employee.findMany({
     where: {
       reportingToId: employeeId,
-      status: 'active',
-    },
+      status: 'ACTIVE',
+    } as any,
     include: {
       user: {
         select: { id: true, email: true, firstName: true, lastName: true, avatar: true },
@@ -729,7 +729,7 @@ export async function getReportingChain(
       chain.push(employee);
     }
     
-    currentId = employee.reportingToId;
+    currentId = (employee as any).reportingToId;
   }
   
   return chain;
@@ -762,28 +762,28 @@ export async function getEmployeeStats(
     recentJoiners,
   ] = await Promise.all([
     prisma.employee.count(),
-    prisma.employee.count({ where: { status: 'active' } }),
-    prisma.employee.count({ where: { status: 'on_leave' } }),
+    prisma.employee.count({ where: { status: 'ACTIVE' } }),
+    prisma.employee.count({ where: { status: 'ON_LEAVE' } }),
     prisma.employee.groupBy({
       by: ['departmentId'],
-      where: { status: 'active' },
+      where: { status: 'ACTIVE' },
       _count: true,
     }),
     prisma.employee.groupBy({
       by: ['employmentType'],
-      where: { status: 'active' },
+      where: { status: 'ACTIVE' },
       _count: true,
     }),
     prisma.employee.groupBy({
       by: ['workLocation'],
-      where: { status: 'active' },
+      where: { status: 'ACTIVE' },
       _count: true,
     }),
     prisma.employee.count({
       where: {
         joiningDate: { gte: thirtyDaysAgo },
-        status: 'active',
-      },
+        status: 'ACTIVE',
+      } as any,
     }),
   ]);
   

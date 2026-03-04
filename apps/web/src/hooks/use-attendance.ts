@@ -12,6 +12,7 @@ export interface AttendanceRecord {
   status: 'present' | 'absent' | 'late' | 'half-day' | 'on-leave';
   workHours?: number;
   overtime?: number;
+  isLate?: boolean;
   notes?: string;
 }
 
@@ -26,16 +27,21 @@ export interface AttendanceFilters {
 
 // Attendance
 export function useAttendance(filters: AttendanceFilters = {}) {
+  // Map frontend param names to backend param names
+  const backendParams: Record<string, any> = { ...filters };
+  if (filters.startDate) { backendParams.dateFrom = filters.startDate; delete backendParams.startDate; }
+  if (filters.endDate) { backendParams.dateTo = filters.endDate; delete backendParams.endDate; }
+  if (filters.limit) { backendParams.pageSize = filters.limit; delete backendParams.limit; }
   return useQuery({
     queryKey: ['attendance', filters],
-    queryFn: () => get<{ items: AttendanceRecord[]; total: number }>('/api/attendance', filters),
+    queryFn: () => get<any>('/api/v1/attendance', backendParams),
   });
 }
 
 export function useMyAttendance(filters: AttendanceFilters = {}) {
   return useQuery({
     queryKey: ['my-attendance', filters],
-    queryFn: () => get<{ items: AttendanceRecord[]; total: number }>('/api/attendance/my', filters),
+    queryFn: () => get<{ items: AttendanceRecord[]; total: number }>('/api/v1/attendance/my', filters),
   });
 }
 
@@ -43,7 +49,7 @@ export function useCheckIn() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: (data?: { notes?: string }) => post<AttendanceRecord>('/api/attendance/check-in', data),
+    mutationFn: (data?: { notes?: string }) => post<AttendanceRecord>('/api/v1/attendance/check-in/self', data || {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['attendance'] });
       queryClient.invalidateQueries({ queryKey: ['my-attendance'] });
@@ -55,7 +61,7 @@ export function useCheckOut() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: (data?: { notes?: string }) => post<AttendanceRecord>('/api/attendance/check-out', data),
+    mutationFn: (data?: { notes?: string }) => post<AttendanceRecord>('/api/v1/attendance/check-out/self', data || {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['attendance'] });
       queryClient.invalidateQueries({ queryKey: ['my-attendance'] });
@@ -82,8 +88,10 @@ export interface LeaveRequest {
   id: string;
   employeeId: string;
   employee?: { 
+    id?: string;
     firstName: string; 
     lastName: string; 
+    email?: string;
     employeeId?: string;
     avatar?: string;
     department?: { name: string };
@@ -239,12 +247,13 @@ export interface LeaveBalance {
 export function useLeaveBalance(employeeId?: string, year?: number) {
   const currentYear = year || new Date().getFullYear();
   return useQuery({
-    queryKey: ['leave-balance', employeeId, currentYear],
+    queryKey: ['leave-balance', employeeId || 'me', currentYear],
     queryFn: () => {
       if (employeeId) {
         return get<{ data: LeaveBalance[] }>(`/api/v1/attendance/leaves/balances/${employeeId}?year=${currentYear}`);
       }
-      return get<{ data: LeaveBalance[] }>('/api/v1/attendance/leaves/balance');
+      // For current user — resolves employee from auth token
+      return get<{ data: LeaveBalance[] }>(`/api/v1/attendance/leaves/balances/me?year=${currentYear}`);
     },
   });
 }
@@ -279,7 +288,7 @@ export function useAdjustLeaveBalance() {
 export function useLeaveTypes(activeOnly: boolean = true) {
   return useQuery({
     queryKey: ['leave-types', activeOnly],
-    queryFn: () => get<{ data: LeaveType[] }>(`/api/v1/attendance/leaves/types?activeOnly=${activeOnly}`),
+    queryFn: () => get<LeaveType[]>(`/api/v1/attendance/leaves/types?activeOnly=${activeOnly}`),
   });
 }
 

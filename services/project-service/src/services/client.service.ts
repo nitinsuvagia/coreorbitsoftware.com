@@ -103,7 +103,7 @@ async function generateClientCode(prisma: PrismaClient): Promise<string> {
   const prefix = config.client.codePrefix;
   
   // Get the last client code
-  const lastClient = await prisma.client.findFirst({
+  const lastClient = await (prisma as any).client.findFirst({
     where: {
       code: { startsWith: prefix },
     },
@@ -141,7 +141,7 @@ export async function createClient(
   }
   
   // Check for duplicate email
-  const existing = await prisma.client.findFirst({
+  const existing = await (prisma as any).client.findFirst({
     where: { email: input.email },
   });
   
@@ -149,7 +149,7 @@ export async function createClient(
     throw new Error(`Client with email '${input.email}' already exists`);
   }
   
-  const client = await prisma.client.create({
+  const client = await (prisma as any).client.create({
     data: {
       id,
       name: input.name,
@@ -184,7 +184,7 @@ export async function getClientById(
   prisma: PrismaClient,
   id: string
 ): Promise<any | null> {
-  const client = await prisma.client.findUnique({
+  const client = await (prisma as any).client.findUnique({
     where: { id },
     include: {
       contacts: {
@@ -240,7 +240,7 @@ export async function updateClient(
   if (input.notes !== undefined) data.notes = input.notes;
   if (input.status) data.status = input.status;
   
-  const client = await prisma.client.update({
+  const client = await (prisma as any).client.update({
     where: { id },
     data,
   });
@@ -284,7 +284,7 @@ export async function listClients(
   }
   
   const [clients, total] = await Promise.all([
-    prisma.client.findMany({
+    (prisma as any).client.findMany({
       where,
       skip,
       take: pageSize,
@@ -295,7 +295,7 @@ export async function listClients(
         },
       },
     }),
-    prisma.client.count({ where }),
+    (prisma as any).client.count({ where }),
   ]);
   
   const data = clients.map(client => ({
@@ -318,7 +318,7 @@ export async function deactivateClient(
   userId: string
 ): Promise<any> {
   // Check for active projects
-  const activeProjects = await prisma.project.count({
+  const activeProjects = await (prisma as any).project.count({
     where: {
       clientId: id,
       status: { in: ['active', 'in_progress'] },
@@ -329,7 +329,7 @@ export async function deactivateClient(
     throw new Error(`Cannot deactivate client with ${activeProjects} active project(s)`);
   }
   
-  const client = await prisma.client.update({
+  const client = await (prisma as any).client.update({
     where: { id },
     data: {
       status: 'inactive',
@@ -359,13 +359,13 @@ export async function addClientContact(
   
   // If this is primary, unset other primary contacts
   if (input.isPrimary) {
-    await prisma.clientContact.updateMany({
+    await (prisma as any).clientContact.updateMany({
       where: { clientId: input.clientId, isPrimary: true },
       data: { isPrimary: false },
     });
   }
   
-  const contact = await prisma.clientContact.create({
+  const contact = await (prisma as any).clientContact.create({
     data: {
       id,
       clientId: input.clientId,
@@ -398,16 +398,16 @@ export async function updateClientContact(
 ): Promise<any> {
   // If setting as primary, unset other primary contacts
   if (input.isPrimary) {
-    const contact = await prisma.clientContact.findUnique({ where: { id } });
+    const contact = await (prisma as any).clientContact.findUnique({ where: { id } });
     if (contact) {
-      await prisma.clientContact.updateMany({
+      await (prisma as any).clientContact.updateMany({
         where: { clientId: contact.clientId, isPrimary: true, id: { not: id } },
         data: { isPrimary: false },
       });
     }
   }
   
-  const updated = await prisma.clientContact.update({
+  const updated = await (prisma as any).clientContact.update({
     where: { id },
     data: {
       ...input,
@@ -429,7 +429,7 @@ export async function removeClientContact(
   id: string,
   userId: string
 ): Promise<void> {
-  await prisma.clientContact.update({
+  await (prisma as any).clientContact.update({
     where: { id },
     data: {
       isActive: false,
@@ -458,13 +458,13 @@ export async function createClientContract(
   // Generate contract number if not provided
   let contractNumber = input.contractNumber;
   if (!contractNumber) {
-    const count = await prisma.clientContract.count({
+    const count = await (prisma as any).clientContract.count({
       where: { clientId: input.clientId },
     });
     contractNumber = `CNT-${input.clientId.slice(0, 8).toUpperCase()}-${(count + 1).toString().padStart(3, '0')}`;
   }
   
-  const contract = await prisma.clientContract.create({
+  const contract = await (prisma as any).clientContract.create({
     data: {
       id,
       clientId: input.clientId,
@@ -497,7 +497,7 @@ export async function getClientContracts(
   prisma: PrismaClient,
   clientId: string
 ): Promise<any[]> {
-  return prisma.clientContract.findMany({
+  return (prisma as any).clientContract.findMany({
     where: { clientId },
     orderBy: { startDate: 'desc' },
   });
@@ -529,7 +529,7 @@ export async function updateClientContract(
   if (input.attachmentUrl !== undefined) data.attachmentUrl = input.attachmentUrl;
   if (input.status) data.status = input.status;
   
-  const contract = await prisma.clientContract.update({
+  const contract = await (prisma as any).clientContract.update({
     where: { id },
     data,
   });
@@ -553,21 +553,21 @@ export async function getClientStats(
   totalBilledHours: number;
 }> {
   const [projectStats, contracts, timeEntries] = await Promise.all([
-    prisma.project.groupBy({
+    (prisma as any).project.groupBy({
       by: ['status'],
       where: { clientId },
       _count: true,
     }),
-    prisma.clientContract.findMany({
+    (prisma as any).clientContract.findMany({
       where: { clientId, status: 'active' },
       select: { valueCents: true },
     }),
-    prisma.timeEntry.aggregate({
+    (prisma as any).timeEntry.aggregate({
       where: {
         project: { clientId },
         status: 'approved',
         isBillable: true,
-      },
+      } as any,
       _sum: { durationMinutes: true },
     }),
   ]);

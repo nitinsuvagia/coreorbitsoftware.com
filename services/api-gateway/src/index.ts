@@ -4,7 +4,10 @@
 
 // Load environment variables FIRST before any other imports
 import * as path from 'path';
-import * as dotenv from 'dotenv';
+
+// Use require for dotenv to avoid type issues in Docker builds
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const dotenv = require('dotenv');
 
 // Load .env from project root
 const rootDir = path.resolve(__dirname, '../../..');

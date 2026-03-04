@@ -51,7 +51,7 @@ export async function getPreferences(
   prisma: PrismaClient,
   userId: string
 ): Promise<NotificationPreferences> {
-  const prefs = await prisma.notificationPreference.findUnique({
+  const prefs = await (prisma as any).notificationPreference.findUnique({
     where: { userId },
   });
   
@@ -77,7 +77,7 @@ export async function createDefaultPreferences(
 ): Promise<NotificationPreferences> {
   const defaults = config.defaultPreferences;
   
-  await prisma.notificationPreference.create({
+  await (prisma as any).notificationPreference.create({
     data: {
       id: uuidv4(),
       userId,
@@ -100,7 +100,7 @@ export async function updatePreferences(
   userId: string,
   input: UpdatePreferencesInput
 ): Promise<NotificationPreferences> {
-  const existing = await prisma.notificationPreference.findUnique({
+  const existing = await (prisma as any).notificationPreference.findUnique({
     where: { userId },
   });
   
@@ -108,7 +108,7 @@ export async function updatePreferences(
     // Create with defaults merged with input
     const defaults = config.defaultPreferences;
     
-    const prefs = await prisma.notificationPreference.create({
+    const prefs = await (prisma as any).notificationPreference.create({
       data: {
         id: uuidv4(),
         userId,
@@ -157,7 +157,7 @@ export async function updatePreferences(
       : null;
   }
   
-  const prefs = await prisma.notificationPreference.update({
+  const prefs = await (prisma as any).notificationPreference.update({
     where: { userId },
     data,
   });

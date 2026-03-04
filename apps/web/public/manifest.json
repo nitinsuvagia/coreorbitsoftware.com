@@ -1,11 +1,11 @@
 {
-  "name": "Office Management System",
-  "short_name": "OMS",
-  "description": "Multi-tenant office management platform for modern businesses",
+  "name": "CoreOrbit - Smart Office Management",
+  "short_name": "CoreOrbit",
+  "description": "AI-powered office management platform that streamlines HR, projects, attendance, and team collaboration",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#0f172a",
+  "theme_color": "#3B82F6",
   "orientation": "any",
   "scope": "/",
   "icons": [

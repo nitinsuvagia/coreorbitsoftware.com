@@ -418,6 +418,104 @@ export async function createEmployeeFolders(
     throw error;
   }
 }
+
+/**
+ * Create folders for an employee directly by employee ID (not user ID)
+ * Used primarily for employee import where employees don't have user accounts
+ */
+export async function createFoldersForEmployeeDirectly(
+  prisma: PrismaClient,
+  employeeId: string,
+  creatorUserId: string
+): Promise<void> {
+  logger.info({ employeeId }, 'Creating folders for employee directly');
+
+  try {
+    // Get employee details directly
+    const employee = await prisma.employee.findUnique({
+      where: { id: employeeId },
+      select: {
+        id: true,
+        employeeCode: true,
+        firstName: true,
+        lastName: true,
+      },
+    });
+
+    if (!employee) {
+      logger.warn({ employeeId }, 'Employee not found, skipping folder creation');
+      return;
+    }
+
+    // Get or create Employee Documents root folder
+    let employeeDocsFolder = await prisma.folder.findFirst({
+      where: {
+        name: 'Employee Documents',
+        parentId: null,
+      },
+    });
+
+    if (!employeeDocsFolder) {
+      employeeDocsFolder = await prisma.folder.create({
+        data: {
+          name: 'Employee Documents',
+          description: 'Employee-specific documents and records',
+          color: 'green',
+          parentId: null,
+          path: '/Employee Documents',
+          depth: 1,
+          createdBy: creatorUserId,
+        },
+      });
+    }
+
+    // Create employee folder name: "EMP001 - John Doe"
+    const employeeName = `${employee.employeeCode} - ${employee.firstName} ${employee.lastName}`;
+    const employeePath = `/Employee Documents/${employeeName}`;
+
+    // Check if folder already exists
+    const existingFolder = await prisma.folder.findFirst({
+      where: {
+        name: employeeName,
+        parentId: employeeDocsFolder.id,
+      },
+    });
+
+    if (existingFolder) {
+      logger.info({ employeeId, folderId: existingFolder.id }, 'Employee folder already exists');
+      return;
+    }
+
+    // Create employee folder
+    const employeeFolder = await prisma.folder.create({
+      data: {
+        name: employeeName,
+        description: `Documents for ${employee.firstName} ${employee.lastName}`,
+        parentId: employeeDocsFolder.id,
+        path: employeePath,
+        depth: 2,
+        createdBy: creatorUserId,
+      },
+    });
+
+    // Create subfolders
+    for (const subfolder of EMPLOYEE_DOCUMENT_SUBFOLDERS) {
+      await createFolderStructure(
+        prisma,
+        subfolder,
+        employeeFolder.id,
+        employeePath,
+        creatorUserId
+      );
+    }
+
+    logger.info({ employeeId, folderId: employeeFolder.id }, 'Employee folders created successfully (direct)');
+  } catch (error) {
+    logger.error({ error, employeeId }, 'Failed to create employee folders directly');
+    // Don't throw - folder creation should not fail the import
+  }
+}
+
 /**
  * Initialize On-Boarding folder structure
  */

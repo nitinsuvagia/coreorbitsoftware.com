@@ -81,6 +81,7 @@ import {
   Upload,
   X,
   File,
+  PlayCircle,
 } from 'lucide-react';
 import { candidateApi, type JobCandidate } from '@/lib/api/candidates';
 import { jobApi, type JobDescription } from '@/lib/api/jobs';
@@ -95,6 +96,10 @@ const statusColors: Record<string, string> = {
   SHORTLISTED: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400',
   INTERVIEWED: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
   OFFERED: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
+  OFFER_ACCEPTED: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
+  OFFER_DECLINED: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
+  ONBOARDING_IN_PROGRESS: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400',
+  ONBOARDING_COMPLETED: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-400',
   HIRED: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
   REJECTED: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
   WITHDRAWN: 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-500',
@@ -105,7 +110,11 @@ const stageProgress: Record<string, number> = {
   SCREENING: 25,
   SHORTLISTED: 40,
   INTERVIEWED: 60,
-  OFFERED: 80,
+  OFFERED: 70,
+  OFFER_ACCEPTED: 75,
+  OFFER_DECLINED: 70,
+  ONBOARDING_IN_PROGRESS: 85,
+  ONBOARDING_COMPLETED: 95,
   HIRED: 100,
   REJECTED: 0,
   WITHDRAWN: 0,
@@ -199,12 +208,60 @@ export default function CandidateDetailPage() {
     }
   };
 
+  const handleStartOnboarding = async () => {
+    if (!candidate) return;
+    
+    // Only start onboarding if candidate has accepted offer
+    if (candidate.status !== 'OFFER_ACCEPTED') {
+      toast.error('Candidate must accept the offer before starting onboarding');
+      return;
+    }
+    
+    try {
+      setSaving(true);
+      const result = await candidateApi.startOnboarding(candidateId);
+      toast.success(result.message || 'Onboarding started! Email sent to candidate with login credentials.');
+      loadData();
+    } catch (error: any) {
+      console.error('Failed to start onboarding:', error);
+      const errData = error.response?.data?.error;
+      const errMsg = typeof errData === 'object' ? errData?.message || 'Failed to start onboarding' : errData || 'Failed to start onboarding';
+      toast.error(errMsg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleResendOnboardingEmail = async () => {
+    if (!candidate) return;
+    
+    // Only resend if candidate is in onboarding
+    if (candidate.status !== 'ONBOARDING_IN_PROGRESS') {
+      toast.error('Can only resend email for candidates in onboarding');
+      return;
+    }
+    
+    try {
+      setSaving(true);
+      const result = await candidateApi.resendOnboardingEmail(candidateId);
+      toast.success(result.message || 'New onboarding credentials sent to candidate!');
+      loadData();
+    } catch (error: any) {
+      console.error('Failed to resend onboarding email:', error);
+      const errData = error.response?.data?.error;
+      const errMsg = typeof errData === 'object' ? errData?.message || 'Failed to resend onboarding email' : errData || 'Failed to resend onboarding email';
+      toast.error(errMsg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleMarkAsHired = async () => {
     if (!candidate) return;
     
-    // Only allow hiring if candidate has been offered
-    if (candidate.status !== 'OFFERED') {
-      toast.error('Candidate must be in OFFERED status before being marked as hired');
+    // Only allow hiring if onboarding is completed
+    if (!['ONBOARDING_COMPLETED', 'ONBOARDING_IN_PROGRESS'].includes(candidate.status)) {
+      toast.error('Candidate must complete onboarding before being marked as hired');
       return;
     }
     
@@ -215,7 +272,9 @@ export default function CandidateDetailPage() {
       loadData();
     } catch (error: any) {
       console.error('Failed to mark as hired:', error);
-      toast.error(error.response?.data?.error || 'Failed to mark as hired');
+      const errData = error.response?.data?.error;
+      const errMsg = typeof errData === 'object' ? errData?.message || 'Failed to mark as hired' : errData || 'Failed to mark as hired';
+      toast.error(errMsg);
     } finally {
       setSaving(false);
     }
@@ -691,14 +750,31 @@ export default function CandidateDetailPage() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem
-                onClick={() => setSendOfferOpen(true)}
-                disabled={candidate.status === 'HIRED' || candidate.status === 'REJECTED'}
-              >
-                <Award className="h-4 w-4 mr-2 text-amber-500" />
-                Send Offer
-              </DropdownMenuItem>
-              {candidate.status === 'OFFERED' && (
+              {!['OFFERED', 'OFFER_ACCEPTED', 'OFFER_DECLINED', 'HIRED', 'REJECTED'].includes(candidate.status) && (
+                <DropdownMenuItem
+                  onClick={() => setSendOfferOpen(true)}
+                >
+                  <Award className="h-4 w-4 mr-2 text-amber-500" />
+                  Send Offer
+                </DropdownMenuItem>
+              )}
+              {candidate.status === 'OFFER_ACCEPTED' && (
+                <DropdownMenuItem
+                  onClick={handleStartOnboarding}
+                >
+                  <PlayCircle className="h-4 w-4 mr-2 text-blue-500" />
+                  Start Onboarding
+                </DropdownMenuItem>
+              )}
+              {candidate.status === 'ONBOARDING_IN_PROGRESS' && (
+                <DropdownMenuItem
+                  onClick={handleResendOnboardingEmail}
+                >
+                  <Mail className="h-4 w-4 mr-2 text-cyan-500" />
+                  Resend Onboarding Email
+                </DropdownMenuItem>
+              )}
+              {['ONBOARDING_IN_PROGRESS', 'ONBOARDING_COMPLETED'].includes(candidate.status) && (
                 <DropdownMenuItem
                   onClick={handleMarkAsHired}
                 >
@@ -1087,9 +1163,31 @@ export default function CandidateDetailPage() {
                   <div className="flex gap-3">
                     <div className="w-2 h-2 mt-2 rounded-full bg-amber-500"></div>
                     <div>
-                      <p className="text-sm font-medium">Offer Extended</p>
+                      <p className="text-sm font-medium">Offer Sent</p>
                       <p className="text-xs text-muted-foreground">
                         {formatDate(candidate.offeredAt, orgSettings)}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {candidate.status === 'OFFER_ACCEPTED' && (
+                  <div className="flex gap-3">
+                    <div className="w-2 h-2 mt-2 rounded-full bg-emerald-500"></div>
+                    <div>
+                      <p className="text-sm font-medium">Offer Accepted</p>
+                      <p className="text-xs text-muted-foreground">
+                        Candidate accepted the offer
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {candidate.status === 'OFFER_DECLINED' && (
+                  <div className="flex gap-3">
+                    <div className="w-2 h-2 mt-2 rounded-full bg-orange-500"></div>
+                    <div>
+                      <p className="text-sm font-medium">Offer Declined</p>
+                      <p className="text-xs text-muted-foreground">
+                        Candidate declined the offer
                       </p>
                     </div>
                   </div>
@@ -1148,7 +1246,7 @@ export default function CandidateDetailPage() {
                   </button>
                 ))}
                 <span className="ml-2 text-sm text-muted-foreground">
-                  {candidate.rating || 0} / 5
+                  {candidate.rating ? `${candidate.rating} / 5` : 'No Rating'}
                 </span>
               </div>
               <p className="text-xs text-muted-foreground mt-2">Click stars to update rating</p>

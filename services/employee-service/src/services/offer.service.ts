@@ -213,7 +213,7 @@ This offer is valid until the expiry date mentioned in the offer letter.
         }),
       });
 
-      const result = await response.json();
+      const result = await response.json() as any;
       logger.info({ email: data.candidateEmail, success: result.success }, 'Offer email sent');
       return result.success === true;
     } catch (error: any) {
@@ -700,9 +700,10 @@ This offer is valid until the expiry date mentioned in the offer letter.
     return {
       autoGenerate: settings?.employeeCodeAutoGenerate ?? true,
       prefix: settings?.employeeCodePrefix || 'EMP',
+      includeYear: settings?.employeeCodeIncludeYear ?? false,
       yearSeqDigits: settings?.employeeCodeYearSeqDigits ?? 5,
       totalSeqDigits: settings?.employeeCodeTotalSeqDigits ?? 5,
-      separator: settings?.employeeCodeSeparator || '-',
+      separator: settings?.employeeCodeSeparator ?? '-',
     };
   }
 
@@ -719,26 +720,28 @@ This offer is valid until the expiry date mentioned in the offer letter.
       return `EMP${String(count + 1).padStart(4, '0')}`;
     }
     
-    const { prefix, separator, yearSeqDigits, totalSeqDigits } = settings;
+    const { prefix, separator, includeYear, yearSeqDigits, totalSeqDigits } = settings;
     const currentYear = new Date().getFullYear();
     
-    // Count employees created this year (for year sequence)
-    const employeesThisYear = await prisma.employee.count({
-      where: {
-        createdAt: {
-          gte: new Date(`${currentYear}-01-01T00:00:00.000Z`),
-          lt: new Date(`${currentYear + 1}-01-01T00:00:00.000Z`),
-        },
-      },
-    });
-    
-    // Count total employees (for total sequence)
+    // Count total employees (always needed)
     const totalEmployees = await prisma.employee.count();
-    
-    // Generate code: {PREFIX}-{YYYY}-{YEAR_SEQ}-{TOTAL_SEQ}
-    const yearSeq = String(employeesThisYear + 1).padStart(yearSeqDigits, '0');
     const totalSeq = String(totalEmployees + 1).padStart(totalSeqDigits, '0');
     
-    return `${prefix}${separator}${currentYear}${separator}${yearSeq}${separator}${totalSeq}`;
+    if (includeYear) {
+      // Full format: PREFIX-YEAR-YEAR_SEQ-TOTAL_SEQ (e.g., EMP-2026-00001-00001)
+      const employeesThisYear = await prisma.employee.count({
+        where: {
+          createdAt: {
+            gte: new Date(`${currentYear}-01-01T00:00:00.000Z`),
+            lt: new Date(`${currentYear + 1}-01-01T00:00:00.000Z`),
+          },
+        },
+      });
+      const yearSeq = String(employeesThisYear + 1).padStart(yearSeqDigits, '0');
+      return `${prefix}${separator}${currentYear}${separator}${yearSeq}${separator}${totalSeq}`;
+    } else {
+      // Simple format: PREFIX-TOTAL_SEQ (e.g., EMP-00001)
+      return `${prefix}${separator}${totalSeq}`;
+    }
   }
 }

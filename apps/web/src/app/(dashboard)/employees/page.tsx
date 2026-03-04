@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useEmployees, useDepartments, Employee } from '@/hooks/use-employees';
+import { useEmployees, useDepartments, Employee, useEmployeeStatusCounts } from '@/hooks/use-employees';
 import { useOrgFormatters } from '@/hooks/use-org-settings';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,6 +18,18 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { toast } from 'sonner';
+import { apiClient } from '@/lib/api/client';
 import { PhoneDisplay } from '@/components/ui/phone-input';
 import { getInitials, getAvatarColor, cn } from '@/lib/utils';
 import {
@@ -27,7 +39,6 @@ import {
   Mail,
   Phone,
   Building,
-  Filter,
   Sparkles,
   Download,
   Users,
@@ -39,12 +50,41 @@ import {
   ChevronRight,
   LayoutGrid,
   List,
+  Upload,
+  Send,
+  Loader2,
 } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import { EmployeeCalendarView } from './_components/EmployeeCalendarView';
+import { ImportEmployeesDialog } from './_components/ImportEmployeesDialog';
+import { usePermissions } from '@/hooks/use-permissions';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-// Format date as "January 24th, 2010" (friendly format for joined date)
+// Status tab types
+type StatusTab = 'current' | 'probation' | 'relieving' | 'ex-employees';
+
+// Status configurations for tabs
+const STATUS_TAB_CONFIG: Record<StatusTab, { label: string; excludeStatuses?: string; statuses?: string }> = {
+  'current': { 
+    label: 'Current', 
+    excludeStatuses: 'TERMINATED,RESIGNED,RETIRED,PROBATION,NOTICE_PERIOD'  // Active + On Leave
+  },
+  'probation': { 
+    label: 'Probation', 
+    statuses: 'PROBATION' 
+  },
+  'relieving': { 
+    label: 'Relieving', 
+    statuses: 'NOTICE_PERIOD' 
+  },
+  'ex-employees': { 
+    label: 'Ex-Employees', 
+    statuses: 'TERMINATED,RESIGNED,RETIRED' 
+  },
+};
+
+// Format date as "Feb 24th, 2010" (friendly format for joined date)
 function formatJoinedDate(date: string | Date): string {
   const d = new Date(date);
   const day = d.getDate();
@@ -52,7 +92,7 @@ function formatJoinedDate(date: string | Date): string {
     : day === 2 || day === 22 ? 'nd' 
     : day === 3 || day === 23 ? 'rd' 
     : 'th';
-  return format(d, `MMMM d'${suffix}', yyyy`);
+  return format(d, `MMM d'${suffix}', yyyy`);
 }
 
 // Color hex values for glass effect (inline styles)
@@ -181,8 +221,7 @@ function useDominantColors(imageUrl: string | undefined, fallbackId: string): Do
           // Use fallback colors
           setColors({ primary: fallbackColor, secondary: secondaryFallback });
         }
-      } catch (e) {
-        console.warn('Could not extract colors:', e);
+      } catch {
         setColors({ primary: fallbackColor, secondary: secondaryFallback });
       }
     };
@@ -198,7 +237,7 @@ function useDominantColors(imageUrl: string | undefined, fallbackId: string): Do
 }
 
 // Glass effect employee card component
-function GlassEmployeeCard({ employee }: { employee: Employee }) {
+function GlassEmployeeCard({ employee, onSendSigninEmail, canEdit }: { employee: Employee; onSendSigninEmail: (employee: Employee) => void; canEdit: boolean }) {
   const { formatDate } = useOrgFormatters();
   const [menuOpen, setMenuOpen] = useState(false);
   const dominantColors = useDominantColors(employee.avatar, employee.email || employee.id);
@@ -255,12 +294,21 @@ function GlassEmployeeCard({ employee }: { employee: Employee }) {
                   360° View
                 </Link>
               </DropdownMenuItem>
+              {canEdit && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <Link href={`/employees/${employee.id}/edit`} className="flex items-center gap-2">
+                      <Edit className="h-4 w-4" />
+                      Edit
+                    </Link>
+                  </DropdownMenuItem>
+                </>
+              )}
               <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link href={`/employees/${employee.id}/edit`} className="flex items-center gap-2">
-                  <Edit className="h-4 w-4" />
-                  Edit
-                </Link>
+              <DropdownMenuItem onClick={(e) => { e.preventDefault(); onSendSigninEmail(employee); }} className="flex items-center gap-2">
+                <Send className="h-4 w-4" />
+                Send Sign-in Email
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -340,16 +388,24 @@ function GlassEmployeeCard({ employee }: { employee: Employee }) {
 }
 
 const getStatusColor = (status: string) => {
-  switch (status?.toLowerCase()) {
-    case 'active':
+  switch (status?.toUpperCase()) {
+    case 'ACTIVE':
       return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
-    case 'inactive':
+    case 'INACTIVE':
       return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
-    case 'on_leave':
-    case 'onleave':
+    case 'ON_LEAVE':
+    case 'ONLEAVE':
       return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
-    case 'probation':
+    case 'PROBATION':
       return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
+    case 'NOTICE_PERIOD':
+      return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400';
+    case 'TERMINATED':
+      return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+    case 'RESIGNED':
+      return 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400';
+    case 'RETIRED':
+      return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400';
     default:
       return 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400';
   }
@@ -358,20 +414,54 @@ const getStatusColor = (status: string) => {
 export default function EmployeesPage() {
   const [search, setSearch] = useState('');
   const [department, setDepartment] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [statusTab, setStatusTab] = useState<StatusTab>('current');
   const [page, setPage] = useState(1);
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'calendar'>('grid');
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [signinEmailEmployee, setSigninEmailEmployee] = useState<Employee | null>(null);
+  const [sendingSigninEmail, setSendingSigninEmail] = useState(false);
   const { formatDate } = useOrgFormatters();
+  const { can } = usePermissions();
+  const canEdit = can('employees:write');
 
-  const { data: employeesData, isLoading } = useEmployees({
+  // Get filter config based on selected tab
+  const tabConfig = STATUS_TAB_CONFIG[statusTab];
+
+  const handleSendSigninEmail = async () => {
+    if (!signinEmailEmployee) return;
+    setSendingSigninEmail(true);
+    try {
+      const res = await apiClient.post(`/api/v1/employees/${signinEmailEmployee.id}/send-signin-email`);
+      if (res.success) {
+        toast.success('Sign-in email sent successfully', {
+          description: `Credentials sent to ${signinEmailEmployee.personalEmail || 'personal email'}`,
+        });
+      } else {
+        toast.error('Failed to send sign-in email', {
+          description: res.error?.message || 'Something went wrong',
+        });
+      }
+    } catch (err: any) {
+      toast.error('Failed to send sign-in email', {
+        description: err?.message || 'Network error',
+      });
+    } finally {
+      setSendingSigninEmail(false);
+      setSigninEmailEmployee(null);
+    }
+  };
+
+  const { data: employeesData, isLoading, refetch } = useEmployees({
     search: search || undefined,
     departmentId: department || undefined,
-    status: statusFilter || undefined,
+    statuses: tabConfig.statuses,
+    excludeStatuses: tabConfig.excludeStatuses,
     page,
     limit: 12,
   });
 
   const { data: departments } = useDepartments();
+  const { data: statusCounts } = useEmployeeStatusCounts();
 
   const employees = employeesData?.items || [];
   const totalPages = employeesData?.totalPages || 1;
@@ -386,13 +476,66 @@ export default function EmployeesPage() {
             Manage your organization's employees
           </p>
         </div>
-        <Button asChild>
-          <Link href="/employees/new">
-            <Plus className="mr-2 h-4 w-4" />
-            Add Employee
-          </Link>
-        </Button>
+        {canEdit && (
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
+              <Upload className="mr-2 h-4 w-4" />
+              Import
+            </Button>
+            <Button asChild>
+              <Link href="/employees/new">
+                <Plus className="mr-2 h-4 w-4" />
+                Add Employee
+              </Link>
+            </Button>
+          </div>
+        )}
       </div>
+
+      {/* Import Dialog */}
+      <ImportEmployeesDialog 
+        open={importDialogOpen} 
+        onOpenChange={setImportDialogOpen}
+        onImportComplete={() => refetch()}
+      />
+
+      {/* Status Tabs */}
+      <Tabs value={statusTab} onValueChange={(v) => { setStatusTab(v as StatusTab); setPage(1); }} className="w-full">
+        <TabsList className="grid w-full max-w-2xl grid-cols-4 h-auto">
+          <TabsTrigger value="current" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground gap-2 py-2">
+            Current
+            {statusCounts?.current !== undefined && (
+              <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-medium rounded-full bg-primary/20 data-[state=active]:bg-white/20">
+                {statusCounts.current}
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="probation" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white gap-2 py-2">
+            Probation
+            {statusCounts?.probation !== undefined && (
+              <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-medium rounded-full bg-blue-500/20 data-[state=active]:bg-white/20">
+                {statusCounts.probation}
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="relieving" className="data-[state=active]:bg-amber-500 data-[state=active]:text-white gap-2 py-2">
+            Relieving
+            {statusCounts?.relieving !== undefined && (
+              <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-medium rounded-full bg-amber-500/20 data-[state=active]:bg-white/20">
+                {statusCounts.relieving}
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="ex-employees" className="data-[state=active]:bg-gray-500 data-[state=active]:text-white gap-2 py-2">
+            Ex-Employees
+            {statusCounts?.exEmployees !== undefined && (
+              <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-medium rounded-full bg-gray-500/20 data-[state=active]:bg-white/20">
+                {statusCounts.exEmployees}
+              </span>
+            )}
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {/* Filters */}
       <div className="flex items-center gap-4">
@@ -425,22 +568,6 @@ export default function EmployeesPage() {
                 {dept.name}
               </DropdownMenuItem>
             ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline">
-              <Filter className="mr-2 h-4 w-4" />
-              {statusFilter ? statusFilter.replace('_', ' ') : 'All Status'}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => setStatusFilter('')}>All Status</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => setStatusFilter('active')}>Active</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setStatusFilter('inactive')}>Inactive</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setStatusFilter('on_leave')}>On Leave</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setStatusFilter('probation')}>Probation</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         <div className="flex-1" />
@@ -532,13 +659,13 @@ export default function EmployeesPage() {
             <div className="rounded-full bg-primary/10 p-6 mb-4">
               <Users className="h-16 w-16 text-primary" />
             </div>
-            <h3 className="text-xl font-semibold mb-2">No Employees Found</h3>
+            <h3 className="text-xl font-semibold mb-2">No employees found</h3>
             <p className="text-muted-foreground text-center max-w-md mb-6">
-              {search || department || statusFilter
+              {search || department || statusTab !== 'current'
                 ? 'Try adjusting your filters to find what you\'re looking for.'
                 : 'Start building your team by adding employee profiles.'}
             </p>
-            {!search && !department && !statusFilter && (
+            {!search && !department && statusTab === 'current' && (
               <Button asChild size="lg">
                 <Link href="/employees/new">
                   <Plus className="mr-2 h-4 w-4" />
@@ -554,7 +681,7 @@ export default function EmployeesPage() {
         ) : viewMode === 'grid' ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {employees.map((employee: Employee) => (
-              <GlassEmployeeCard key={employee.id} employee={employee} />
+              <GlassEmployeeCard key={employee.id} employee={employee} onSendSigninEmail={setSigninEmailEmployee} canEdit={canEdit} />
             ))}
           </div>
         ) : (
@@ -650,12 +777,21 @@ export default function EmployeesPage() {
                                   360° View
                                 </Link>
                               </DropdownMenuItem>
+                              {canEdit && (
+                                <>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem asChild>
+                                    <Link href={`/employees/${employee.id}/edit`}>
+                                      <Edit className="h-4 w-4 mr-2" />
+                                      Edit
+                                    </Link>
+                                  </DropdownMenuItem>
+                                </>
+                              )}
                               <DropdownMenuSeparator />
-                              <DropdownMenuItem asChild>
-                                <Link href={`/employees/${employee.id}/edit`}>
-                                  <Edit className="h-4 w-4 mr-2" />
-                                  Edit
-                                </Link>
+                              <DropdownMenuItem onClick={() => setSigninEmailEmployee(employee)}>
+                                <Send className="h-4 w-4 mr-2" />
+                                Send Sign-in Email
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -696,6 +832,63 @@ export default function EmployeesPage() {
           </Button>
         </div>
       )}
+
+      {/* Send Sign-in Email Confirmation Dialog */}
+      <AlertDialog open={!!signinEmailEmployee} onOpenChange={(open) => { if (!open) setSigninEmailEmployee(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Send className="h-5 w-5" />
+              Send Sign-in Email
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>
+                  This will create a login account (or reset the password if one exists) and send sign-in credentials to:
+                </p>
+                <div className="rounded-lg border bg-muted/50 p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                    <span className="font-medium">{signinEmailEmployee?.firstName} {signinEmailEmployee?.lastName}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Mail className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm">
+                      {signinEmailEmployee?.personalEmail 
+                        ? signinEmailEmployee.personalEmail 
+                        : <span className="text-destructive">No personal email on file</span>
+                      }
+                    </span>
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  The email will include the login URL, username (work email), and a temporary password.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={sendingSigninEmail}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); handleSendSigninEmail(); }}
+              disabled={sendingSigninEmail || !signinEmailEmployee?.personalEmail}
+              className="gap-2"
+            >
+              {sendingSigninEmail ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Send className="h-4 w-4" />
+                  Send Email
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

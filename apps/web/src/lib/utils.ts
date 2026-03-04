@@ -8,11 +8,21 @@ export function cn(...inputs: ClassValue[]) {
 
 /**
  * Format a date string or Date object
+ * Uses UTC to ensure consistent display regardless of browser timezone
  */
 export function formatDate(date: string | Date, formatStr: string = 'MMM d, yyyy'): string {
   if (!date) return '';
   const d = typeof date === 'string' ? parseISO(date) : date;
-  return format(d, formatStr);
+  
+  // Use Intl.DateTimeFormat with UTC for consistent results
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'UTC',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+  
+  return formatter.format(d);
 }
 
 /**

@@ -32,12 +32,12 @@ interface GeneratedPdf {
 }
 
 export class OfferPdfService {
-  private static browser: puppeteer.Browser | null = null;
+  private static browser: any = null;
 
   /**
    * Get or create browser instance for PDF generation
    */
-  private static async getBrowser(): Promise<puppeteer.Browser> {
+  private static async getBrowser(): Promise<any> {
     if (!this.browser || !this.browser.connected) {
       this.browser = await puppeteer.launch({
         headless: true,

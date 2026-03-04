@@ -359,9 +359,14 @@ model TenantSettings {
   // Employee Code Settings
   employeeCodeAutoGenerate    Boolean   @default(true) @map("employee_code_auto_generate")
   employeeCodePrefix          String    @default("EMP") @map("employee_code_prefix")
+  employeeCodeIncludeYear     Boolean   @default(false) @map("employee_code_include_year")
   employeeCodeYearSeqDigits   Int       @default(5) @map("employee_code_year_seq_digits")
   employeeCodeTotalSeqDigits  Int       @default(5) @map("employee_code_total_seq_digits")
   employeeCodeSeparator       String    @default("-") @map("employee_code_separator")
+  
+  // Setup Checklist
+  setupChecklistDismissed     Boolean   @default(false) @map("setup_checklist_dismissed")
+  setupChecklistDismissedAt   DateTime? @map("setup_checklist_dismissed_at")
   
   // Timestamps
   createdAt           DateTime  @default(now()) @map("created_at")
@@ -551,6 +556,7 @@ model SubscriptionPlan {
 }
 
 enum PlanTier {
+  FREE
   STARTER
   PROFESSIONAL
   ENTERPRISE
@@ -585,7 +591,10 @@ model Invoice {
   // Payment
   stripeInvoiceId   String?         @map("stripe_invoice_id")
   stripePaymentIntentId String?     @map("stripe_payment_intent_id")
+  stripeCheckoutSessionId String?   @map("stripe_checkout_session_id")
   paymentMethod     String?         @map("payment_method")
+  cardBrand         String?         @map("card_brand")
+  cardLast4         String?         @map("card_last4")
   
   // Details
   lineItems         Json            @map("line_items")

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
-import { useEmployee } from '@/hooks/use-employees';
+import { useEmployee, useUpdateEmployee } from '@/hooks/use-employees';
 import { useOrgFormatters } from '@/hooks/use-org-settings';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -18,9 +18,22 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
 import { PhoneDisplay } from '@/components/ui/phone-input';
 import { getInitials, getStatusColor } from '@/lib/utils';
 import { getAvatarColor } from '@/lib/format';
+import { WriteReviewDialog } from '@/components/hr/WriteReviewDialog';
+import { useEmployeeBadges, useAssignBadge } from '@/hooks/use-badges';
+import { useEmployeePerformanceSummary, useEmployeeReviews } from '@/hooks/use-performance-reviews';
+import { useLeaveBalance, type LeaveBalance } from '@/hooks/use-attendance';
+import { useEmployeeSkills, useAddSkill, useDeleteSkill } from '@/hooks/use-skills';
+import { AddSkillDialog } from '@/components/skills/AddSkillDialog';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { apiClient, api } from '@/lib/api/client';
+import { toast } from 'sonner';
+import { AssignBadgeDialog, getIconComponent } from '@/components/badges/AssignBadgeDialog';
+import type { EmployeeBadge } from '@/lib/api/badges';
+import type { PerformanceReview } from '@/lib/api/performance-reviews';
 import {
   ArrowLeft,
   Edit,
@@ -58,12 +71,14 @@ import {
   ChevronRight,
   Sparkles,
   Download,
+  ClipboardList,
   Camera,
   Share2,
   Loader2,
 } from 'lucide-react';
 import Link from 'next/link';
 import html2canvas from 'html2canvas';
+import { usePermissions } from '@/hooks/use-permissions';
 import jsPDF from 'jspdf';
 
 // Helper to calculate tenure
@@ -80,11 +95,19 @@ function calculateTenure(joinDate: string): { years: number; months: number; day
   return { years, months, days, totalDays };
 }
 
+// Helper to safely extract string from potential object fields like {id, name, code}
+function fieldStr(val: any, fallback: string = '—'): string {
+  if (!val) return fallback;
+  if (typeof val === 'string') return val;
+  return val.name || val.code || val.label || fallback;
+}
+
 // Helper to format currency
-function formatCurrency(amount: number, currency: string = 'USD'): string {
+function formatCurrency(amount: number, currency: any = 'USD'): string {
+  const code = typeof currency === 'string' ? currency : (currency?.code || currency?.name || 'USD');
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
-    currency,
+    currency: code,
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(amount);
@@ -180,7 +203,7 @@ function TimelineItem({
   date: string; 
   title: string; 
   description: string; 
-  type: 'promotion' | 'project' | 'achievement' | 'join' | 'training';
+  type: 'promotion' | 'project' | 'achievement' | 'join' | 'training' | 'badge' | 'review';
   isLast?: boolean;
 }) {
   const typeConfig = {
@@ -189,6 +212,8 @@ function TimelineItem({
     achievement: { icon: Trophy, color: 'bg-yellow-500' },
     join: { icon: Users, color: 'bg-purple-500' },
     training: { icon: GraduationCap, color: 'bg-orange-500' },
+    badge: { icon: Award, color: 'bg-amber-500' },
+    review: { icon: Star, color: 'bg-blue-500' },
   };
 
   const config = typeConfig[type];
@@ -256,24 +281,37 @@ function ProjectCard({
 }
 
 // Skill Badge Component
-function SkillBadge({ name, level }: { name: string; level: 'beginner' | 'intermediate' | 'advanced' | 'expert' }) {
-  const levelConfig = {
-    beginner: { color: 'bg-gray-100 text-gray-700 border-gray-300', stars: 1 },
-    intermediate: { color: 'bg-blue-50 text-blue-700 border-blue-300', stars: 2 },
-    advanced: { color: 'bg-purple-50 text-purple-700 border-purple-300', stars: 3 },
-    expert: { color: 'bg-amber-50 text-amber-700 border-amber-300', stars: 4 },
+function SkillBadge({ name, level, onRemove }: { name: string; level: 'beginner' | 'intermediate' | 'advanced' | 'expert'; onRemove?: () => void }) {
+  // Map level to 1-5 stars
+  const levelConfig: Record<string, { color: string; stars: number }> = {
+    beginner: { color: 'bg-gray-100 text-gray-700 border-gray-300', stars: 2 },
+    intermediate: { color: 'bg-blue-50 text-blue-700 border-blue-300', stars: 3 },
+    advanced: { color: 'bg-purple-50 text-purple-700 border-purple-300', stars: 4 },
+    expert: { color: 'bg-amber-50 text-amber-700 border-amber-300', stars: 5 },
   };
 
-  const config = levelConfig[level];
+  const config = levelConfig[level] || levelConfig.intermediate;
 
   return (
-    <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border ${config.color}`}>
+    <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border ${config.color} group`}>
       <span className="text-sm font-medium">{name}</span>
       <div className="flex">
-        {Array.from({ length: config.stars }).map((_, i) => (
-          <Star key={i} className="h-3 w-3 fill-current" />
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Star 
+            key={i} 
+            className={`h-3 w-3 ${i < config.stars ? 'fill-current' : 'text-gray-300'}`} 
+          />
         ))}
       </div>
+      {onRemove && (
+        <button 
+          onClick={(e) => { e.stopPropagation(); onRemove(); }} 
+          className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity hover:text-red-600"
+          title="Remove skill"
+        >
+          <XCircle className="h-3.5 w-3.5" />
+        </button>
+      )}
     </div>
   );
 }
@@ -503,8 +541,56 @@ export default function Employee360Page() {
   const employeeId = params.id as string;
   const { data: employee, isLoading, error } = useEmployee(employeeId);
   const { formatDate } = useOrgFormatters();
+  const queryClient = useQueryClient();
+  const { can } = usePermissions();
+  const canEdit = can('employees:write');
   const pageRef = useRef<HTMLDivElement>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [showWriteReviewDialog, setShowWriteReviewDialog] = useState(false);
+  const [showAssignBadgeDialog, setShowAssignBadgeDialog] = useState(false);
+  const [newNote, setNewNote] = useState('');
+  const [addingNote, setAddingNote] = useState(false);
+  const [showAddSkillDialog, setShowAddSkillDialog] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  
+  // Update employee mutation (for avatar change)
+  const updateEmployee = useUpdateEmployee();
+  
+  // Fetch real badge data
+  const { data: employeeBadges = [] } = useEmployeeBadges(employeeId);
+  
+  // Fetch real performance data
+  const { data: performanceSummary } = useEmployeePerformanceSummary(employeeId);
+  const { data: employeeReviews = [] } = useEmployeeReviews(employeeId);
+
+  // Fetch real leave balance
+  const { data: leaveBalanceData } = useLeaveBalance(employeeId);
+
+  // Fetch real documents for this employee
+  const { data: employeeDocs = [] } = useQuery({
+    queryKey: ['employee-documents', employeeId],
+    queryFn: async () => {
+      const resp = await apiClient.get(`/api/documents/entity/employee/${employeeId}/files`);
+      return (resp.data as any[]) || [];
+    },
+    enabled: !!employeeId,
+  });
+
+  // Fetch real notes for this employee
+  const { data: employeeNotes = [] } = useQuery({
+    queryKey: ['employee-notes', employeeId],
+    queryFn: async () => {
+      const resp = await apiClient.get(`/api/v1/employees/${employeeId}/notes`);
+      return (resp.data as any[]) || [];
+    },
+    enabled: !!employeeId,
+  });
+
+  // Fetch real skills data
+  const { data: employeeSkills = [] } = useEmployeeSkills(employeeId);
+  const addSkillMutation = useAddSkill(employeeId);
+  const deleteSkillMutation = useDeleteSkill(employeeId);
   
   // Extract dominant colors from profile picture (primary and secondary)
   const dominantColors = useDominantColors(
@@ -563,6 +649,63 @@ export default function Employee360Page() {
     }
   };
 
+  // Photo change handler
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !employee) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file');
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image must be less than 5MB');
+      return;
+    }
+
+    setUploadingPhoto(true);
+    try {
+      // Upload the file to document service
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const uploadRes = await api.post(
+        `/api/documents/files/upload?entityType=employee&entityId=${employee.id}`,
+        formData,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      );
+
+      const uploaded = uploadRes.data?.data?.uploaded?.[0];
+      if (uploaded?.storageKey) {
+        // Use key-based public download URL (no auth required for img tags)
+        const avatarUrl = `/api/documents/files/download?key=${encodeURIComponent(uploaded.storageKey)}&inline=true`;
+        
+        // Update employee with new avatar URL
+        await updateEmployee.mutateAsync({
+          id: employee.id,
+          data: { avatar: avatarUrl }
+        });
+        
+        toast.success('Profile photo updated');
+        queryClient.invalidateQueries({ queryKey: ['employee', employee.id] });
+      } else {
+        throw new Error('Upload failed');
+      }
+    } catch (error: any) {
+      console.error('Failed to update photo:', error);
+      toast.error(error.message || 'Failed to update profile photo');
+    } finally {
+      setUploadingPhoto(false);
+      // Reset file input
+      if (photoInputRef.current) {
+        photoInputRef.current.value = '';
+      }
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -602,54 +745,89 @@ export default function Employee360Page() {
   const tenure = calculateTenure(employee.joinDate);
   
   // Mock data for demonstration - these would come from API in production
-  const mockPerformanceScores = {
-    communication: 8.5,
-    proactiveness: 7.8,
-    accountability: 9.0,
-    teamwork: 8.2,
-    technicalSkills: 8.8,
-    leadership: 7.5,
-    problemSolving: 8.6,
-    timeManagement: 7.9,
+  const performanceScores = performanceSummary?.scores || {
+    communication: 0,
+    technicalSkills: 0,
+    teamwork: 0,
+    problemSolving: 0,
+    punctuality: 0,
+    initiative: 0,
   };
+  const overallRating = performanceSummary?.overallRating || 0;
+  const performanceTrend = performanceSummary?.trend || 'neutral';
+  const performancePercentile = performanceSummary?.percentile || 0;
 
-  const mockProjects = [
-    { name: 'Office Management System', role: 'Lead Developer', status: 'active' as const, contribution: 85, startDate: 'Jan 2025', endDate: undefined },
-    { name: 'E-Commerce Platform', role: 'Full Stack Developer', status: 'completed' as const, contribution: 70, startDate: 'Jun 2024', endDate: 'Dec 2024' },
-    { name: 'CRM Integration', role: 'Backend Developer', status: 'completed' as const, contribution: 60, startDate: 'Mar 2024', endDate: 'May 2024' },
-  ];
+  // TODO: Projects section hidden until project module is live
+  // const mockProjects = [...];
 
-  const mockCareerHistory = [
-    { date: formatDate(employee.joinDate), title: 'Joined the Organization', description: `Started as ${employee.designation?.name || 'Team Member'}`, type: 'join' as const },
-    { date: 'Mar 2024', title: 'Completed AWS Certification', description: 'AWS Solutions Architect - Associate', type: 'training' as const },
-    { date: 'Jun 2024', title: 'Project Excellence Award', description: 'For outstanding contribution to E-Commerce Platform', type: 'achievement' as const },
-    { date: 'Sep 2024', title: 'Promoted to Senior Developer', description: 'Recognized for consistent performance', type: 'promotion' as const },
-    { date: 'Jan 2025', title: 'Started OMS Project', description: 'Leading the Office Management System development', type: 'project' as const },
-  ].reverse();
+  // Build Career Journey from real data: join date, badges earned, high-rated reviews
+  const careerJourney = (() => {
+    const events: { date: string; sortDate: Date; title: string; description: string; type: 'promotion' | 'project' | 'achievement' | 'join' | 'training' | 'badge' | 'review' }[] = [];
 
-  const mockBadges = [
-    { name: 'Early Bird', description: 'Consistently on time', icon: Clock, color: 'bg-blue-500' },
-    { name: 'Team Player', description: 'Great collaboration', icon: Users, color: 'bg-green-500' },
-    { name: 'Problem Solver', description: '50+ issues resolved', icon: Lightbulb, color: 'bg-purple-500' },
-    { name: 'Mentor', description: 'Helped 5+ new joiners', icon: Heart, color: 'bg-pink-500' },
-  ];
+    // Join event
+    if (employee.joinDate) {
+      events.push({
+        date: formatDate(employee.joinDate),
+        sortDate: new Date(employee.joinDate),
+        title: 'Joined the Organization',
+        description: `Started as ${employee.designation?.name || 'Team Member'}`,
+        type: 'join',
+      });
+    }
 
-  const mockSkills = [
-    { name: 'TypeScript', level: 'expert' as const },
-    { name: 'React', level: 'expert' as const },
-    { name: 'Node.js', level: 'advanced' as const },
-    { name: 'PostgreSQL', level: 'advanced' as const },
-    { name: 'AWS', level: 'intermediate' as const },
-    { name: 'Docker', level: 'intermediate' as const },
-    { name: 'GraphQL', level: 'intermediate' as const },
-    { name: 'Python', level: 'beginner' as const },
-  ];
+    // Badge events
+    employeeBadges.forEach((badge: any) => {
+      const givenAt = badge.given_at || badge.givenAt;
+      if (givenAt) {
+        events.push({
+          date: formatDate(givenAt),
+          sortDate: new Date(givenAt),
+          title: `Earned "${badge.name}" Badge`,
+          description: badge.reason || badge.description || 'Recognition for excellence',
+          type: 'badge',
+        });
+      }
+    });
 
-  const monthlySalary = employee.baseSalary || 0;
-  const annualSalary = monthlySalary * 12;
+    // High-rated review events (rating >= 8)
+    employeeReviews.forEach((review: any) => {
+      if (review.overallRating && review.overallRating >= 8) {
+        const reviewDate = review.submittedAt || review.createdAt;
+        if (reviewDate) {
+          events.push({
+            date: formatDate(reviewDate),
+            sortDate: new Date(reviewDate),
+            title: `Outstanding ${review.reviewType?.charAt(0).toUpperCase() + review.reviewType?.slice(1) || ''} Review`,
+            description: `Achieved ${review.overallRating}/10 rating for ${review.reviewPeriod}`,
+            type: 'review',
+          });
+        }
+      }
+    });
+
+    // Sort by date descending (most recent first)
+    return events.sort((a, b) => b.sortDate.getTime() - a.sortDate.getTime());
+  })();
+
+  const mockBadges = employeeBadges;
+
+  const annualSalary = employee.baseSalary || 0;
+  const monthlySalary = Math.round(annualSalary / 12);
   
-  // Mock leave data
-  const leaveBalance = { total: 24, used: 8, pending: 2, available: 14 };
+  // Compute leave summary from real data
+  const leaveBalances: LeaveBalance[] = (leaveBalanceData as any)?.data || leaveBalanceData || [];
+  // Exclude special/optional leave types from summary totals (Maternity, Leave Without Pay, etc.)
+  const EXCLUDED_LEAVE_TYPES = ['maternity leave', 'paternity leave', 'leave without pay', 'lwp'];
+  const regularLeaves = leaveBalances.filter((b: LeaveBalance) => {
+    const name = (typeof b.leaveType === 'object' ? (b.leaveType as any)?.name : b.leaveType) || '';
+    return !EXCLUDED_LEAVE_TYPES.includes(name.toLowerCase());
+  });
+  const leaveSummary = {
+    total: regularLeaves.reduce((s: number, b: LeaveBalance) => s + Number(b.totalDays || b.total || 0), 0),
+    used: regularLeaves.reduce((s: number, b: LeaveBalance) => s + Number(b.usedDays || b.used || 0), 0),
+    pending: regularLeaves.reduce((s: number, b: LeaveBalance) => s + Number(b.pendingDays || 0), 0),
+    available: regularLeaves.reduce((s: number, b: LeaveBalance) => s + Number(b.remainingDays || b.remaining || 0), 0),
+  };
 
   return (
     <div className="space-y-6" ref={pageRef}>
@@ -703,12 +881,21 @@ export default function Employee360Page() {
               Basic View
             </Link>
           </Button>
-          <Button asChild>
-            <Link href={`/employees/${employee.id}/edit`}>
-              <Edit className="mr-2 h-4 w-4" />
-              Edit
-            </Link>
+          <Button 
+            variant="outline" 
+            onClick={() => setShowWriteReviewDialog(true)}
+          >
+            <ClipboardList className="mr-2 h-4 w-4" />
+            Write Review
           </Button>
+          {canEdit && (
+            <Button asChild>
+              <Link href={`/employees/${employee.id}/edit`}>
+                <Edit className="mr-2 h-4 w-4" />
+                Edit
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -721,40 +908,36 @@ export default function Employee360Page() {
           subValue={`${tenure.totalDays} days total`}
           color="blue"
         />
+{canEdit && (
         <MetricCard
           icon={DollarSign}
-          label="Monthly Salary"
-          value={formatCurrency(monthlySalary, employee.currency)}
-          subValue={`${formatCurrency(annualSalary, employee.currency)}/year`}
+          label="Annual Salary"
+          value={formatCurrency(annualSalary, employee.currency)}
+          subValue={`${formatCurrency(monthlySalary, employee.currency)}/month`}
           color="green"
         />
+        )}
         <MetricCard
           icon={CalendarDays}
           label="Leave Balance"
-          value={`${leaveBalance.available} days`}
-          subValue={`${leaveBalance.used} used, ${leaveBalance.pending} pending`}
+          value={`${leaveSummary.available} days`}
+          subValue={`${leaveSummary.used} used, ${leaveSummary.pending} pending`}
           color="orange"
         />
-        <MetricCard
-          icon={Folder}
-          label="Projects"
-          value={mockProjects.length}
-          subValue={`${mockProjects.filter(p => p.status === 'active').length} active`}
-          color="purple"
-        />
+        {/* TODO: Projects metric hidden until project module is live */}
         <MetricCard
           icon={Trophy}
           label="Badges Earned"
-          value={mockBadges.length}
-          subValue="This year"
+          value={employeeBadges.length}
+          subValue={employeeBadges.length > 0 ? `${employeeBadges.reduce((sum: number, b: EmployeeBadge) => sum + b.points, 0)} pts` : 'None yet'}
           color="primary"
         />
         <MetricCard
           icon={Star}
           label="Overall Rating"
-          value="8.3/10"
-          subValue="Top 15%"
-          trend="up"
+          value={overallRating > 0 ? `${overallRating}/10` : 'N/A'}
+          subValue={performancePercentile > 0 ? `Top ${100 - performancePercentile}%` : `${performanceSummary?.totalReviews || 0} reviews`}
+          trend={performanceTrend}
           color="green"
         />
       </div>
@@ -813,12 +996,27 @@ export default function Employee360Page() {
                           {getInitials(`${employee.firstName} ${employee.lastName}`)}
                         </AvatarFallback>
                       </Avatar>
-                      <button 
-                        className="absolute bottom-1 right-1 z-20 p-2 rounded-full bg-white/90 dark:bg-gray-800/90 text-foreground shadow-lg hover:bg-white dark:hover:bg-gray-800 transition-all hover:scale-110 backdrop-blur-sm"
-                        title="Change profile picture"
-                      >
-                        <Camera className="h-4 w-4" />
-                      </button>
+                      <input
+                        ref={photoInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handlePhotoChange}
+                        className="hidden"
+                      />
+                      {canEdit && (
+                        <button 
+                          onClick={() => photoInputRef.current?.click()}
+                          disabled={uploadingPhoto}
+                          className="absolute bottom-1 right-1 z-20 p-2 rounded-full bg-white/90 dark:bg-gray-800/90 text-foreground shadow-lg hover:bg-white dark:hover:bg-gray-800 transition-all hover:scale-110 backdrop-blur-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Change profile picture"
+                        >
+                          {uploadingPhoto ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Camera className="h-4 w-4" />
+                          )}
+                        </button>
+                      )}
                     </div>
                     <div className="text-center">
                       <h3 className="text-2xl font-bold">{employee.displayName}</h3>
@@ -841,8 +1039,8 @@ export default function Employee360Page() {
                       </div>
                     )}
                     <div className="flex items-center gap-3 p-2 rounded-lg bg-white/40 dark:bg-gray-800/40 backdrop-blur-sm">
-                      <Building className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm">{employee.workLocation || 'Remote'}</span>
+                      <Briefcase className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm">{[employee.department?.name, employee.designation?.name].filter(Boolean).join(' · ') || '—'}</span>
                     </div>
                     <div className="flex items-center justify-between gap-3 p-2 rounded-lg bg-white/40 dark:bg-gray-800/40 backdrop-blur-sm">
                       <div className="flex items-center gap-3">
@@ -872,31 +1070,87 @@ export default function Employee360Page() {
           {/* Badges & Awards */}
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Award className="h-5 w-5" />
-                Badges & Achievements
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Award className="h-5 w-5" />
+                  Badges & Achievements
+                </CardTitle>
+                <Button size="sm" variant="outline" onClick={() => setShowAssignBadgeDialog(true)}>
+                  <Award className="h-3.5 w-3.5 mr-1" />
+                  Award
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-3">
-              {mockBadges.map((badge, i) => (
-                <AwardBadge key={i} {...badge} />
-              ))}
+              {employeeBadges.length === 0 ? (
+                <div className="text-center py-4 text-muted-foreground">
+                  <Award className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                  <p className="text-sm">No badges yet</p>
+                  <p className="text-xs">Award a badge to recognize this employee</p>
+                </div>
+              ) : (
+                employeeBadges.map((badge: EmployeeBadge) => {
+                  const Icon = getIconComponent(badge.icon);
+                  return (
+                    <div key={badge.assignment_id} className="flex items-center gap-3 p-3 bg-muted/30 rounded-lg">
+                      <div className={`h-12 w-12 rounded-full flex items-center justify-center ${badge.color} shrink-0`}>
+                        <Icon className="h-6 w-6 text-white" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-medium text-sm">{badge.name}</h4>
+                        <p className="text-xs text-muted-foreground">{badge.description}</p>
+                        {badge.reason && (
+                          <p className="text-xs text-muted-foreground/70 italic mt-0.5">"{badge.reason}"</p>
+                        )}
+                        <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+                          By {badge.given_by_name} • {new Date(badge.given_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </CardContent>
           </Card>
+
+          {/* Assign Badge Dialog */}
+          <AssignBadgeDialog
+            open={showAssignBadgeDialog}
+            onOpenChange={setShowAssignBadgeDialog}
+            employeeId={employeeId}
+            employeeName={employee.displayName}
+          />
 
           {/* Skills */}
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Zap className="h-5 w-5" />
-                Skills & Expertise
+              <CardTitle className="flex items-center justify-between text-lg">
+                <span className="flex items-center gap-2">
+                  <Zap className="h-5 w-5" />
+                  Skills & Expertise
+                </span>
+                <Button variant="ghost" size="sm" onClick={() => setShowAddSkillDialog(true)}>
+                  <span className="text-xs">+ Add</span>
+                </Button>
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-2">
-                {mockSkills.map((skill, i) => (
-                  <SkillBadge key={i} {...skill} />
-                ))}
+                {employeeSkills.length === 0 ? (
+                  <div className="text-center py-4 text-muted-foreground w-full">
+                    <Sparkles className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                    <p className="text-sm">No skills added yet.</p>
+                  </div>
+                ) : (
+                  employeeSkills.map((skill: any) => (
+                    <SkillBadge
+                      key={skill.id}
+                      name={skill.name}
+                      level={skill.level || 'intermediate'}
+                      onRemove={() => deleteSkillMutation.mutate(skill.id)}
+                    />
+                  ))
+                )}
               </div>
               {(employee as any).certifications && (employee as any).certifications.length > 0 && (
                 <>
@@ -933,75 +1187,57 @@ export default function Employee360Page() {
               <div className="grid gap-6 md:grid-cols-2">
                 <PerformanceScore 
                   label="Communication" 
-                  score={mockPerformanceScores.communication} 
+                  score={performanceScores.communication} 
                   description="Clear and effective verbal/written communication"
                 />
                 <PerformanceScore 
-                  label="Pro-activeness" 
-                  score={mockPerformanceScores.proactiveness} 
+                  label="Initiative" 
+                  score={performanceScores.initiative} 
                   description="Taking initiative and anticipating needs"
                 />
                 <PerformanceScore 
-                  label="Accountability" 
-                  score={mockPerformanceScores.accountability} 
-                  description="Ownership of tasks and meeting commitments"
+                  label="Punctuality" 
+                  score={performanceScores.punctuality} 
+                  description="Attendance and meeting deadlines consistently"
                 />
                 <PerformanceScore 
                   label="Teamwork" 
-                  score={mockPerformanceScores.teamwork} 
+                  score={performanceScores.teamwork} 
                   description="Collaboration and supporting team members"
                 />
                 <PerformanceScore 
                   label="Technical Skills" 
-                  score={mockPerformanceScores.technicalSkills} 
+                  score={performanceScores.technicalSkills} 
                   description="Expertise in required technologies"
                 />
                 <PerformanceScore 
-                  label="Leadership" 
-                  score={mockPerformanceScores.leadership} 
-                  description="Guiding and mentoring others"
-                />
-                <PerformanceScore 
                   label="Problem Solving" 
-                  score={mockPerformanceScores.problemSolving} 
+                  score={performanceScores.problemSolving} 
                   description="Analytical thinking and finding solutions"
                 />
-                <PerformanceScore 
-                  label="Time Management" 
-                  score={mockPerformanceScores.timeManagement} 
-                  description="Meeting deadlines and prioritization"
-                />
               </div>
+              {performanceSummary && performanceSummary.totalReviews > 0 && (
+                <div className="mt-4 pt-4 border-t flex items-center justify-between">
+                  <p className="text-sm text-muted-foreground">
+                    Based on {performanceSummary.totalReviews} review{performanceSummary.totalReviews !== 1 ? 's' : ''}
+                    {performanceSummary.latestReviewPeriod && ` • Latest: ${performanceSummary.latestReviewPeriod}`}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Star className="h-5 w-5 text-yellow-500 fill-yellow-500" />
+                    <span className="text-lg font-bold">{overallRating}/10</span>
+                    <span className="text-sm text-muted-foreground">overall</span>
+                  </div>
+                </div>
+              )}
+              {(!performanceSummary || performanceSummary.totalReviews === 0) && (
+                <div className="mt-4 pt-4 border-t text-center text-muted-foreground">
+                  <p className="text-sm">No performance reviews yet. Click "Write Review" to add the first one.</p>
+                </div>
+              )}
             </CardContent>
           </Card>
 
-          {/* Projects */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Folder className="h-5 w-5" />
-                    Projects
-                  </CardTitle>
-                  <CardDescription>
-                    Current and past project assignments
-                  </CardDescription>
-                </div>
-                <Button variant="outline" size="sm">
-                  View All
-                  <ChevronRight className="h-4 w-4 ml-1" />
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {mockProjects.map((project, i) => (
-                  <ProjectCard key={i} {...project} />
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+          {/* TODO: Projects card hidden until project module is live */}
 
           {/* Career History Timeline */}
           <Card>
@@ -1015,151 +1251,317 @@ export default function Employee360Page() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="ml-2">
-                {mockCareerHistory.map((item, i) => (
-                  <TimelineItem 
-                    key={i} 
-                    {...item} 
-                    isLast={i === mockCareerHistory.length - 1}
-                  />
-                ))}
-              </div>
+              {careerJourney.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <GitBranch className="h-10 w-10 mx-auto mb-2 opacity-40" />
+                  <p className="font-medium">No milestones yet</p>
+                  <p className="text-sm">Career events will appear here as badges are earned and reviews are completed</p>
+                </div>
+              ) : (
+                <div className="ml-2">
+                  {careerJourney.map((item, i) => (
+                    <TimelineItem 
+                      key={i} 
+                      date={item.date}
+                      title={item.title}
+                      description={item.description}
+                      type={item.type}
+                      isLast={i === careerJourney.length - 1}
+                    />
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 
           {/* Additional Details Tabs */}
           <Card>
-            <Tabs defaultValue="compensation" className="w-full">
+            <Tabs defaultValue="reviews" className="w-full">
               <CardHeader>
-                <TabsList className="grid w-full grid-cols-4">
-                  <TabsTrigger value="compensation">Compensation</TabsTrigger>
+                <TabsList className={`grid w-full ${canEdit ? 'grid-cols-5' : 'grid-cols-4'}`}>
+                  <TabsTrigger value="reviews">Reviews</TabsTrigger>
+                  {canEdit && <TabsTrigger value="compensation">Compensation</TabsTrigger>}
                   <TabsTrigger value="leaves">Leaves</TabsTrigger>
                   <TabsTrigger value="documents">Documents</TabsTrigger>
                   <TabsTrigger value="notes">Notes</TabsTrigger>
                 </TabsList>
               </CardHeader>
               <CardContent>
-                <TabsContent value="compensation" className="space-y-4">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="p-4 bg-muted/30 rounded-lg">
-                      <p className="text-sm text-muted-foreground">Base Salary (Monthly)</p>
-                      <p className="text-2xl font-bold">{formatCurrency(monthlySalary, employee.currency)}</p>
+                {/* Reviews Tab */}
+                <TabsContent value="reviews" className="space-y-4">
+                  {employeeReviews.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <ClipboardList className="h-10 w-10 mx-auto mb-2 opacity-40" />
+                      <p className="font-medium">No reviews yet</p>
+                      <p className="text-sm">Write a review to start tracking performance</p>
                     </div>
-                    <div className="p-4 bg-muted/30 rounded-lg">
-                      <p className="text-sm text-muted-foreground">Annual CTC</p>
-                      <p className="text-2xl font-bold">{formatCurrency(annualSalary, employee.currency)}</p>
+                  ) : (
+                    <div className="space-y-4">
+                      {employeeReviews.map((review: PerformanceReview) => (
+                        <div key={review.id} className="p-4 border rounded-lg hover:bg-muted/30 transition-colors">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{review.reviewPeriod}</span>
+                              <Badge variant="outline" className="text-xs">{review.reviewType}</Badge>
+                              <Badge variant={review.status === 'submitted' ? 'default' : review.status === 'acknowledged' ? 'secondary' : 'outline'} className="text-xs">
+                                {review.status}
+                              </Badge>
+                            </div>
+                            {review.overallRating && (
+                              <div className="flex items-center gap-1">
+                                <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
+                                <span className="font-bold">{review.overallRating}/10</span>
+                              </div>
+                            )}
+                          </div>
+                          
+                          {/* Rating bars */}
+                          <div className="grid grid-cols-3 gap-2 mb-2">
+                            {[
+                              { label: 'Comm', value: review.communicationRating },
+                              { label: 'Tech', value: review.technicalSkillsRating },
+                              { label: 'Team', value: review.teamworkRating },
+                              { label: 'Problem', value: review.problemSolvingRating },
+                              { label: 'Punct', value: review.punctualityRating },
+                              { label: 'Init', value: review.initiativeRating },
+                            ].map(cat => (
+                              <div key={cat.label} className="flex items-center gap-2 text-xs">
+                                <span className="text-muted-foreground w-12">{cat.label}</span>
+                                <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                  <div className={`h-full rounded-full ${(cat.value || 0) >= 8 ? 'bg-green-500' : (cat.value || 0) >= 6 ? 'bg-blue-500' : 'bg-orange-500'}`} style={{ width: `${((cat.value || 0) / 10) * 100}%` }} />
+                                </div>
+                                <span className="font-medium w-4">{cat.value || '-'}</span>
+                              </div>
+                            ))}
+                          </div>
+
+                          {review.strengths && (
+                            <p className="text-xs text-green-600 mt-1"><strong>Strengths:</strong> {review.strengths.substring(0, 120)}{review.strengths.length > 120 ? '...' : ''}</p>
+                          )}
+                          {review.areasForImprovement && (
+                            <p className="text-xs text-orange-600 mt-1"><strong>Improve:</strong> {review.areasForImprovement.substring(0, 120)}{review.areasForImprovement.length > 120 ? '...' : ''}</p>
+                          )}
+
+                          <div className="flex items-center justify-between mt-2 text-[10px] text-muted-foreground">
+                            <span>By {review.reviewer ? `${review.reviewer.firstName} ${review.reviewer.lastName}` : 'Unknown'}</span>
+                            <span>{new Date(review.createdAt).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  </div>
-                  <Separator />
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Employment Type</p>
-                      <p className="font-medium">{employee.employmentType}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Currency</p>
-                      <p className="font-medium">{employee.currency}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Last Revision</p>
-                      <p className="font-medium">Apr 2024</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Next Review</p>
-                      <p className="font-medium">Apr 2025</p>
-                    </div>
-                  </div>
+                  )}
                 </TabsContent>
+
+                {canEdit && (
+                  <TabsContent value="compensation" className="space-y-4">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="p-4 bg-muted/30 rounded-lg">
+                        <p className="text-sm text-muted-foreground">Annual Salary (CTC)</p>
+                        <p className="text-2xl font-bold">{formatCurrency(annualSalary, employee.currency)}</p>
+                        <p className="text-xs text-muted-foreground mt-1">Monthly: {formatCurrency(monthlySalary, employee.currency)}</p>
+                      </div>
+                      <div className="p-4 bg-muted/30 rounded-lg">
+                        <p className="text-sm text-muted-foreground">Monthly Equivalent</p>
+                        <p className="text-2xl font-bold">{formatCurrency(monthlySalary, employee.currency)}</p>
+                        <p className="text-xs text-muted-foreground mt-1">Based on annual CTC</p>
+                      </div>
+                    </div>
+                    <Separator />
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div>
+                        <p className="text-sm text-muted-foreground">Employment Type</p>
+                        <p className="font-medium">{fieldStr(employee.employmentType, 'Full-time')}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Currency</p>
+                        <p className="font-medium">{fieldStr(employee.currency, 'INR')}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Join Date</p>
+                        <p className="font-medium">{employee.joinDate ? new Date(employee.joinDate).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : '—'}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Department</p>
+                        <p className="font-medium">{fieldStr(employee.department)}</p>
+                      </div>
+                    </div>
+                  </TabsContent>
+                )}
 
                 <TabsContent value="leaves" className="space-y-4">
                   <div className="grid gap-4 md:grid-cols-4">
                     <div className="p-4 bg-muted/30 rounded-lg text-center">
-                      <p className="text-3xl font-bold text-primary">{leaveBalance.total}</p>
+                      <p className="text-3xl font-bold text-primary">{leaveSummary.total}</p>
                       <p className="text-sm text-muted-foreground">Total Entitled</p>
                     </div>
                     <div className="p-4 bg-muted/30 rounded-lg text-center">
-                      <p className="text-3xl font-bold text-green-600">{leaveBalance.available}</p>
+                      <p className="text-3xl font-bold text-green-600">{leaveSummary.available}</p>
                       <p className="text-sm text-muted-foreground">Available</p>
                     </div>
                     <div className="p-4 bg-muted/30 rounded-lg text-center">
-                      <p className="text-3xl font-bold text-orange-600">{leaveBalance.used}</p>
+                      <p className="text-3xl font-bold text-orange-600">{leaveSummary.used}</p>
                       <p className="text-sm text-muted-foreground">Used</p>
                     </div>
                     <div className="p-4 bg-muted/30 rounded-lg text-center">
-                      <p className="text-3xl font-bold text-blue-600">{leaveBalance.pending}</p>
+                      <p className="text-3xl font-bold text-blue-600">{leaveSummary.pending}</p>
                       <p className="text-sm text-muted-foreground">Pending</p>
                     </div>
                   </div>
                   <Separator />
                   <div>
                     <h4 className="font-medium mb-3">Leave Types Breakdown</h4>
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span>Casual Leave</span>
-                        <span className="font-medium">8 / 12 days available</span>
+                    {leaveBalances.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No leave data available for this employee.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {leaveBalances.map((lb: LeaveBalance, idx: number) => {
+                          const name = typeof lb.leaveType === 'object' ? (lb.leaveType as any)?.name : lb.leaveType;
+                          const total = Number(lb.totalDays || (lb as any).total || 0);
+                          const remaining = Number(lb.remainingDays || (lb as any).remaining || 0);
+                          const pct = total > 0 ? (remaining / total) * 100 : 0;
+                          return (
+                            <div key={idx}>
+                              <div className="flex items-center justify-between">
+                                <span>{name || 'Leave'}</span>
+                                <span className="font-medium">{remaining} / {total} days available</span>
+                              </div>
+                              <Progress value={pct} className="h-2" />
+                            </div>
+                          );
+                        })}
                       </div>
-                      <Progress value={(8/12)*100} className="h-2" />
-                      <div className="flex items-center justify-between">
-                        <span>Sick Leave</span>
-                        <span className="font-medium">4 / 6 days available</span>
-                      </div>
-                      <Progress value={(4/6)*100} className="h-2" />
-                      <div className="flex items-center justify-between">
-                        <span>Earned Leave</span>
-                        <span className="font-medium">2 / 6 days available</span>
-                      </div>
-                      <Progress value={(2/6)*100} className="h-2" />
-                    </div>
+                    )}
                   </div>
                 </TabsContent>
 
                 <TabsContent value="documents" className="space-y-4">
                   <div className="space-y-3">
-                    {[
-                      { name: 'Resume.pdf', type: 'Resume', date: 'Jan 15, 2024' },
-                      { name: 'ID_Proof.pdf', type: 'Identity', date: 'Jan 15, 2024' },
-                      { name: 'Offer_Letter.pdf', type: 'Employment', date: 'Jan 10, 2024' },
-                      { name: 'AWS_Certificate.pdf', type: 'Certification', date: 'Mar 20, 2024' },
-                    ].map((doc, i) => (
-                      <div key={i} className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors">
-                        <div className="flex items-center gap-3">
-                          <FileText className="h-5 w-5 text-muted-foreground" />
-                          <div>
-                            <p className="font-medium text-sm">{doc.name}</p>
-                            <p className="text-xs text-muted-foreground">{doc.type} • {doc.date}</p>
-                          </div>
-                        </div>
-                        <Button variant="ghost" size="sm">View</Button>
+                    {employeeDocs.length === 0 ? (
+                      <div className="text-center py-4 text-muted-foreground">
+                        <FileText className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                        <p className="text-sm">No documents uploaded for this employee.</p>
                       </div>
-                    ))}
+                    ) : (
+                      (employeeDocs as any[]).map((doc: any, i: number) => (
+                        <div key={doc.id || i} className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors">
+                          <div className="flex items-center gap-3">
+                            <FileText className="h-5 w-5 text-muted-foreground" />
+                            <div>
+                              <p className="font-medium text-sm">{doc.originalName || doc.fileName || doc.name || 'Document'}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {doc.category || doc.fileType || doc.mimeType || 'File'}
+                                {doc.createdAt ? ` • ${new Date(doc.createdAt).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}
+                                {doc.fileSize ? ` • ${(doc.fileSize / 1024).toFixed(0)} KB` : ''}
+                              </p>
+                            </div>
+                          </div>
+                          {doc.url || doc.filePath ? (
+                            <Button variant="ghost" size="sm" asChild>
+                              <a href={doc.url || doc.filePath} target="_blank" rel="noopener noreferrer">View</a>
+                            </Button>
+                          ) : (
+                            <Button variant="ghost" size="sm" disabled>View</Button>
+                          )}
+                        </div>
+                      ))
+                    )}
                   </div>
                 </TabsContent>
 
                 <TabsContent value="notes" className="space-y-4">
                   <div className="space-y-4">
-                    {[
-                      { author: 'HR Manager', date: 'Jan 10, 2025', note: 'Excellent performance in Q4. Recommended for project lead role.' },
-                      { author: 'Team Lead', date: 'Dec 15, 2024', note: 'Completed all assigned tasks ahead of schedule. Great team collaboration.' },
-                    ].map((item, i) => (
-                      <div key={i} className="p-4 border rounded-lg">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-medium text-sm">{item.author}</span>
-                          <span className="text-xs text-muted-foreground">{item.date}</span>
-                        </div>
-                        <p className="text-sm text-muted-foreground">{item.note}</p>
+                    {(employeeNotes as any[]).length === 0 ? (
+                      <div className="text-center py-4 text-muted-foreground">
+                        <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                        <p className="text-sm">No notes yet. Add the first note below.</p>
                       </div>
-                    ))}
+                    ) : (
+                      (employeeNotes as any[]).map((item: any, i: number) => (
+                        <div key={item.id || i} className="p-4 border rounded-lg">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-medium text-sm">{item.authorName || item.author || 'Unknown'}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {item.createdAt ? new Date(item.createdAt).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
+                            </span>
+                          </div>
+                          <p className="text-sm text-muted-foreground">{item.content || item.note}</p>
+                        </div>
+                      ))
+                    )}
                   </div>
-                  <Button variant="outline" className="w-full">
-                    <MessageSquare className="h-4 w-4 mr-2" />
-                    Add Note
-                  </Button>
+
+                  {/* Add Note UI */}
+                  {addingNote ? (
+                    <div className="space-y-2">
+                      <Textarea
+                        placeholder="Type your note here..."
+                        value={newNote}
+                        onChange={(e) => setNewNote(e.target.value)}
+                        rows={3}
+                      />
+                      <div className="flex gap-2 justify-end">
+                        <Button variant="ghost" size="sm" onClick={() => { setAddingNote(false); setNewNote(''); }}>
+                          Cancel
+                        </Button>
+                        <Button
+                          size="sm"
+                          disabled={!newNote.trim()}
+                          onClick={async () => {
+                            try {
+                              await apiClient.post(`/api/v1/employees/${employeeId}/notes`, { content: newNote.trim() });
+                              queryClient.invalidateQueries({ queryKey: ['employee-notes', employeeId] });
+                              setNewNote('');
+                              setAddingNote(false);
+                            } catch (err) {
+                              console.error('Failed to add note:', err);
+                            }
+                          }}
+                        >
+                          Save Note
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button variant="outline" className="w-full" onClick={() => setAddingNote(true)}>
+                      <MessageSquare className="h-4 w-4 mr-2" />
+                      Add Note
+                    </Button>
+                  )}
                 </TabsContent>
               </CardContent>
             </Tabs>
           </Card>
         </div>
       </div>
+
+      {/* Write Review Dialog */}
+      <WriteReviewDialog
+        open={showWriteReviewDialog}
+        onOpenChange={setShowWriteReviewDialog}
+        employee={{
+          id: employee.id,
+          firstName: employee.firstName,
+          lastName: employee.lastName,
+          email: employee.email,
+          employeeCode: employee.employeeCode,
+          designation: employee.designation,
+        }}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ['employee-performance-summary', employeeId] });
+          queryClient.invalidateQueries({ queryKey: ['employee-reviews', employeeId] });
+        }}
+      />
+
+      {/* Add Skill Dialog */}
+      <AddSkillDialog
+        open={showAddSkillDialog}
+        onOpenChange={setShowAddSkillDialog}
+        existingSkillNames={employeeSkills.map((s: any) => s.name)}
+        onAddSkill={async (skill) => {
+          await addSkillMutation.mutateAsync(skill);
+        }}
+        isAdding={addSkillMutation.isPending}
+      />
     </div>
   );
 }

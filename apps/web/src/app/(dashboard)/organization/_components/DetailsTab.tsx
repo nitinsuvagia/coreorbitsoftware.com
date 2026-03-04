@@ -3,6 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PhoneInput } from '@/components/ui/phone-input';
 import {
   Card,
   CardContent,
@@ -125,10 +126,10 @@ export function DetailsTab({
           </div>
           <div className="space-y-2">
             <Label htmlFor="phone">Phone</Label>
-            <Input
-              id="phone"
+            <PhoneInput
               value={orgForm.phone || ''}
-              onChange={(e) => onUpdateField('phone', e.target.value)}
+              onChange={(value) => onUpdateField('phone', value)}
+              defaultCountry="IN"
             />
           </div>
           <div className="space-y-2">

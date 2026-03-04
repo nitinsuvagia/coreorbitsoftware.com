@@ -6,6 +6,11 @@
 import { logger } from '../utils/logger';
 import { getMasterPrisma } from '@oms/database';
 
+// Debug logging function - uses logger for production
+const debugLog = (msg: string) => {
+  logger.info({ debug: true }, `[AI-QUESTIONS] ${msg}`);
+};
+
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -1217,48 +1222,35 @@ async function generateWithOpenAI(
       case 'MULTIPLE_CHOICE': return 'MULTIPLE_CHOICE (4 options, 1 correct)';
       case 'TRUE_FALSE': return 'TRUE_FALSE (2 options: True/False)';
       case 'SHORT_ANSWER': return 'SHORT_ANSWER (no options, provide correctAnswer field)';
-      case 'MULTIPLE_SELECT': return 'MULTIPLE_SELECT (4+ options, multiple can be correct)';
       default: return t;
     }
   }).join(', ');
   
-  const systemPrompt = `You are an expert assessment question generator. Generate high-quality, professional assessment questions for job candidates.
+  const points = difficulty === 'EASY' ? 1 : difficulty === 'MEDIUM' ? 2 : difficulty === 'HARD' ? 3 : 5;
+  
+  const systemPrompt = `You are an assessment question generator. Generate exactly ${count} questions. This count is MANDATORY - you must return a JSON array with exactly ${count} items.
+
+JSON format for each question:
+{"type":"TYPE","question":"...","options":[{"id":"1","text":"...","isCorrect":bool}],"explanation":"...","category":"${category}","difficulty":"${difficulty}","points":${points},"tags":[]}
 
 Rules:
-1. Questions must be clear, unambiguous, and technically accurate
-2. For MULTIPLE_CHOICE questions, provide exactly 4 options with only one correct answer
-3. For TRUE_FALSE questions, provide exactly 2 options: { "id": "1", "text": "True", "isCorrect": true/false }, { "id": "2", "text": "False", "isCorrect": true/false }
-4. For SHORT_ANSWER questions, don't include options array, instead include a "correctAnswer" field with the expected answer
-5. For MULTIPLE_SELECT questions, provide 4-6 options where multiple options can be correct
-6. Include a brief explanation for each question
-7. Assign appropriate points based on difficulty: EASY=1, MEDIUM=2, HARD=3, EXPERT=5
-8. Questions should be practical and job-relevant
-9. Distribute questions evenly across the requested types
+- MULTIPLE_CHOICE: 4 options, 1 correct
+- TRUE_FALSE: 2 options (True/False)
+- SHORT_ANSWER: no options, add "correctAnswer" field
+- MULTIPLE_SELECT: 4-6 options, multiple correct
 
-Return ONLY valid JSON array, no markdown, no code blocks.`;
+Return ONLY a valid JSON array with exactly ${count} questions.`;
 
-  const userPrompt = `Generate ${count} ${difficulty} level questions about "${category}".
-
-Question types to include (distribute evenly): ${typeDescriptions}
-
-Return a JSON array. Examples for each type:
-
-For MULTIPLE_CHOICE:
-{ "type": "MULTIPLE_CHOICE", "question": "...", "options": [{"id":"1","text":"A","isCorrect":false},{"id":"2","text":"B","isCorrect":true},{"id":"3","text":"C","isCorrect":false},{"id":"4","text":"D","isCorrect":false}], "explanation": "...", "category": "${category}", "difficulty": "${difficulty}", "points": ${difficulty === 'EASY' ? 1 : difficulty === 'MEDIUM' ? 2 : difficulty === 'HARD' ? 3 : 5}, "tags": [] }
-
-For TRUE_FALSE:
-{ "type": "TRUE_FALSE", "question": "...", "options": [{"id":"1","text":"True","isCorrect":true},{"id":"2","text":"False","isCorrect":false}], "explanation": "...", "category": "${category}", "difficulty": "${difficulty}", "points": ${difficulty === 'EASY' ? 1 : difficulty === 'MEDIUM' ? 2 : difficulty === 'HARD' ? 3 : 5}, "tags": [] }
-
-For SHORT_ANSWER:
-{ "type": "SHORT_ANSWER", "question": "...", "correctAnswer": "expected answer", "explanation": "...", "category": "${category}", "difficulty": "${difficulty}", "points": ${difficulty === 'EASY' ? 1 : difficulty === 'MEDIUM' ? 2 : difficulty === 'HARD' ? 3 : 5}, "tags": [] }
-
-For MULTIPLE_SELECT:
-{ "type": "MULTIPLE_SELECT", "question": "...", "options": [{"id":"1","text":"A","isCorrect":true},{"id":"2","text":"B","isCorrect":true},{"id":"3","text":"C","isCorrect":false},{"id":"4","text":"D","isCorrect":false}], "explanation": "...", "category": "${category}", "difficulty": "${difficulty}", "points": ${difficulty === 'EASY' ? 1 : difficulty === 'MEDIUM' ? 2 : difficulty === 'HARD' ? 3 : 5}, "tags": [] }
-
-Generate exactly ${count} questions now:`;
+  const userPrompt = `Generate exactly ${count} ${difficulty} level questions about "${category}".
+Types: ${typeDescriptions}
+Return JSON array with ${count} questions:`;
 
   try {
-    logger.info({ model: settings.model, category, difficulty, count, questionTypes }, 'Calling OpenAI API');
+    // Calculate tokens: ~300 tokens per question for safety
+    const calculatedTokens = count * 300;
+    const maxTokens = Math.max(4096, calculatedTokens);
+    
+    logger.info({ model: settings.model, category, difficulty, count, questionTypes, maxTokens }, 'Calling OpenAI API');
     
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -1272,21 +1264,32 @@ Generate exactly ${count} questions now:`;
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        max_tokens: settings.maxTokens,
-        temperature: settings.temperature,
+        max_tokens: maxTokens,
+        temperature: settings.temperature || 0.7,
       }),
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
+      const error = await response.json().catch(() => ({})) as any;
+      debugLog(`[AI-QUESTIONS] OpenAI API error: ${response.status} - ${JSON.stringify(error)}`);
       logger.error({ status: response.status, error }, 'OpenAI API error');
       throw new Error(error.error?.message || 'OpenAI API request failed');
     }
 
-    const data = await response.json();
+    const data = await response.json() as any;
+    const finishReason = data.choices?.[0]?.finish_reason;
     const content = data.choices?.[0]?.message?.content;
     
+    debugLog(`[AI-QUESTIONS] OpenAI response - finishReason: ${finishReason}, contentLength: ${content?.length}`);
+    logger.info({ finishReason, contentLength: content?.length }, 'OpenAI response received');
+    
+    if (finishReason === 'length') {
+      debugLog(`[AI-QUESTIONS] WARNING: Response was truncated due to max_tokens limit`);
+      logger.warn('OpenAI response was truncated due to max_tokens limit');
+    }
+    
     if (!content) {
+      debugLog(`[AI-QUESTIONS] ERROR: No content in OpenAI response`);
       throw new Error('No content in OpenAI response');
     }
 
@@ -1305,10 +1308,12 @@ Generate exactly ${count} questions now:`;
 
     const questions: GeneratedQuestion[] = JSON.parse(cleanContent);
     
+    debugLog(`[AI-QUESTIONS] Successfully parsed ${questions.length} questions from OpenAI`);
     logger.info({ count: questions.length }, 'Successfully generated questions with OpenAI');
     
     return questions;
   } catch (error: any) {
+    debugLog(`[AI-QUESTIONS] Error in generateWithOpenAI: ${error.message}`);
     logger.error({ error: error.message }, 'Failed to generate questions with OpenAI');
     throw error;
   }
@@ -1329,25 +1334,35 @@ export class AIQuestionGeneratorService {
   ): Promise<GeneratedQuestion[]> {
     const { category, difficulty, count } = request;
     
+    debugLog(`[AI-QUESTIONS] Generating ${count} ${difficulty} questions for category: ${category}, tenant: ${tenantId}`);
     logger.info({ category, difficulty, count, tenantId }, 'Generating AI questions');
     
     // Check if OpenAI is configured for this tenant
     if (tenantId) {
       const openAISettings = await getTenantOpenAISettings(tenantId);
+      debugLog(`[AI-QUESTIONS] OpenAI settings: enabled=${openAISettings?.enabled}, hasApiKey=${!!openAISettings?.apiKey}, model=${openAISettings?.model}`);
       
       if (openAISettings?.enabled && openAISettings?.apiKey) {
+        debugLog(`[AI-QUESTIONS] Using OpenAI with model: ${openAISettings.model}`);
         logger.info({ tenantId, model: openAISettings.model }, 'Using OpenAI for question generation');
         
         try {
           const questions = await generateWithOpenAI(openAISettings, request);
+          debugLog(`[AI-QUESTIONS] OpenAI returned ${questions.length} questions`);
           if (questions.length > 0) {
             return questions;
           }
+          debugLog(`[AI-QUESTIONS] OpenAI returned no questions, falling back to predefined database`);
           logger.warn('OpenAI returned no questions, falling back to predefined database');
         } catch (error: any) {
+          debugLog(`[AI-QUESTIONS] OpenAI error: ${error.message}`);
           logger.error({ error: error.message }, 'OpenAI generation failed, falling back to predefined database');
         }
+      } else {
+        debugLog(`[AI-QUESTIONS] OpenAI not configured or disabled, using predefined database`);
       }
+    } else {
+      debugLog(`[AI-QUESTIONS] No tenantId provided, using predefined database`);
     }
     
     // Fallback: Get questions from our predefined database

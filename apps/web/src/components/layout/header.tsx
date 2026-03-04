@@ -24,6 +24,7 @@ interface HeaderProps {
 
 export function Header({ title }: HeaderProps) {
   const { user, logout } = useAuth();
+  const isTenantOwner = user?.roles?.includes('tenant_admin') ?? false;
   const { theme, setTheme } = useTheme();
   const [searchOpen, setSearchOpen] = React.useState(false);
   const displayName = user ? [user.firstName, user.lastName].filter(Boolean).join(' ').trim() : '';
@@ -95,13 +96,19 @@ export function Header({ title }: HeaderProps) {
         {/* User Menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+            <Button variant="ghost" className="relative h-auto rounded-full px-2 py-1.5 gap-2">
               <Avatar className="h-8 w-8">
                 <AvatarImage src={user?.avatar || ''} alt={displayName || user?.email || 'User'} />
                 <AvatarFallback>
                   {initials}
                 </AvatarFallback>
               </Avatar>
+              <div className="hidden sm:flex flex-col items-start text-left">
+                <span className="text-sm font-medium leading-tight">{displayName || user?.email || 'User'}</span>
+                <span className="text-[11px] leading-tight text-muted-foreground capitalize">
+                  {(user?.roles?.[0] || 'user').replace(/_/g, ' ')}
+                </span>
+              </div>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-56" align="end" forceMount>
@@ -116,12 +123,14 @@ export function Header({ title }: HeaderProps) {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
-              <Link href="/profile">
-                <User className="mr-2 h-4 w-4" />
-                Profile
-              </Link>
-            </DropdownMenuItem>
+            {!isTenantOwner && (
+              <DropdownMenuItem asChild>
+                <Link href="/my-360">
+                  <User className="mr-2 h-4 w-4" />
+                  My 360° Profile
+                </Link>
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem asChild>
               <Link href="/settings">
                 <Settings className="mr-2 h-4 w-4" />

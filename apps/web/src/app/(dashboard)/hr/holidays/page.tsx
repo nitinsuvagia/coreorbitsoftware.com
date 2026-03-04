@@ -17,6 +17,13 @@ import {
   Users,
   List,
   CalendarDays,
+  Upload,
+  Download,
+  FileSpreadsheet,
+  CheckCircle2,
+  XCircle,
+  AlertTriangle,
+  Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -69,14 +76,20 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { get } from '@/lib/api/client';
+import { usePermissions } from '@/hooks/use-permissions';
 import type { OrganizationSettings } from '@/app/(dashboard)/organization/types';
+import { AIHolidayImportDialog } from '@/components/holidays/ai-holiday-import-dialog';
 import {
   useHolidays,
   useCreateHoliday,
   useUpdateHoliday,
   useDeleteHoliday,
+  usePreviewHolidayImport,
+  useImportHolidays,
+  downloadHolidayImportTemplate,
   Holiday,
   CreateHolidayInput,
+  HolidayImportPreview,
 } from '@/hooks/use-holidays';
 
 const HOLIDAY_TYPES = [
@@ -114,9 +127,18 @@ export default function HolidaysPage() {
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [isAIImportDialogOpen, setIsAIImportDialogOpen] = useState(false);
   const [editingHoliday, setEditingHoliday] = useState<Holiday | null>(null);
   const [deletingHoliday, setDeletingHoliday] = useState<Holiday | null>(null);
   const [formData, setFormData] = useState<HolidayFormData>(initialFormData);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPreview, setImportPreview] = useState<HolidayImportPreview | null>(null);
+  const [isDownloadingTemplate, setIsDownloadingTemplate] = useState(false);
+
+  // Permission check - only users with holidays:write can add/edit/delete
+  const { can } = usePermissions();
+  const canWriteHolidays = can('holidays:write');
 
   // Fetch organization settings for enabled holiday types
   const { data: orgSettingsResponse } = useQuery({
@@ -139,6 +161,8 @@ export default function HolidaysPage() {
   const createHoliday = useCreateHoliday();
   const updateHoliday = useUpdateHoliday();
   const deleteHoliday = useDeleteHoliday();
+  const previewImport = usePreviewHolidayImport();
+  const importHolidays = useImportHolidays();
 
   // Filter holidays by type
   const filteredHolidays = useMemo(() => {
@@ -261,6 +285,55 @@ export default function HolidaysPage() {
     setIsDeleteDialogOpen(true);
   };
 
+  // Import handlers
+  const handleDownloadTemplate = async () => {
+    try {
+      setIsDownloadingTemplate(true);
+      await downloadHolidayImportTemplate();
+      toast.success('Template downloaded successfully');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to download template');
+    } finally {
+      setIsDownloadingTemplate(false);
+    }
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImportFile(file);
+    setImportPreview(null);
+
+    try {
+      const preview = await previewImport.mutateAsync(file);
+      setImportPreview(preview);
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to parse file');
+      setImportFile(null);
+    }
+  };
+
+  const handleImport = async () => {
+    if (!importFile) return;
+
+    try {
+      const result = await importHolidays.mutateAsync({ file: importFile, skipDuplicates: true });
+      toast.success(`Successfully imported ${result.created} holidays`);
+      setIsImportDialogOpen(false);
+      setImportFile(null);
+      setImportPreview(null);
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to import holidays');
+    }
+  };
+
+  const handleCloseImportDialog = () => {
+    setIsImportDialogOpen(false);
+    setImportFile(null);
+    setImportPreview(null);
+  };
+
   const getTypeBadge = (type: string) => {
     const typeConfig = HOLIDAY_TYPES.find((t) => t.value === type);
     return (
@@ -297,60 +370,110 @@ export default function HolidaysPage() {
             Manage company holidays and special events
           </p>
         </div>
-        <Button onClick={() => handleOpenDialog()}>
-          <Plus className="mr-2 h-4 w-4" />
-          Add Holiday
-        </Button>
+        <div className="flex items-center gap-2">
+          {canWriteHolidays && (
+            <>
+              <Button variant="outline" onClick={() => setIsImportDialogOpen(true)}>
+                <Upload className="mr-2 h-4 w-4" />
+                Import
+              </Button>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      onClick={() => setIsAIImportDialogOpen(true)}
+                      className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white border-0"
+                    >
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      AI Import
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Generate holidays using AI</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <Button onClick={() => handleOpenDialog()}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Holiday
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Holidays</CardTitle>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {isLoading ? <Skeleton className="h-8 w-16" /> : stats.total}
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-muted-foreground">Total Holidays</p>
+                <div className="flex items-baseline gap-2 mt-2">
+                  <h3 className="text-3xl font-bold">
+                    {isLoading ? <Skeleton className="h-9 w-16" /> : stats.total}
+                  </h3>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">For {selectedYear}</p>
+              </div>
+              <div className="p-4 rounded-full bg-blue-500/10">
+                <Calendar className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground">For {selectedYear}</p>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Public Holidays</CardTitle>
-            <Gift className="h-4 w-4 text-green-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">
-              {isLoading ? <Skeleton className="h-8 w-16" /> : stats.public}
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-muted-foreground">Public Holidays</p>
+                <div className="flex items-baseline gap-2 mt-2">
+                  <h3 className="text-3xl font-bold text-rose-600">
+                    {isLoading ? <Skeleton className="h-9 w-16" /> : stats.public}
+                  </h3>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Mandatory offs</p>
+              </div>
+              <div className="p-4 rounded-full bg-rose-500/10">
+                <Gift className="h-6 w-6 text-rose-600 dark:text-rose-400" />
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground">Mandatory offs</p>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Optional Holidays</CardTitle>
-            <Building2 className="h-4 w-4 text-blue-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-blue-600">
-              {isLoading ? <Skeleton className="h-8 w-16" /> : stats.optional}
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-muted-foreground">Optional Holidays</p>
+                <div className="flex items-baseline gap-2 mt-2">
+                  <h3 className="text-3xl font-bold text-amber-600">
+                    {isLoading ? <Skeleton className="h-9 w-16" /> : stats.optional}
+                  </h3>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Choose any</p>
+              </div>
+              <div className="p-4 rounded-full bg-amber-500/10">
+                <Building2 className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground">Choose any</p>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Upcoming</CardTitle>
-            <Users className="h-4 w-4 text-amber-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-amber-600">
-              {isLoading ? <Skeleton className="h-8 w-16" /> : stats.upcoming}
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-muted-foreground">Upcoming</p>
+                <div className="flex items-baseline gap-2 mt-2">
+                  <h3 className="text-3xl font-bold text-green-600">
+                    {isLoading ? <Skeleton className="h-9 w-16" /> : stats.upcoming}
+                  </h3>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Remaining this year</p>
+              </div>
+              <div className="p-4 rounded-full bg-green-500/10">
+                <CalendarDays className="h-6 w-6 text-green-600 dark:text-green-400" />
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground">Remaining this year</p>
           </CardContent>
         </Card>
       </div>
@@ -606,7 +729,7 @@ export default function HolidaysPage() {
                     <th className="text-left p-4 font-medium">Holiday Name</th>
                     <th className="text-left p-4 font-medium">Type</th>
                     <th className="text-left p-4 font-medium hidden md:table-cell">Description</th>
-                    <th className="text-right p-4 font-medium">Actions</th>
+                    {canWriteHolidays && <th className="text-right p-4 font-medium">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -616,7 +739,7 @@ export default function HolidaysPage() {
                       <td className="p-4"><Skeleton className="h-4 w-32" /></td>
                       <td className="p-4"><Skeleton className="h-5 w-20" /></td>
                       <td className="p-4 hidden md:table-cell"><Skeleton className="h-4 w-48" /></td>
-                      <td className="p-4 text-right"><Skeleton className="h-8 w-16 ml-auto" /></td>
+                      {canWriteHolidays && <td className="p-4 text-right"><Skeleton className="h-8 w-16 ml-auto" /></td>}
                     </tr>
                   ))}
                 </tbody>
@@ -626,14 +749,16 @@ export default function HolidaysPage() {
                 <div className="rounded-full bg-primary/10 p-6 mb-4">
                   <Calendar className="h-16 w-16 text-primary" />
                 </div>
-                <h3 className="text-xl font-semibold mb-2">No Holidays Found</h3>
+                <h3 className="text-xl font-semibold mb-2">No holidays found</h3>
                 <p className="text-muted-foreground text-center max-w-md mb-6">
                   No holidays found for {selectedYear}. Add holidays to keep your team informed.
                 </p>
-                <Button onClick={() => handleOpenDialog()}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add First Holiday
-                </Button>
+                {canWriteHolidays && (
+                  <Button onClick={() => handleOpenDialog()}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add First Holiday
+                  </Button>
+                )}
               </div>
             ) : (
               <table className="w-full">
@@ -643,7 +768,7 @@ export default function HolidaysPage() {
                     <th className="text-left p-4 font-medium">Holiday Name</th>
                     <th className="text-left p-4 font-medium">Type</th>
                     <th className="text-left p-4 font-medium hidden md:table-cell">Description</th>
-                    <th className="text-right p-4 font-medium">Actions</th>
+                    {canWriteHolidays && <th className="text-right p-4 font-medium">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -679,24 +804,26 @@ export default function HolidaysPage() {
                       <td className="p-4 hidden md:table-cell text-muted-foreground">
                         {holiday.description || '-'}
                       </td>
-                      <td className="p-4 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleOpenDialog(holiday)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => openDeleteDialog(holiday)}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
-                      </td>
+                      {canWriteHolidays && (
+                        <td className="p-4 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleOpenDialog(holiday)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openDeleteDialog(holiday)}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -853,6 +980,205 @@ export default function HolidaysPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Import Dialog */}
+      <Dialog open={isImportDialogOpen} onOpenChange={handleCloseImportDialog}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="h-5 w-5" />
+              Import Holidays from Excel
+            </DialogTitle>
+            <DialogDescription>
+              Upload an Excel file (.xlsx) to import multiple holidays at once.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {/* Download Template Button */}
+            <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
+              <div className="flex items-center gap-3">
+                <Download className="h-5 w-5 text-muted-foreground" />
+                <div>
+                  <p className="font-medium">Download Sample Template</p>
+                  <p className="text-sm text-muted-foreground">
+                    Use this template to ensure correct formatting
+                  </p>
+                </div>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleDownloadTemplate}
+                disabled={isDownloadingTemplate}
+              >
+                {isDownloadingTemplate ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-2 h-4 w-4" />
+                )}
+                Download
+              </Button>
+            </div>
+
+            {/* File Upload */}
+            <div className="space-y-2">
+              <Label htmlFor="import-file">Select Excel File</Label>
+              <Input
+                id="import-file"
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleFileSelect}
+                disabled={previewImport.isPending}
+              />
+              <p className="text-xs text-muted-foreground">
+                Supported formats: .xlsx, .xls (max 5MB)
+              </p>
+            </div>
+
+            {/* Loading State */}
+            {previewImport.isPending && (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                <span className="ml-2 text-muted-foreground">Parsing file...</span>
+              </div>
+            )}
+
+            {/* Preview Results */}
+            {importPreview && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-950/30 rounded-lg">
+                    <CheckCircle2 className="h-5 w-5 text-green-600" />
+                    <div>
+                      <p className="font-semibold text-green-700 dark:text-green-400">{importPreview.valid}</p>
+                      <p className="text-xs text-green-600 dark:text-green-500">Valid</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg">
+                    <AlertTriangle className="h-5 w-5 text-amber-600" />
+                    <div>
+                      <p className="font-semibold text-amber-700 dark:text-amber-400">{importPreview.duplicates}</p>
+                      <p className="text-xs text-amber-600 dark:text-amber-500">Duplicates</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-950/30 rounded-lg">
+                    <XCircle className="h-5 w-5 text-red-600" />
+                    <div>
+                      <p className="font-semibold text-red-700 dark:text-red-400">{importPreview.invalid}</p>
+                      <p className="text-xs text-red-600 dark:text-red-500">Invalid</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Preview Table */}
+                {importPreview.preview.length > 0 && (
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="bg-muted/50 px-4 py-2 border-b">
+                      <p className="font-medium text-sm">Preview (first 10 records)</p>
+                    </div>
+                    <div className="max-h-[200px] overflow-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Name</TableHead>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Type</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {importPreview.preview.map((h, i) => (
+                            <TableRow key={i}>
+                              <TableCell className="font-medium">{h.name}</TableCell>
+                              <TableCell>{h.date}</TableCell>
+                              <TableCell>
+                                {getTypeBadge(h.type)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Duplicate Details */}
+                {importPreview.duplicateDetails.length > 0 && (
+                  <div className="border border-amber-200 dark:border-amber-800 rounded-lg overflow-hidden">
+                    <div className="bg-amber-50 dark:bg-amber-950/30 px-4 py-2 border-b border-amber-200 dark:border-amber-800">
+                      <p className="font-medium text-sm text-amber-800 dark:text-amber-300">
+                        Duplicate Holidays (will be skipped)
+                      </p>
+                    </div>
+                    <div className="max-h-[150px] overflow-auto p-2">
+                      {importPreview.duplicateDetails.slice(0, 5).map((d, i) => (
+                        <div key={i} className="flex items-center justify-between py-1 px-2 text-sm">
+                          <span>{d.holiday.name}</span>
+                          <span className="text-muted-foreground">{d.holiday.date}</span>
+                        </div>
+                      ))}
+                      {importPreview.duplicateDetails.length > 5 && (
+                        <p className="text-xs text-muted-foreground px-2 py-1">
+                          ...and {importPreview.duplicateDetails.length - 5} more
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Invalid Details */}
+                {importPreview.invalidDetails.length > 0 && (
+                  <div className="border border-red-200 dark:border-red-800 rounded-lg overflow-hidden">
+                    <div className="bg-red-50 dark:bg-red-950/30 px-4 py-2 border-b border-red-200 dark:border-red-800">
+                      <p className="font-medium text-sm text-red-800 dark:text-red-300">
+                        Invalid Rows (will be skipped)
+                      </p>
+                    </div>
+                    <div className="max-h-[150px] overflow-auto p-2">
+                      {importPreview.invalidDetails.slice(0, 5).map((inv, i) => (
+                        <div key={i} className="py-1 px-2 text-sm">
+                          <span className="text-red-600">Row {inv.row}:</span>{' '}
+                          <span className="text-muted-foreground">{inv.message}</span>
+                        </div>
+                      ))}
+                      {importPreview.invalidDetails.length > 5 && (
+                        <p className="text-xs text-muted-foreground px-2 py-1">
+                          ...and {importPreview.invalidDetails.length - 5} more
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={handleCloseImportDialog}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleImport}
+              disabled={!importPreview || importPreview.valid === 0 || importHolidays.isPending}
+            >
+              {importHolidays.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Import {importPreview?.valid || 0} Holidays
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* AI Holiday Import Dialog */}
+      <AIHolidayImportDialog
+        open={isAIImportDialogOpen}
+        onOpenChange={setIsAIImportDialogOpen}
+        onImportSuccess={() => {
+          // Refresh holidays list
+        }}
+        defaultYear={selectedYear}
+      />
     </div>
   );
 }

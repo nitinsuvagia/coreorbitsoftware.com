@@ -130,7 +130,19 @@ async function fetchTenantProfile(tenantSlug: string, userId: string) {
           reportingManager: { select: { firstName: true, lastName: true } },
         },
       },
-      roles: { include: { role: true } },
+      roles: {
+        include: {
+          role: {
+            include: {
+              permissions: {
+                include: {
+                  permission: true,
+                },
+              },
+            },
+          },
+        },
+      },
     },
   });
 
@@ -143,6 +155,16 @@ async function fetchTenantProfile(tenantSlug: string, userId: string) {
   const managerName = employee?.reportingManager
     ? buildDisplayName(employee.reportingManager.firstName, employee.reportingManager.lastName)
     : undefined;
+
+  // Extract permissions from roles
+  const permissionSet = new Set<string>();
+  for (const userRole of (user.roles || [])) {
+    for (const rp of (userRole.role.permissions || [])) {
+      if (rp.permission) {
+        permissionSet.add(`${rp.permission.resource}:${rp.permission.action}`);
+      }
+    }
+  }
 
   return {
     id: user.id,
@@ -163,6 +185,7 @@ async function fetchTenantProfile(tenantSlug: string, userId: string) {
     joinDate: employee?.joinDate ? employee.joinDate.toISOString() : undefined,
     employeeId: employee?.employeeCode || undefined,
     roles: user.roles?.map((userRole: any) => userRole.role.slug) || [],
+    permissions: Array.from(permissionSet),
   };
 }
 
@@ -764,6 +787,7 @@ router.get('/me', async (req: Request, res: Response, next: NextFunction) => {
         avatar: tenantProfile.avatar,
         role,
         roles: tenantProfile.roles,
+        permissions: tenantProfile.permissions || [],
         tenantId: tenantInfo.id,
         tenantSlug: tenantInfo.slug,
         isPlatformAdmin: false,
@@ -1234,6 +1258,176 @@ router.post('/sso/configure', async (req: Request, res: Response, next: NextFunc
     res.status(201).json({
       success: true,
       data: { providerId: provider.id, type: provider.type },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * Get full SSO configuration (Admin only)
+ * GET /sso/config
+ */
+router.get('/sso/config', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const tenantId = req.headers['x-tenant-id'] as string;
+    
+    if (!tenantId) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'MISSING_TENANT', message: 'Tenant context required.' },
+      });
+    }
+
+    const provider = await ssoService.getSSOProvider(tenantId);
+
+    if (!provider) {
+      return res.json({
+        success: true,
+        data: { provider: null },
+      });
+    }
+
+    // Mask sensitive fields
+    const maskedProvider = {
+      ...provider,
+      config: {
+        ...provider.config,
+        // Mask clientSecret if present
+        ...(('clientSecret' in provider.config) && {
+          clientSecret: '********',
+        }),
+        // Mask bindCredentials for LDAP
+        ...(('bindCredentials' in provider.config) && {
+          bindCredentials: '********',
+        }),
+      },
+    };
+
+    res.json({
+      success: true,
+      data: { provider: maskedProvider },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * Delete SSO provider (Admin only)
+ * DELETE /sso/configure/:providerId
+ */
+router.delete('/sso/configure/:providerId', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const tenantId = req.headers['x-tenant-id'] as string;
+    const { providerId } = req.params;
+    
+    if (!tenantId) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'MISSING_TENANT', message: 'Tenant context required.' },
+      });
+    }
+
+    // If providerId is 'current', delete the first enabled provider
+    const actualProviderId = providerId === 'current' 
+      ? (await ssoService.getSSOProvider(tenantId))?.id
+      : providerId;
+
+    if (!actualProviderId) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'SSO provider not found.' },
+      });
+    }
+
+    await ssoService.deleteSSOProvider(tenantId, actualProviderId);
+
+    res.json({
+      success: true,
+      data: { deleted: true },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * Test SSO configuration (Admin only)
+ * POST /sso/test
+ */
+router.post('/sso/test', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const tenantId = req.headers['x-tenant-id'] as string;
+    const { type } = req.body;
+    
+    if (!tenantId) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'MISSING_TENANT', message: 'Tenant context required.' },
+      });
+    }
+
+    const provider = await ssoService.getSSOProvider(tenantId);
+
+    if (!provider) {
+      return res.json({
+        success: false,
+        message: 'No SSO provider configured.',
+      });
+    }
+
+    if (type && provider.type !== type) {
+      return res.json({
+        success: false,
+        message: `Provider type mismatch. Expected ${type}, found ${provider.type}.`,
+      });
+    }
+
+    // Basic validation based on provider type
+    if (provider.type === 'oauth' || provider.type === 'oidc') {
+      const config = provider.config as any;
+      if (!config.clientId || !config.clientSecret) {
+        return res.json({
+          success: false,
+          message: 'OAuth configuration incomplete: missing clientId or clientSecret.',
+        });
+      }
+      
+      // Try to validate the authorization URL
+      try {
+        new URL(config.authorizationUrl || config.issuer);
+      } catch {
+        return res.json({
+          success: false,
+          message: 'Invalid authorization URL.',
+        });
+      }
+    }
+
+    if (provider.type === 'saml') {
+      const config = provider.config as any;
+      if (!config.entryPoint || !config.cert) {
+        return res.json({
+          success: false,
+          message: 'SAML configuration incomplete: missing entryPoint or certificate.',
+        });
+      }
+    }
+
+    if (provider.type === 'ldap') {
+      const config = provider.config as any;
+      if (!config.url || !config.baseDN) {
+        return res.json({
+          success: false,
+          message: 'LDAP configuration incomplete: missing URL or baseDN.',
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `${provider.name} configuration is valid.`,
     });
   } catch (error) {
     next(error);

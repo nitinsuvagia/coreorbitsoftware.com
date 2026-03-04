@@ -78,6 +78,8 @@ export default function TenantsPage() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Tenant | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteError, setDeleteError] = useState('');
 
   // Debounce search input
   useEffect(() => {
@@ -155,19 +157,27 @@ export default function TenantsPage() {
 
   const handleDeleteTenant = async () => {
     if (!deleteTarget) return;
+    if (!deletePassword) {
+      setDeleteError('Password is required to delete a tenant');
+      return;
+    }
     setDeleting(true);
+    setDeleteError('');
     try {
-      const response = await apiClient.delete(`/api/v1/platform/tenants/${deleteTarget.id}`);
+      const response = await apiClient.delete(`/api/v1/platform/tenants/${deleteTarget.id}`, {
+        data: { password: deletePassword },
+      });
       if (response.success) {
-        toast.success('Tenant deleted');
+        toast.success(response.message || 'Tenant permanently deleted');
         setDeleteTarget(null);
+        setDeletePassword('');
         fetchTenants();
       } else {
-        toast.error(response.error?.message || 'Failed to delete tenant');
+        setDeleteError(response.error?.message || 'Failed to delete tenant');
       }
     } catch (err) {
       console.error('Error deleting tenant:', err);
-      toast.error('Failed to delete tenant');
+      setDeleteError('Failed to delete tenant');
     } finally {
       setDeleting(false);
     }
@@ -477,24 +487,56 @@ export default function TenantsPage() {
         </div>
       )}
 
-      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) { setDeleteTarget(null); setDeletePassword(''); setDeleteError(''); } }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete tenant</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will mark the tenant as deleted and revoke access. This action can be reversed by
-              an administrator in the database.
+            <AlertDialogTitle className="text-destructive flex items-center gap-2">
+              <AlertCircle className="h-5 w-5" />
+              Permanently Delete Tenant
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-destructive font-medium">
+              WARNING: This action is IRREVERSIBLE. This will permanently delete:
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="rounded-lg border bg-muted/40 px-4 py-3 text-sm">
-            <div className="font-medium">{deleteTarget?.name}</div>
-            <div className="text-muted-foreground">{deleteTarget?.slug}</div>
+          <div className="space-y-3">
+            <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1 bg-destructive/10 p-3 rounded-lg border border-destructive/20">
+              <li>All employee data and records</li>
+              <li>All user accounts</li>
+              <li>All documents and files</li>
+              <li>All attendance, leave, and payroll data</li>
+              <li>The entire tenant database</li>
+              <li>All subscription and billing history</li>
+            </ul>
+            <div className="rounded-lg border bg-muted/40 px-4 py-3 text-sm">
+              <div className="font-medium">{deleteTarget?.name}</div>
+              <div className="text-muted-foreground">{deleteTarget?.slug}</div>
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="delete-password" className="text-sm font-medium">
+                Enter your Platform Admin password to confirm:
+              </label>
+              <Input
+                id="delete-password"
+                type="password"
+                placeholder="Your password"
+                value={deletePassword}
+                onChange={(e) => { setDeletePassword(e.target.value); setDeleteError(''); }}
+                disabled={deleting}
+              />
+              {deleteError && (
+                <p className="text-sm text-destructive">{deleteError}</p>
+              )}
+            </div>
           </div>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteTenant} disabled={deleting}>
-              {deleting ? 'Deleting...' : 'Delete tenant'}
-            </AlertDialogAction>
+            <AlertDialogCancel disabled={deleting} onClick={() => { setDeletePassword(''); setDeleteError(''); }}>Cancel</AlertDialogCancel>
+            <Button 
+              variant="destructive" 
+              onClick={handleDeleteTenant} 
+              disabled={deleting || !deletePassword}
+            >
+              {deleting ? 'Deleting...' : 'Permanently Delete Tenant'}
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

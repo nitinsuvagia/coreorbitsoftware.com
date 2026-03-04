@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import Link from 'next/link';
 import {
   useFolderContents,
   useFolderBreadcrumbs,
@@ -137,6 +138,7 @@ function safeFormat(dateValue: string | Date | null | undefined, formatStr: stri
 }
 
 import {
+  ArrowLeft,
   FolderPlus,
   Upload,
   Search,
@@ -207,9 +209,9 @@ function getFolderColorClass(color?: string | null) {
   return FOLDER_COLORS.find(c => c.value === color)?.class || FOLDER_COLORS[0].class;
 }
 
-// Check if folder is Company Master
+// Check if folder is Company Master or Company Documents
 function isCompanyMasterFolder(folderName: string): boolean {
-  return folderName === 'Company Master';
+  return folderName === 'Company Master' || folderName === 'Company Documents';
 }
 
 // Check if folder is Employee Documents
@@ -231,6 +233,7 @@ const COMPANY_MASTER_SUBFOLDERS = [
   'Legal Documents',
   'Training Materials',
   'Company Assets',
+  'HR Documents',
 ];
 
 // Default subfolder names under Employee folders
@@ -244,12 +247,17 @@ const EMPLOYEE_DOCUMENT_SUBFOLDERS = [
   'Exit Documents',
 ];
 
+// Check if folder is On-Boarding
+function isOnBoardingFolder(folderName: string): boolean {
+  return folderName === 'On-Boarding';
+}
+
 // Check if a folder is a protected default folder that cannot be moved, deleted, or renamed
 function isProtectedDefaultFolder(folder: { name: string; employee?: any; path?: string }): boolean {
   const folderName = folder.name;
   
   // Root folders are protected
-  if (isCompanyMasterFolder(folderName) || isEmployeeDocumentsFolder(folderName)) {
+  if (isCompanyMasterFolder(folderName) || isEmployeeDocumentsFolder(folderName) || isOnBoardingFolder(folderName)) {
     return true;
   }
   
@@ -797,7 +805,6 @@ function FolderCard({
 }) {
   // Defensive check - return null if folder is invalid
   if (!folder || !folder.id) {
-    console.warn('FolderCard: Invalid folder data', folder);
     return null;
   }
   
@@ -1869,6 +1876,23 @@ export default function DocumentsPage() {
           "border-r bg-muted/30 flex flex-col transition-all duration-300 h-full",
           sidebarCollapsed ? "w-16" : "w-64"
         )}>
+          {/* Back to Portal */}
+          <div className="p-4 border-b">
+            <Link href="/">
+              <Button 
+                variant="ghost" 
+                size="sm"
+                className={cn(
+                  "h-9 px-2 gap-1.5 text-muted-foreground hover:text-foreground font-medium",
+                  sidebarCollapsed ? "w-9 px-0 justify-center" : "w-full justify-start"
+                )}
+              >
+                <ArrowLeft className="h-4 w-4 shrink-0" />
+                {!sidebarCollapsed && <span>Back to Portal</span>}
+              </Button>
+            </Link>
+          </div>
+          
           {/* New Button */}
           <div className="p-3 border-b">
             <DropdownMenu>

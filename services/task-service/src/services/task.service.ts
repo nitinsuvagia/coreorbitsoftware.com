@@ -83,21 +83,21 @@ async function generateTaskNumber(
   prisma: PrismaClient,
   projectId: string
 ): Promise<string> {
-  const project = await prisma.project.findUnique({
+  const project = await (prisma as any).project.findUnique({
     where: { id: projectId },
     select: { code: true },
-  });
+  }) as any;
   
   if (!project?.code) {
     throw new Error('Project not found');
   }
   
   // Get the last task number for this project
-  const lastTask = await prisma.task.findFirst({
-    where: { projectId },
+  const lastTask = await (prisma as any).task.findFirst({
+    where: { projectId } as any,
     orderBy: { taskNumber: 'desc' },
     select: { taskNumber: true },
-  });
+  }) as any;
   
   let nextNum = 1;
   if (lastTask?.taskNumber) {
@@ -114,14 +114,14 @@ async function calculateCompletionPercentage(
   prisma: PrismaClient,
   taskId: string
 ): Promise<number> {
-  const subtasks = await prisma.task.findMany({
-    where: { parentTaskId: taskId },
+  const subtasks = await (prisma as any).task.findMany({
+    where: { parentTaskId: taskId } as any,
     select: { status: true },
-  });
+  }) as any[];
   
   if (subtasks.length === 0) return 0;
   
-  const completed = subtasks.filter(s => s.status === 'done').length;
+  const completed = subtasks.filter((s: any) => s.status === 'done').length;
   return Math.round((completed / subtasks.length) * 100);
 }
 
@@ -146,7 +146,7 @@ export async function createTask(
   
   // Validate parent task if provided
   if (input.parentTaskId) {
-    const parentTask = await prisma.task.findUnique({
+    const parentTask = await (prisma as any).task.findUnique({
       where: { id: input.parentTaskId },
     });
     
@@ -155,8 +155,8 @@ export async function createTask(
     }
     
     // Check max subtasks limit
-    const subtaskCount = await prisma.task.count({
-      where: { parentTaskId: input.parentTaskId },
+    const subtaskCount = await (prisma as any).task.count({
+      where: { parentTaskId: input.parentTaskId } as any,
     });
     
     if (subtaskCount >= config.task.maxSubtasksPerTask) {
@@ -165,7 +165,7 @@ export async function createTask(
   }
   
   // Create the task
-  const task = await prisma.task.create({
+  const task = await (prisma as any).task.create({
     data: {
       id,
       projectId: input.projectId,
@@ -183,7 +183,7 @@ export async function createTask(
       customFields: input.customFields || {},
       createdBy: userId,
       updatedBy: userId,
-    },
+    } as any,
     include: {
       project: { select: { id: true, name: true, code: true } },
       reporter: {
@@ -199,7 +199,7 @@ export async function createTask(
   if (input.assigneeIds?.length) {
     const limitedAssignees = input.assigneeIds.slice(0, config.task.maxAssigneesPerTask);
     
-    await prisma.taskAssignee.createMany({
+    await (prisma as any).taskAssignee.createMany({
       data: limitedAssignees.map((employeeId, index) => ({
         id: uuidv4(),
         taskId: id,
@@ -212,14 +212,14 @@ export async function createTask(
   }
   
   // Log activity
-  await prisma.taskActivity.create({
+  await (prisma as any).taskActivity.create({
     data: {
       id: uuidv4(),
       taskId: id,
       userId,
       action: 'created',
       details: { title: input.title },
-    },
+    } as any,
   });
   
   // Emit event
@@ -237,6 +237,20 @@ export async function createTask(
     tenantContext
   );
   
+  // Publish to topic for notification service
+  if (input.assigneeIds?.length) {
+    await (eventBus as any).publishToTopic('task-assigned', {
+      taskId: id,
+      taskNumber,
+      taskTitle: input.title,
+      projectId: input.projectId,
+      projectName: task.project?.name,
+      assigneeIds: input.assigneeIds,
+      reporterId: input.reporterId,
+      dueDate: input.dueDate,
+    }, tenantContext);
+  }
+  
   logger.info({ taskId: id, taskNumber, projectId: input.projectId }, 'Task created');
   
   return task;
@@ -249,7 +263,7 @@ export async function getTaskById(
   prisma: PrismaClient,
   id: string
 ): Promise<any | null> {
-  const task = await prisma.task.findUnique({
+  const task = await (prisma as any).task.findUnique({
     where: { id },
     include: {
       project: { select: { id: true, name: true, code: true } },
@@ -311,8 +325,8 @@ export async function getTaskById(
       _count: {
         select: { comments: true, attachments: true, activities: true },
       },
-    },
-  });
+    } as any,
+  }) as any;
   
   if (!task) return null;
   
@@ -337,10 +351,10 @@ export async function getTaskByNumber(
   prisma: PrismaClient,
   taskNumber: string
 ): Promise<any | null> {
-  const task = await prisma.task.findFirst({
-    where: { taskNumber },
+  const task = await (prisma as any).task.findFirst({
+    where: { taskNumber } as any,
     select: { id: true },
-  });
+  }) as any;
   
   if (!task) return null;
   
@@ -359,10 +373,10 @@ export async function updateTask(
 ): Promise<any> {
   const eventBus = getEventBus('task-service');
   
-  const existing = await prisma.task.findUnique({
+  const existing = await (prisma as any).task.findUnique({
     where: { id },
-    include: { assignees: { where: { isActive: true } } },
-  });
+    include: { assignees: { where: { isActive: true } } } as any,
+  }) as any;
   
   if (!existing) {
     throw new Error('Task not found');
@@ -419,32 +433,32 @@ export async function updateTask(
   if (input.customFields) data.customFields = input.customFields;
   
   // Update the task
-  const task = await prisma.task.update({
+  const task = await (prisma as any).task.update({
     where: { id },
     data,
     include: {
       project: { select: { id: true, name: true } },
     },
-  });
+  }) as any;
   
   // Handle assignee changes
   if (input.assigneeIds) {
-    const currentAssigneeIds = existing.assignees.map(a => a.employeeId);
+    const currentAssigneeIds = existing.assignees.map((a: any) => a.employeeId);
     const newAssigneeIds = input.assigneeIds.slice(0, config.task.maxAssigneesPerTask);
     
     const toAdd = newAssigneeIds.filter(id => !currentAssigneeIds.includes(id));
-    const toRemove = currentAssigneeIds.filter(id => !newAssigneeIds.includes(id));
+    const toRemove = currentAssigneeIds.filter((id: string) => !newAssigneeIds.includes(id));
     
     if (toRemove.length > 0) {
-      await prisma.taskAssignee.updateMany({
-        where: { taskId: id, employeeId: { in: toRemove } },
+      await (prisma as any).taskAssignee.updateMany({
+        where: { taskId: id, employeeId: { in: toRemove } } as any,
         data: { isActive: false, unassignedAt: new Date() },
       });
       changes.assignees = { from: 'removed', to: toRemove.length };
     }
     
     if (toAdd.length > 0) {
-      await prisma.taskAssignee.createMany({
+      await (prisma as any).taskAssignee.createMany({
         data: toAdd.map((employeeId, index) => ({
           id: uuidv4(),
           taskId: id,
@@ -460,14 +474,14 @@ export async function updateTask(
   
   // Log activity if there were changes
   if (Object.keys(changes).length > 0) {
-    await prisma.taskActivity.create({
+    await (prisma as any).taskActivity.create({
       data: {
         id: uuidv4(),
         taskId: id,
         userId,
         action: 'updated',
         details: { changes },
-      },
+      } as any,
     });
     
     // Emit event for status changes
@@ -491,11 +505,11 @@ export async function updateTask(
   
   // Auto-close parent if all subtasks done
   if (input.status === 'done' && existing.parentTaskId && config.task.autoCloseParent) {
-    const allSubtasksDone = await prisma.task.count({
+    const allSubtasksDone = await (prisma as any).task.count({
       where: {
         parentTaskId: existing.parentTaskId,
         status: { not: 'done' },
-      },
+      } as any,
     }) === 0;
     
     if (allSubtasksDone) {
@@ -519,10 +533,10 @@ export async function deleteTask(
   prisma: PrismaClient,
   id: string
 ): Promise<void> {
-  const task = await prisma.task.findUnique({
+  const task = await (prisma as any).task.findUnique({
     where: { id },
-    include: { subtasks: { select: { id: true } } },
-  });
+    include: { subtasks: { select: { id: true } } } as any,
+  }) as any;
   
   if (!task) {
     throw new Error('Task not found');
@@ -530,26 +544,26 @@ export async function deleteTask(
   
   // Delete subtasks first
   if (task.subtasks.length > 0) {
-    const subtaskIds = task.subtasks.map(s => s.id);
+    const subtaskIds = task.subtasks.map((s: any) => s.id);
     
-    await prisma.taskAssignee.deleteMany({ where: { taskId: { in: subtaskIds } } });
-    await prisma.taskComment.deleteMany({ where: { taskId: { in: subtaskIds } } });
-    await prisma.taskActivity.deleteMany({ where: { taskId: { in: subtaskIds } } });
-    await prisma.taskAttachment.deleteMany({ where: { taskId: { in: subtaskIds } } });
-    await prisma.task.deleteMany({ where: { id: { in: subtaskIds } } });
+    await (prisma as any).taskAssignee.deleteMany({ where: { taskId: { in: subtaskIds } } });
+    await (prisma as any).taskComment.deleteMany({ where: { taskId: { in: subtaskIds } } });
+    await (prisma as any).taskActivity.deleteMany({ where: { taskId: { in: subtaskIds } } });
+    await (prisma as any).taskAttachment.deleteMany({ where: { taskId: { in: subtaskIds } } });
+    await (prisma as any).task.deleteMany({ where: { id: { in: subtaskIds } } });
   }
   
   // Delete task relations
-  await prisma.taskAssignee.deleteMany({ where: { taskId: id } });
-  await prisma.taskComment.deleteMany({ where: { taskId: id } });
-  await prisma.taskActivity.deleteMany({ where: { taskId: id } });
-  await prisma.taskAttachment.deleteMany({ where: { taskId: id } });
-  await prisma.taskDependency.deleteMany({
-    where: { OR: [{ taskId: id }, { dependsOnTaskId: id }] },
+  await (prisma as any).taskAssignee.deleteMany({ where: { taskId: id } });
+  await (prisma as any).taskComment.deleteMany({ where: { taskId: id } });
+  await (prisma as any).taskActivity.deleteMany({ where: { taskId: id } });
+  await (prisma as any).taskAttachment.deleteMany({ where: { taskId: id } });
+  await (prisma as any).taskDependency.deleteMany({
+    where: { OR: [{ taskId: id }, { dependsOnTaskId: id }] } as any,
   });
   
   // Delete the task
-  await prisma.task.delete({ where: { id } });
+  await (prisma as any).task.delete({ where: { id } });
   
   logger.info({ taskId: id, taskNumber: task.taskNumber }, 'Task deleted');
 }
@@ -601,7 +615,7 @@ export async function listTasks(
   }
   
   const [tasks, total] = await Promise.all([
-    prisma.task.findMany({
+    (prisma as any).task.findMany({
       where,
       skip,
       take: pageSize,
@@ -627,11 +641,11 @@ export async function listTasks(
         _count: { select: { subtasks: true, comments: true } },
       },
     }),
-    prisma.task.count({ where }),
+    (prisma as any).task.count({ where }),
   ]);
   
   return {
-    data: tasks.map(t => ({
+    data: (tasks as any[]).map((t: any) => ({
       ...t,
       subtaskCount: t._count.subtasks,
       commentCount: t._count.comments,
@@ -667,10 +681,10 @@ export async function addTaskDependency(
     if (visited.has(taskId)) return true;
     visited.add(taskId);
     
-    const deps = await prisma.taskDependency.findMany({
-      where: { taskId },
+    const deps = await (prisma as any).taskDependency.findMany({
+      where: { taskId } as any,
       select: { dependsOnTaskId: true },
-    });
+    }) as any[];
     
     for (const dep of deps) {
       if (await checkCircular(dep.dependsOnTaskId, visited)) {
@@ -687,25 +701,25 @@ export async function addTaskDependency(
   }
   
   // Check if dependency already exists
-  const existing = await prisma.taskDependency.findFirst({
+  const existing = await (prisma as any).taskDependency.findFirst({
     where: {
       taskId: input.taskId,
       dependsOnTaskId: input.dependsOnTaskId,
-    },
+    } as any,
   });
   
   if (existing) {
     throw new Error('Dependency already exists');
   }
   
-  const dependency = await prisma.taskDependency.create({
+  const dependency = await (prisma as any).taskDependency.create({
     data: {
       id: uuidv4(),
       taskId: input.taskId,
       dependsOnTaskId: input.dependsOnTaskId,
       type: input.type,
       createdBy: userId,
-    },
+    } as any,
     include: {
       dependsOnTask: {
         select: { id: true, taskNumber: true, title: true, status: true },
@@ -714,7 +728,7 @@ export async function addTaskDependency(
   });
   
   // Log activity
-  await prisma.taskActivity.create({
+  await (prisma as any).taskActivity.create({
     data: {
       id: uuidv4(),
       taskId: input.taskId,
@@ -724,7 +738,7 @@ export async function addTaskDependency(
         dependsOnTaskId: input.dependsOnTaskId,
         type: input.type,
       },
-    },
+    } as any,
   });
   
   logger.info({
@@ -745,19 +759,19 @@ export async function removeTaskDependency(
   dependsOnTaskId: string,
   userId: string
 ): Promise<void> {
-  await prisma.taskDependency.deleteMany({
-    where: { taskId, dependsOnTaskId },
+  await (prisma as any).taskDependency.deleteMany({
+    where: { taskId, dependsOnTaskId } as any,
   });
   
   // Log activity
-  await prisma.taskActivity.create({
+  await (prisma as any).taskActivity.create({
     data: {
       id: uuidv4(),
       taskId,
       userId,
       action: 'dependency_removed',
       details: { dependsOnTaskId },
-    },
+    } as any,
   });
   
   logger.info({ taskId, dependsOnTaskId }, 'Task dependency removed');
@@ -780,8 +794,8 @@ export async function assignTask(
   const eventBus = getEventBus('task-service');
   
   // Check current assignee count
-  const currentCount = await prisma.taskAssignee.count({
-    where: { taskId, isActive: true },
+  const currentCount = await (prisma as any).taskAssignee.count({
+    where: { taskId, isActive: true } as any,
   });
   
   if (currentCount >= config.task.maxAssigneesPerTask) {
@@ -789,15 +803,15 @@ export async function assignTask(
   }
   
   // Check if already assigned
-  const existing = await prisma.taskAssignee.findFirst({
-    where: { taskId, employeeId, isActive: true },
+  const existing = await (prisma as any).taskAssignee.findFirst({
+    where: { taskId, employeeId, isActive: true } as any,
   });
   
   if (existing) {
     throw new Error('Employee is already assigned to this task');
   }
   
-  const assignment = await prisma.taskAssignee.create({
+  const assignment = await (prisma as any).taskAssignee.create({
     data: {
       id: uuidv4(),
       taskId,
@@ -805,7 +819,7 @@ export async function assignTask(
       isPrimary: currentCount === 0,
       assignedAt: new Date(),
       assignedBy: userId,
-    },
+    } as any,
     include: {
       employee: {
         select: {
@@ -814,18 +828,18 @@ export async function assignTask(
         },
       },
       task: { select: { taskNumber: true, title: true, projectId: true } },
-    },
-  });
+    } as any,
+  }) as any;
   
   // Log activity
-  await prisma.taskActivity.create({
+  await (prisma as any).taskActivity.create({
     data: {
       id: uuidv4(),
       taskId,
       userId,
       action: 'assigned',
       details: { employeeId },
-    },
+    } as any,
   });
   
   // Emit event
@@ -843,6 +857,20 @@ export async function assignTask(
     tenantContext
   );
   
+  // Publish to topic for notification service
+  await (eventBus as any).publishToTopic('task-assigned', {
+    taskId,
+    taskNumber: assignment.task.taskNumber,
+    taskTitle: assignment.task.title,
+    projectId: assignment.task.projectId,
+    assigneeIds: [employeeId],
+    assigneeName: assignment.employee?.user
+      ? `${assignment.employee.user.firstName} ${assignment.employee.user.lastName}`.trim()
+      : 'Assignee',
+    assigneeEmail: assignment.employee?.user?.email,
+    assignedBy: userId,
+  }, tenantContext);
+  
   logger.info({ taskId, employeeId }, 'Task assigned');
   
   return assignment;
@@ -857,20 +885,20 @@ export async function unassignTask(
   employeeId: string,
   userId: string
 ): Promise<void> {
-  await prisma.taskAssignee.updateMany({
-    where: { taskId, employeeId, isActive: true },
+  await (prisma as any).taskAssignee.updateMany({
+    where: { taskId, employeeId, isActive: true } as any,
     data: { isActive: false, unassignedAt: new Date() },
   });
   
   // Log activity
-  await prisma.taskActivity.create({
+  await (prisma as any).taskActivity.create({
     data: {
       id: uuidv4(),
       taskId,
       userId,
       action: 'unassigned',
       details: { employeeId },
-    },
+    } as any,
   });
   
   logger.info({ taskId, employeeId }, 'Task unassigned');
@@ -896,7 +924,7 @@ export async function getMyTasks(
     where.status = { notIn: ['done', 'cancelled'] };
   }
   
-  return prisma.task.findMany({
+  return (prisma as any).task.findMany({
     where,
     orderBy: [
       { priority: 'desc' },
@@ -916,11 +944,11 @@ export async function getKanbanBoard(
   prisma: PrismaClient,
   projectId: string
 ): Promise<Record<string, any[]>> {
-  const tasks = await prisma.task.findMany({
+  const tasks = await (prisma as any).task.findMany({
     where: {
       projectId,
       parentTaskId: null, // Only top-level tasks
-    },
+    } as any,
     orderBy: [
       { priority: 'desc' },
       { dueDate: 'asc' },
@@ -939,8 +967,8 @@ export async function getKanbanBoard(
         take: 3,
       },
       _count: { select: { subtasks: true, comments: true } },
-    },
-  });
+    } as any,
+  }) as any[];
   
   // Group by status
   const board: Record<string, any[]> = {};

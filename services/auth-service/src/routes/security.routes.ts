@@ -41,8 +41,8 @@ async function sendNotificationEmail(email: string, subject: string, message: st
         html: html || message.replace(/\n/g, '<br>'),
       }),
     });
-    const result = await response.json();
-    return result.success;
+    const result = await response.json() as { success?: boolean };
+    return result.success ?? false;
   } catch (error) {
     logger.error({ error, email }, 'Failed to send notification email');
     return false;
@@ -1452,7 +1452,7 @@ router.post('/tenant/reactivate', async (req: Request, res: Response, next: Next
         body: JSON.stringify({ tenantSlug, internalSecret }),
       });
       
-      const cacheResult = await cacheResponse.json();
+      const cacheResult = await cacheResponse.json() as { success?: boolean };
       if (cacheResponse.ok && cacheResult.success) {
         logger.info({ tenantSlug, cacheResult }, 'API Gateway tenant cache invalidated successfully');
       } else {

@@ -3,10 +3,86 @@
  */
 
 import express, { Request, Response } from 'express';
-import { JobService } from '../services/job.service';
+import { JobService, generateJobContentWithAI, isOpenAIConfiguredForJD } from '../services/job.service';
 import { logger } from '../utils/logger';
 
 const router = express.Router();
+
+/**
+ * GET /jobs/ai/status - Check if AI is configured for JD generation
+ */
+router.get('/ai/status', async (req: Request, res: Response) => {
+  try {
+    const tenantSlug = req.headers['x-tenant-slug'] as string;
+    if (!tenantSlug) {
+      return res.status(400).json({ error: 'Tenant slug required' });
+    }
+
+    const isConfigured = await isOpenAIConfiguredForJD(tenantSlug);
+    res.json({ 
+      success: true,
+      data: {
+        aiEnabled: isConfigured,
+        message: isConfigured 
+          ? 'AI is configured. You can generate job descriptions using AI.'
+          : 'AI is not configured. Configure OpenAI in Organization > Integrations to enable AI-powered job description generation.'
+      }
+    });
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Error checking AI status');
+    res.status(500).json({ error: 'Failed to check AI status' });
+  }
+});
+
+/**
+ * POST /jobs/ai/generate - Generate job description content using AI
+ */
+router.post('/ai/generate', async (req: Request, res: Response) => {
+  try {
+    const tenantSlug = req.headers['x-tenant-slug'] as string;
+    if (!tenantSlug) {
+      return res.status(400).json({ error: 'Tenant slug required' });
+    }
+
+    const { title, department, employmentType, experienceMin, experienceMax } = req.body;
+    
+    if (!title || typeof title !== 'string' || title.trim().length < 2) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Job title is required (minimum 2 characters)' 
+      });
+    }
+
+    const content = await generateJobContentWithAI(tenantSlug, {
+      title: title.trim(),
+      department,
+      employmentType,
+      experienceMin,
+      experienceMax,
+    });
+
+    res.json({ 
+      success: true,
+      data: content,
+      message: 'Job description content generated successfully'
+    });
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Error generating job content with AI');
+    
+    // Check if it's a configuration error
+    if (error.message.includes('not configured')) {
+      return res.status(400).json({ 
+        success: false,
+        error: error.message 
+      });
+    }
+    
+    res.status(500).json({ 
+      success: false,
+      error: error.message || 'Failed to generate job content with AI' 
+    });
+  }
+});
 
 /**
  * GET /jobs - Get all job descriptions

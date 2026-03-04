@@ -480,18 +480,55 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
 });
 
 // ============================================================================
-// DELETE TENANT (Soft delete with subscription cancellation)
+// DELETE TENANT (Permanent delete with password verification)
 // ============================================================================
 
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prisma = getMasterPrisma();
-    const { hardDelete } = req.query; // If true, also drop database
+    const { password, softDelete } = req.body; // password required, softDelete=true to skip database deletion
+    const adminId = (req as any).user?.id || (req as any).platformAdminId;
+    
+    // Password is required for tenant deletion
+    if (!password) {
+      return res.status(400).json({ 
+        success: false, 
+        error: { code: 'PASSWORD_REQUIRED', message: 'Password is required to delete a tenant' }
+      });
+    }
+    
+    // Verify the platform admin's password
+    if (!adminId) {
+      return res.status(401).json({ 
+        success: false, 
+        error: { code: 'UNAUTHORIZED', message: 'Authentication required' }
+      });
+    }
+    
+    const admin = await prisma.platformAdmin.findUnique({
+      where: { id: adminId },
+      select: { id: true, passwordHash: true },
+    });
+    
+    if (!admin) {
+      return res.status(401).json({ 
+        success: false, 
+        error: { code: 'ADMIN_NOT_FOUND', message: 'Admin not found' }
+      });
+    }
+    
+    const isPasswordValid = await bcrypt.compare(password, admin.passwordHash);
+    if (!isPasswordValid) {
+      return res.status(403).json({ 
+        success: false, 
+        error: { code: 'INVALID_PASSWORD', message: 'Invalid password. Tenant deletion requires your platform admin password.' }
+      });
+    }
     
     // Get tenant details first
     const tenant = await prisma.tenant.findUnique({
       where: { id: req.params.id },
-      select: { id: true, slug: true, databaseName: true },
+      select: { id: true, slug: true, name: true, databaseName: true },
     });
     
     if (!tenant) {
@@ -520,10 +557,10 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
       });
     });
     
-    logger.info({ tenantId: req.params.id, tenantSlug: tenant.slug }, 'Tenant soft deleted and subscriptions canceled');
+    logger.info({ tenantId: req.params.id, tenantSlug: tenant.slug, adminId }, 'Tenant marked as deleted and subscriptions canceled');
     
-    // If hard delete requested, also drop the database
-    if (hardDelete === 'true') {
+    // Default is HARD DELETE (drop database) unless softDelete=true is explicitly passed
+    if (softDelete !== true) {
       try {
         const dbName = tenant.databaseName || `oms_tenant_${tenant.slug}`;
         
@@ -553,24 +590,31 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
           where: { id: req.params.id },
         });
         
-        logger.info({ tenantId: req.params.id, dbName }, 'Tenant database dropped and record permanently deleted');
+        logger.info({ tenantId: req.params.id, dbName, adminId }, 'Tenant database dropped and record permanently deleted');
         
         res.json({ 
           success: true, 
-          message: 'Tenant permanently deleted with database dropped',
+          message: `Tenant "${tenant.name}" and all its data have been permanently deleted`,
           hardDeleted: true,
+          deletedTenant: { name: tenant.name, slug: tenant.slug },
         });
       } catch (dbError) {
         logger.error({ error: dbError, tenantId: req.params.id }, 'Failed to drop tenant database');
         res.json({ 
           success: true, 
-          message: 'Tenant soft deleted, but failed to drop database',
+          message: 'Tenant deleted, but failed to drop database. Manual cleanup may be required.',
           hardDeleted: false,
           dbError: (dbError as Error).message,
         });
       }
     } else {
-      res.json({ success: true, message: 'Tenant deleted successfully (soft delete)', hardDeleted: false });
+      // Soft delete only (keep database)
+      res.json({ 
+        success: true, 
+        message: `Tenant "${tenant.name}" has been soft deleted. Database preserved for potential recovery.`,
+        hardDeleted: false,
+        deletedTenant: { name: tenant.name, slug: tenant.slug },
+      });
     }
   } catch (error) {
     logger.error({ error }, 'Delete tenant error');

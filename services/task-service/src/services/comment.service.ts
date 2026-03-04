@@ -73,9 +73,9 @@ export async function createComment(
   
   // Validate parent comment if replying
   if (input.parentCommentId) {
-    const parentComment = await prisma.taskComment.findUnique({
+    const parentComment = await (prisma as any).taskComment.findUnique({
       where: { id: input.parentCommentId },
-    });
+    }) as any;
     
     if (!parentComment) {
       throw new Error('Parent comment not found');
@@ -91,7 +91,7 @@ export async function createComment(
   const allMentions = [...new Set([...(input.mentions || []), ...contentMentions])];
   
   // Create the comment
-  const comment = await prisma.taskComment.create({
+  const comment = await (prisma as any).taskComment.create({
     data: {
       id,
       taskId: input.taskId,
@@ -126,14 +126,14 @@ export async function createComment(
   
   // Link attachments
   if (input.attachments?.length) {
-    await prisma.taskAttachment.updateMany({
+    await (prisma as any).taskAttachment.updateMany({
       where: { id: { in: input.attachments } },
       data: { commentId: id },
     });
   }
   
   // Log activity
-  await prisma.taskActivity.create({
+  await (prisma as any).taskActivity.create({
     data: {
       id: uuidv4(),
       taskId: input.taskId,
@@ -191,7 +191,7 @@ export async function getCommentById(
   prisma: PrismaClient,
   id: string
 ): Promise<any | null> {
-  return prisma.taskComment.findUnique({
+  return (prisma as any).taskComment.findUnique({
     where: { id },
     include: {
       user: {
@@ -231,9 +231,9 @@ export async function updateComment(
   input: UpdateCommentInput,
   userId: string
 ): Promise<any> {
-  const existing = await prisma.taskComment.findUnique({
+  const existing = await (prisma as any).taskComment.findUnique({
     where: { id },
-  });
+  }) as any;
   
   if (!existing) {
     throw new Error('Comment not found');
@@ -259,7 +259,7 @@ export async function updateComment(
   // Extract mentions from new content
   const mentions = extractMentions(input.content);
   
-  const comment = await prisma.taskComment.update({
+  const comment = await (prisma as any).taskComment.update({
     where: { id },
     data: {
       content: input.content,
@@ -293,10 +293,10 @@ export async function deleteComment(
   id: string,
   userId: string
 ): Promise<void> {
-  const existing = await prisma.taskComment.findUnique({
+  const existing = await (prisma as any).taskComment.findUnique({
     where: { id },
     include: { replies: { select: { id: true } } },
-  });
+  }) as any;
   
   if (!existing) {
     throw new Error('Comment not found');
@@ -308,7 +308,7 @@ export async function deleteComment(
   
   // If comment has replies, soft delete by clearing content
   if (existing.replies.length > 0) {
-    await prisma.taskComment.update({
+    await (prisma as any).taskComment.update({
       where: { id },
       data: {
         content: '[Comment deleted]',
@@ -318,7 +318,7 @@ export async function deleteComment(
     });
   } else {
     // Delete comment
-    await prisma.taskComment.delete({ where: { id } });
+    await (prisma as any).taskComment.delete({ where: { id } });
   }
   
   logger.info({ commentId: id }, 'Comment deleted');
@@ -342,7 +342,7 @@ export async function listComments(
   }
   
   const [comments, total] = await Promise.all([
-    prisma.taskComment.findMany({
+    (prisma as any).taskComment.findMany({
       where,
       skip,
       take: pageSize,
@@ -375,11 +375,11 @@ export async function listComments(
         _count: { select: { replies: true } },
       },
     }),
-    prisma.taskComment.count({ where }),
+    (prisma as any).taskComment.count({ where }),
   ]);
   
   return {
-    data: comments.map(c => ({
+    data: (comments as any[]).map((c: any) => ({
       ...c,
       replyCount: c._count.replies,
     })),
@@ -399,7 +399,7 @@ export async function addReaction(
   userId: string
 ): Promise<any> {
   // Check if reaction already exists
-  const existing = await prisma.commentReaction.findFirst({
+  const existing = await (prisma as any).commentReaction.findFirst({
     where: { commentId, userId, emoji },
   });
   
@@ -407,7 +407,7 @@ export async function addReaction(
     throw new Error('You have already reacted with this emoji');
   }
   
-  const reaction = await prisma.commentReaction.create({
+  const reaction = await (prisma as any).commentReaction.create({
     data: {
       id: uuidv4(),
       commentId,
@@ -428,7 +428,7 @@ export async function removeReaction(
   emoji: string,
   userId: string
 ): Promise<void> {
-  await prisma.commentReaction.deleteMany({
+  await (prisma as any).commentReaction.deleteMany({
     where: { commentId, userId, emoji },
   });
 }
@@ -440,7 +440,7 @@ export async function getCommentReactions(
   prisma: PrismaClient,
   commentId: string
 ): Promise<Record<string, { count: number; users: any[] }>> {
-  const reactions = await prisma.commentReaction.findMany({
+  const reactions = await (prisma as any).commentReaction.findMany({
     where: { commentId },
     include: {
       user: {

@@ -2,8 +2,8 @@
 const nextConfig = {
   reactStrictMode: true,
   
-  // Enable standalone output for Docker (commented out for local development)
-  // output: 'standalone',
+  // Enable standalone output for Docker
+  output: 'standalone',
   
   // Optimize file watching to prevent EMFILE errors
   webpack: (config, { dev }) => {

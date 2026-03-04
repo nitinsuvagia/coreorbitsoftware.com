@@ -13,6 +13,8 @@ export interface User {
   lastName: string;
   avatar?: string;
   role: string;
+  roles: string[];
+  permissions: string[];
   tenantId?: string;
   tenantSlug?: string;
   isPlatformAdmin: boolean;
@@ -24,6 +26,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   mfaVerify: (code: string, mfaToken: string) => Promise<void>;
+  updateUser: (updates: Partial<User>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -32,6 +35,75 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
+
+  // Get current domain context - returns tenant slug or 'platform' for main domain
+  function getCurrentDomainContext(): string {
+    if (typeof window === 'undefined') return 'platform';
+    
+    const hostname = window.location.hostname.toLowerCase();
+    
+    // Check for subdomain.localhost pattern (development)
+    const localhostMatch = hostname.match(/^([a-z0-9-]+)\.localhost$/);
+    if (localhostMatch) {
+      return localhostMatch[1]; // tenant slug
+    }
+    
+    // Check for subdomain.domain.com pattern (production)
+    const parts = hostname.split('.');
+    if (parts.length >= 3) {
+      return parts[0]; // tenant slug
+    }
+    
+    // Main domain = platform admin
+    return 'platform';
+  }
+
+  // Security check: verify user's login context matches current domain
+  function verifyDomainAccess(userData: User): boolean {
+    const currentContext = getCurrentDomainContext();
+    
+    if (currentContext === 'platform') {
+      // Main domain - only platform admins allowed
+      if (!userData.isPlatformAdmin) {
+        console.warn('[Security] Tenant user attempting to access platform admin domain');
+        return false;
+      }
+    } else {
+      // Tenant subdomain - only tenant users of that specific tenant allowed
+      if (userData.isPlatformAdmin) {
+        console.warn('[Security] Platform admin attempting to access tenant domain');
+        return false;
+      }
+      // Also verify they belong to this specific tenant
+      if (userData.tenantSlug && userData.tenantSlug !== currentContext) {
+        console.warn(`[Security] User from tenant '${userData.tenantSlug}' attempting to access tenant '${currentContext}'`);
+        return false;
+      }
+    }
+    
+    return true;
+  }
+
+  // Force security logout with message
+  async function securityLogout(message: string) {
+    console.error('[Security]', message);
+    
+    // Delete cookies
+    const cookieOptions = { path: '/' };
+    deleteCookie('accessToken', cookieOptions);
+    deleteCookie('refreshToken', cookieOptions);
+    deleteCookie('loginContext', cookieOptions);
+    
+    // Clear user state
+    setUser(null);
+    setIsLoading(false);
+    
+    // Show security toast
+    toast.error(message);
+    
+    // Redirect to login
+    window.location.href = '/login';
+  }
 
   useEffect(() => {
     checkAuth();
@@ -46,12 +118,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const response = await api.get('/api/v1/auth/me');
-      const userData = response.data.data || response.data.user;
+      const rawData = response.data.data || response.data.user;
+      
+      // Normalize user data to ensure roles/permissions are arrays
+      const userData: User = {
+        ...rawData,
+        roles: rawData.roles || [],
+        permissions: rawData.permissions || [],
+      };
+      
+      // Security check: verify domain access
+      if (!verifyDomainAccess(userData)) {
+        await securityLogout('Access denied. You are not authorized to access this domain.');
+        return;
+      }
+      
       setUser(userData);
     } catch (err) {
       console.error('[Auth] checkAuth error', err);
       deleteCookie('accessToken');
       deleteCookie('refreshToken');
+      deleteCookie('loginContext');
     } finally {
       setIsLoading(false);
     }
@@ -74,6 +161,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return parts[0];
     }
     
+    // No tenant subdomain detected - return null (DO NOT default to any tenant for security)
     return null;
   }
 
@@ -106,6 +194,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         secure: false,
       }); // 30 days
       
+      // Store login context for security verification
+      const loginContext = tenantSlug || 'platform';
+      setCookie('loginContext', loginContext, {
+        maxAge: 60 * 60 * 24 * 30,
+        path: '/',
+        sameSite: 'lax',
+        secure: false,
+      });
+      
       // Build user object from response - handle both platform admin and tenant user formats
       const isTenantUser = !!data.user.tenantId;
       const userData: User = {
@@ -115,8 +212,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         lastName: data.user.lastName || data.user.displayName?.split(' ').slice(1).join(' ') || '',
         avatar: data.user.avatar,
         role: data.user.role || (data.user.roles?.[0] || 'user'),
+        roles: data.user.roles || [],
+        permissions: data.user.permissions || [],
         tenantId: data.user.tenantId,
-        tenantSlug: data.user.tenantSlug,
+        tenantSlug: data.user.tenantSlug || tenantSlug,
         isPlatformAdmin: !isTenantUser && (data.user.role === 'SUPER_ADMIN' || data.user.role === 'SUB_ADMIN' || data.user.role === 'ADMIN_USER'),
       };
       
@@ -158,6 +257,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       secure: false,
     });
     
+    // Store login context for security verification
+    const tenantSlug = getTenantSlugFromHost();
+    const loginContext = tenantSlug || 'platform';
+    setCookie('loginContext', loginContext, {
+      maxAge: 60 * 60 * 24 * 30,
+      path: '/',
+      sameSite: 'lax',
+      secure: false,
+    });
+    
     const userData = data.user;
     setUser(userData);
     
@@ -166,15 +275,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     router.push(redirectUrl);
   }
 
+  function updateUser(updates: Partial<User>) {
+    setUser((prev) => prev ? { ...prev, ...updates } : null);
+  }
+
   async function logout() {
     // Determine redirect URL before clearing user state
     const isAdmin = user?.isPlatformAdmin;
     const redirectUrl = isAdmin ? '/login' : '/login';
     
-    // Delete cookies immediately
+    // Delete all auth cookies
     const cookieOptions = { path: '/' };
     deleteCookie('accessToken', cookieOptions);
     deleteCookie('refreshToken', cookieOptions);
+    deleteCookie('loginContext', cookieOptions);
     
     // Clear user state
     setUser(null);
@@ -189,7 +303,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout, mfaVerify }}>
+    <AuthContext.Provider value={{ user, isLoading, login, logout, mfaVerify, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

@@ -245,21 +245,29 @@ export function PhoneInput({
 }
 
 // Simple display component for showing phone numbers with flag
-// For +1 numbers, defaults to USA flag unless explicitly specified
-export function PhoneDisplay({ value, className, preferredCountry = 'US' }: { value?: string; className?: string; preferredCountry?: string }) {
+// Only shows flag/country code if the number already has a valid country code prefix
+export function PhoneDisplay({ value, className }: { value?: string; className?: string }) {
   if (!value) return <span className={className}>-</span>;
   
-  const { countryCode, number } = parsePhoneNumber(value, preferredCountry);
-  const country = countries.find(c => c.code === countryCode);
+  // Clean the value
+  const cleanValue = value.replace(/\s/g, '');
   
-  if (!country) {
-    return <span className={className}>{value}</span>;
+  // Only try to parse if it starts with + (indicating it has a country code)
+  if (cleanValue.startsWith('+')) {
+    // Try to find matching country by dial code
+    for (const country of countries) {
+      if (cleanValue.startsWith(country.dialCode)) {
+        const number = cleanValue.slice(country.dialCode.length);
+        return (
+          <span className={cn('inline-flex items-center gap-1.5', className)}>
+            <span className="text-base">{country.flag}</span>
+            <span>{country.dialCode} {number}</span>
+          </span>
+        );
+      }
+    }
   }
   
-  return (
-    <span className={cn('inline-flex items-center gap-1.5', className)}>
-      <span className="text-base">{country.flag}</span>
-      <span>{country.dialCode} {number}</span>
-    </span>
-  );
+  // No country code detected - display as-is
+  return <span className={className}>{value}</span>;
 }

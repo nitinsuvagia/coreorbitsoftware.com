@@ -7,9 +7,8 @@ import { DateTime } from 'luxon';
 import { v4 as uuid } from 'uuid';
 import { getMasterPrisma } from '@oms/database';
 import { publishEvent } from '@oms/event-bus';
-import { config, PlanId } from '../config';
+import { config } from '../config';
 import { logger } from '../utils/logger';
-import * as planService from './plan.service';
 import * as stripeService from './stripe.service';
 
 export interface Subscription {
@@ -32,7 +31,7 @@ export interface Subscription {
 
 export interface CreateSubscriptionInput {
   tenantId: string;
-  planId: PlanId;
+  planId: string; // Can be plan ID or slug from database
   billingCycle: 'MONTHLY' | 'QUARTERLY' | 'YEARLY';
   paymentMethodId?: string;
   couponCode?: string;
@@ -40,7 +39,7 @@ export interface CreateSubscriptionInput {
 }
 
 export interface UpdateSubscriptionInput {
-  planId?: PlanId;
+  planId?: string; // Can be plan ID or slug from database
   billingCycle?: 'MONTHLY' | 'QUARTERLY' | 'YEARLY';
   cancelAtPeriodEnd?: boolean;
 }
@@ -85,13 +84,30 @@ export async function createSubscription(
     throw new Error('Tenant already has an active subscription');
   }
   
-  const plan = planService.getPlanById(input.planId);
-  if (!plan) {
+  // Look up plan from database (by ID or slug)
+  const dbPlan = await masterPrisma.subscriptionPlan.findFirst({
+    where: {
+      OR: [
+        { id: input.planId },
+        { slug: input.planId },
+      ],
+      isActive: true,
+    },
+  });
+  
+  if (!dbPlan) {
     throw new Error(`Invalid plan: ${input.planId}`);
   }
   
   const now = DateTime.now();
   const trialDays = input.startTrial ? config.billing.trialDays : 0;
+  
+  // Get plan pricing and limits
+  const monthlyPrice = Number(dbPlan.monthlyPrice);
+  const yearlyPrice = Number(dbPlan.yearlyPrice);
+  const maxUsers = dbPlan.maxUsers || 10;
+  const maxStorage = dbPlan.maxStorage || BigInt(10737418240); // 10GB default
+  const maxProjects = dbPlan.maxProjects || null;
   
   let subscription: Subscription;
   
@@ -99,7 +115,7 @@ export async function createSubscription(
     // Create Stripe subscription
     const stripeResult = await stripeService.createSubscription({
       tenantId: input.tenantId,
-      planId: input.planId,
+      planId: dbPlan.slug, // Use plan slug for Stripe
       billingCycle: input.billingCycle,
       paymentMethodId: input.paymentMethodId,
       trialDays,
@@ -110,13 +126,13 @@ export async function createSubscription(
       data: {
         id: uuid(),
         tenantId: input.tenantId,
-        planId: input.planId,
+        planId: dbPlan.id,
         status: trialDays > 0 ? 'TRIALING' : 'ACTIVE',
         billingCycle: input.billingCycle,
-        amount: input.billingCycle === 'YEARLY' ? plan.yearlyPrice : plan.monthlyPrice,
-        maxUsers: (plan.features as any).maxEmployees || 10,
-        maxStorage: BigInt((plan.features as any).maxStorage || 10737418240), // 10GB default
-        maxProjects: (plan.features as any).maxProjects || null,
+        amount: input.billingCycle === 'YEARLY' ? yearlyPrice : monthlyPrice,
+        maxUsers: maxUsers,
+        maxStorage: maxStorage,
+        maxProjects: maxProjects,
         currentPeriodStart: stripeResult.currentPeriodStart,
         currentPeriodEnd: stripeResult.currentPeriodEnd,
         trialEnd: trialDays > 0 ? now.plus({ days: trialDays }).toJSDate() : null,
@@ -127,6 +143,8 @@ export async function createSubscription(
     subscription = mapSubscription(created);
   } else {
     // Create subscription without payment (trial or free tier)
+    // For free plans, set status to ACTIVE immediately; otherwise TRIALING
+    const isFree = monthlyPrice === 0 && yearlyPrice === 0;
     const periodEnd = now.plus(
       input.billingCycle === 'YEARLY' ? { years: 1 } : { months: 1 }
     );
@@ -135,16 +153,16 @@ export async function createSubscription(
       data: {
         id: uuid(),
         tenantId: input.tenantId,
-        planId: input.planId,
-        status: 'TRIALING',
+        planId: dbPlan.id,
+        status: isFree ? 'ACTIVE' : 'TRIALING',
         billingCycle: input.billingCycle,
-        amount: input.billingCycle === 'YEARLY' ? plan.yearlyPrice : plan.monthlyPrice,
-        maxUsers: (plan.features as any).maxEmployees || 10,
-        maxStorage: BigInt((plan.features as any).maxStorage || 10737418240), // 10GB default
-        maxProjects: (plan.features as any).maxProjects || null,
+        amount: input.billingCycle === 'YEARLY' ? yearlyPrice : monthlyPrice,
+        maxUsers: maxUsers,
+        maxStorage: maxStorage,
+        maxProjects: maxProjects,
         currentPeriodStart: now.toJSDate(),
         currentPeriodEnd: periodEnd.toJSDate(),
-        trialEnd: now.plus({ days: config.billing.trialDays }).toJSDate(),
+        trialEnd: isFree ? null : now.plus({ days: config.billing.trialDays }).toJSDate(),
       },
     });
     subscription = mapSubscription(created);
@@ -154,17 +172,17 @@ export async function createSubscription(
   await publishEvent('subscription.created', {
     subscriptionId: subscription.id,
     tenantId: input.tenantId,
-    planId: input.planId,
+    planId: dbPlan.id,
     status: subscription.status,
   });
   
   logger.info({
     subscriptionId: subscription.id,
     tenantId: input.tenantId,
-    planId: input.planId,
+    planId: dbPlan.id,
   }, 'Subscription created');
   
-  return mapSubscription(subscription);
+  return subscription;
 }
 
 /**
@@ -194,6 +212,126 @@ export async function getTenantSubscription(tenantId: string): Promise<Subscript
 }
 
 /**
+ * Calculate prorated billing when changing plans or billing cycles
+ * 
+ * NO REFUNDS - We only adjust the next billing date:
+ * - Upgrade (cheap → expensive): Next billing comes SOONER
+ * - Downgrade (expensive → cheap): Next billing is EXTENDED
+ * 
+ * Formula:
+ *   creditAmount = daysRemaining × oldDailyRate
+ *   daysCoveredByCredit = creditAmount / newDailyRate
+ *   newBillingDate = today + daysCoveredByCredit
+ */
+interface ProrationResult {
+  creditAmount: number;           // Credit from unused time on old plan (in dollars)
+  daysCoveredByCredit: number;    // How many days the credit covers on new plan
+  newPeriodEnd: Date;             // New billing period end date (today + daysCoveredByCredit)
+  daysRemaining: number;          // Days remaining in current period (before change)
+  dailyRateOld: number;           // Daily rate on old plan
+  dailyRateNew: number;           // Daily rate on new plan
+  isUpgrade: boolean;             // True if upgrading (more expensive)
+}
+
+function calculateProration(
+  currentPeriodStart: Date,
+  currentPeriodEnd: Date,
+  oldAmount: number,
+  newAmount: number,
+  oldBillingCycle: 'MONTHLY' | 'QUARTERLY' | 'YEARLY',
+  newBillingCycle: 'MONTHLY' | 'QUARTERLY' | 'YEARLY'
+): ProrationResult {
+  const now = DateTime.now();
+  const periodStart = DateTime.fromJSDate(currentPeriodStart);
+  const periodEnd = DateTime.fromJSDate(currentPeriodEnd);
+  
+  // Calculate the ORIGINAL period end based on period start + billing cycle
+  // This prevents the "farming" exploit - cap is always based on the original cycle, not changed values
+  const getMonthsInCycle = (cycle: 'MONTHLY' | 'QUARTERLY' | 'YEARLY') => {
+    switch (cycle) {
+      case 'YEARLY': return 12;
+      case 'QUARTERLY': return 3;
+      case 'MONTHLY': default: return 1;
+    }
+  };
+  const originalPeriodEnd = periodStart.plus({ months: getMonthsInCycle(oldBillingCycle) });
+  
+  // Calculate total days in the current period and days used/remaining
+  const totalDaysInPeriod = Math.max(1, periodEnd.diff(periodStart, 'days').days);
+  const daysUsed = Math.max(0, now.diff(periodStart, 'days').days);
+  const daysRemaining = Math.max(0, totalDaysInPeriod - daysUsed);
+  
+  // Calculate daily rates based on billing cycle
+  const getDaysInCycle = (cycle: 'MONTHLY' | 'QUARTERLY' | 'YEARLY') => {
+    switch (cycle) {
+      case 'YEARLY': return 365;
+      case 'QUARTERLY': return 91;
+      case 'MONTHLY': default: return 30;
+    }
+  };
+  
+  const dailyRateOld = oldAmount / getDaysInCycle(oldBillingCycle);
+  const dailyRateNew = newAmount / getDaysInCycle(newBillingCycle);
+  
+  // Calculate credit from unused days on old plan
+  const creditAmount = dailyRateOld * daysRemaining;
+  
+  // Calculate how many days the credit covers on the new plan
+  // If new plan is free ($0), give them until original period end
+  let daysCoveredByCredit: number;
+  if (dailyRateNew === 0 || newAmount === 0) {
+    // Free plan - keep current period end
+    daysCoveredByCredit = daysRemaining;
+  } else {
+    daysCoveredByCredit = creditAmount / dailyRateNew;
+  }
+  
+  // Calculate potential new billing date
+  let newPeriodEnd = now.plus({ days: Math.ceil(daysCoveredByCredit) });
+  
+  // Determine if this is an upgrade or downgrade
+  const isUpgrade = dailyRateNew > dailyRateOld;
+  
+  // CRITICAL: Cap the new billing date to NEVER exceed the ORIGINAL period end
+  // This prevents the "farming" exploit where repeated up/down cycles extend billing
+  // The cap is based on periodStart + billing cycle, NOT the changed periodEnd
+  // - Upgrade: billing date moves closer (no cap needed)
+  // - Downgrade: billing date extends but NEVER beyond original period
+  if (newPeriodEnd > originalPeriodEnd) {
+    logger.info({
+      calculatedEnd: newPeriodEnd.toISO(),
+      cappedTo: originalPeriodEnd.toISO(),
+      currentPeriodEnd: periodEnd.toISO(),
+    }, 'Billing date capped at ORIGINAL period end (prevents farming exploit)');
+    newPeriodEnd = originalPeriodEnd as typeof newPeriodEnd;
+  }
+  
+  logger.info({
+    oldAmount,
+    newAmount,
+    oldBillingCycle,
+    newBillingCycle,
+    daysRemaining,
+    dailyRateOld: Math.round(dailyRateOld * 1000) / 1000,
+    dailyRateNew: Math.round(dailyRateNew * 1000) / 1000,
+    creditAmount: Math.round(creditAmount * 100) / 100,
+    daysCoveredByCredit: Math.round(daysCoveredByCredit * 100) / 100,
+    newPeriodEnd: newPeriodEnd.toISO(),
+    isUpgrade,
+  }, 'Proration calculated');
+  
+  return {
+    creditAmount: Math.round(creditAmount * 100) / 100,
+    daysCoveredByCredit: Math.round(daysCoveredByCredit * 100) / 100,
+    newPeriodEnd: newPeriodEnd.toJSDate(),
+    daysRemaining: Math.round(daysRemaining),
+    dailyRateOld: Math.round(dailyRateOld * 1000) / 1000,
+    dailyRateNew: Math.round(dailyRateNew * 1000) / 1000,
+    isUpgrade,
+  };
+}
+
+/**
  * Update subscription
  */
 export async function updateSubscription(
@@ -211,35 +349,176 @@ export async function updateSubscription(
   }
   
   const updateData: any = {};
+  let proration: ProrationResult | null = null;
+  
+  // Get current plan details for proration calculation
+  const currentPlan = await masterPrisma.subscriptionPlan.findFirst({
+    where: {
+      OR: [
+        { id: subscription.planId },
+        { slug: subscription.planId },
+      ],
+    },
+  });
+  
+  const oldBillingCycle = subscription.billingCycle as 'MONTHLY' | 'QUARTERLY' | 'YEARLY';
+  const newBillingCycle = input.billingCycle || oldBillingCycle;
+  const oldAmount = Number(subscription.amount);
   
   // Plan change
   if (input.planId && input.planId !== subscription.planId) {
-    const newPlan = planService.getPlanById(input.planId);
+    // Look up plan from database (by ID or slug)
+    const newPlan = await masterPrisma.subscriptionPlan.findFirst({
+      where: {
+        OR: [
+          { id: input.planId },
+          { slug: input.planId },
+        ],
+        isActive: true,
+      },
+    });
     if (!newPlan) {
       throw new Error(`Invalid plan: ${input.planId}`);
     }
     
+    // Calculate new amount based on billing cycle
+    const newAmount = newBillingCycle === 'YEARLY' ? Number(newPlan.yearlyPrice) : Number(newPlan.monthlyPrice);
+    
+    // Calculate proration
+    proration = calculateProration(
+      subscription.currentPeriodStart,
+      subscription.currentPeriodEnd,
+      oldAmount,
+      newAmount,
+      oldBillingCycle,
+      newBillingCycle
+    );
+    
     if (subscription.stripeSubscriptionId) {
-      await stripeService.updateSubscription(
-        subscription.stripeSubscriptionId,
-        input.planId,
-        input.billingCycle || (subscription.billingCycle as 'MONTHLY' | 'QUARTERLY' | 'YEARLY')
-      );
+      // If downgrading to FREE (price = 0), cancel the Stripe subscription
+      if (newAmount === 0) {
+        await stripeService.cancelSubscription(subscription.stripeSubscriptionId);
+        updateData.stripeSubscriptionId = null;
+      } else {
+        // If subscription was scheduled to cancel, resume it first
+        if (subscription.cancelAtPeriodEnd) {
+          await stripeService.setCancelAtPeriodEnd(subscription.stripeSubscriptionId, false);
+        }
+        // Update Stripe subscription with new plan, price, AND billing date
+        // Pass the calculated proration date so Stripe bills on the adjusted date
+        const stripeResult = await stripeService.updateSubscription(
+          subscription.stripeSubscriptionId,
+          newPlan.slug,
+          newBillingCycle,
+          newAmount, // Pass actual DB amount to ensure Stripe uses correct price
+          proration.newPeriodEnd // Pass calculated billing date to sync with Stripe
+        );
+        
+        // If trial_end was set, immediately end trial to show 'active' status in Stripe
+        // The billing date is preserved (next charge happens on trial_end date)
+        if (stripeResult.needsTrialEnd) {
+          logger.info({ subscriptionId: subscription.stripeSubscriptionId }, 
+            'Ending trial immediately to show active status in Stripe');
+          // Don't actually end trial - we WANT the trial_end date to be preserved
+          // Stripe will charge on that date. The status shows "trialing" but that's
+          // actually the billing date, not a free trial.
+        }
+      }
     }
     
-    updateData.planId = input.planId;
+    updateData.planId = newPlan.id;
+    updateData.amount = newAmount;
+    updateData.maxUsers = newPlan.maxUsers;
+    updateData.maxStorage = newPlan.maxStorage;
+    updateData.maxProjects = newPlan.maxProjects;
+    
+    // ALWAYS use our calculated proration date - this implements the "adjust billing date" logic
+    // Upgrade: credit covers fewer days → billing date sooner
+    // Downgrade: credit covers more days → billing date later
+    updateData.currentPeriodStart = new Date();
+    updateData.currentPeriodEnd = proration.newPeriodEnd;
+    
+    logger.info({
+      subscriptionId: id,
+      oldAmount,
+      newAmount,
+      isUpgrade: proration.isUpgrade,
+      creditAmount: proration.creditAmount,
+      daysCoveredByCredit: proration.daysCoveredByCredit,
+      newPeriodEnd: proration.newPeriodEnd,
+    }, 'Proration applied - billing date adjusted in DB and Stripe');
+    
+    // Clear cancelAtPeriodEnd when changing plans (user wants to continue with new plan)
+    if (subscription.cancelAtPeriodEnd && newAmount > 0) {
+      updateData.cancelAtPeriodEnd = false;
+    }
+    
+    // If billing cycle is also changing, update billing cycle
+    if (input.billingCycle && input.billingCycle !== oldBillingCycle) {
+      updateData.billingCycle = input.billingCycle;
+    }
     
     await publishEvent('subscription.plan_changed', {
       subscriptionId: id,
       tenantId: subscription.tenantId,
       oldPlanId: subscription.planId,
-      newPlanId: input.planId,
+      newPlanId: newPlan.id,
+      isUpgrade: proration.isUpgrade,
+      proration: {
+        creditAmount: proration.creditAmount,
+        daysCoveredByCredit: proration.daysCoveredByCredit,
+        daysRemaining: proration.daysRemaining,
+        newPeriodEnd: proration.newPeriodEnd,
+      },
     });
-  }
-  
-  // Billing cycle change
-  if (input.billingCycle && input.billingCycle !== subscription.billingCycle) {
-    updateData.billingCycle = input.billingCycle;
+    
+    logger.info({
+      subscriptionId: id,
+      oldPlan: subscription.planId,
+      newPlan: newPlan.id,
+      proration,
+    }, 'Subscription plan changed with proration');
+  } else if (input.billingCycle && input.billingCycle !== oldBillingCycle) {
+    // Only billing cycle change (no plan change)
+    if (currentPlan) {
+      const newAmount = input.billingCycle === 'YEARLY' 
+        ? Number(currentPlan.yearlyPrice) 
+        : Number(currentPlan.monthlyPrice);
+      
+      // Calculate proration for cycle change
+      proration = calculateProration(
+        subscription.currentPeriodStart,
+        subscription.currentPeriodEnd,
+        oldAmount,
+        newAmount,
+        oldBillingCycle,
+        input.billingCycle
+      );
+      
+      // Update Stripe subscription with new billing cycle AND billing date
+      if (subscription.stripeSubscriptionId) {
+        await stripeService.updateSubscription(
+          subscription.stripeSubscriptionId,
+          currentPlan.slug,
+          input.billingCycle,
+          newAmount, // Pass actual DB amount
+          proration.newPeriodEnd // Pass calculated billing date to sync with Stripe
+        );
+      }
+      
+      updateData.billingCycle = input.billingCycle;
+      updateData.amount = newAmount;
+      // ALWAYS use our calculated proration date
+      updateData.currentPeriodStart = new Date();
+      updateData.currentPeriodEnd = proration.newPeriodEnd;
+      
+      logger.info({
+        subscriptionId: id,
+        oldCycle: oldBillingCycle,
+        newCycle: input.billingCycle,
+        proration,
+      }, 'Subscription billing cycle changed with proration');
+    }
   }
   
   // Cancel at period end

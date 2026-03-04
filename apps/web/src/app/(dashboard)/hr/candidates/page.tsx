@@ -47,6 +47,7 @@ import {
   Trash2,
   Briefcase,
   X,
+  PlayCircle,
 } from 'lucide-react';
 import { candidateApi, type JobCandidate } from '@/lib/api/candidates';
 import { jobApi, type JobDescription } from '@/lib/api/jobs';
@@ -61,6 +62,10 @@ const statusColors: Record<string, string> = {
   SHORTLISTED: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400',
   INTERVIEWED: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
   OFFERED: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
+  OFFER_ACCEPTED: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
+  OFFER_DECLINED: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
+  ONBOARDING_IN_PROGRESS: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400',
+  ONBOARDING_COMPLETED: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-400',
   HIRED: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
   REJECTED: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
   WITHDRAWN: 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-500',
@@ -127,10 +132,48 @@ export default function CandidatesPage() {
     }
   };
 
+  const handleStartOnboarding = async (candidate: JobCandidate) => {
+    // Only start onboarding if candidate has accepted offer
+    if (candidate.status !== 'OFFER_ACCEPTED') {
+      toast.error('Candidate must accept the offer before starting onboarding');
+      return;
+    }
+    
+    try {
+      const result = await candidateApi.startOnboarding(candidate.id);
+      toast.success(result.message || 'Onboarding started! Email sent to candidate with login credentials.');
+      loadData();
+    } catch (error: any) {
+      console.error('Failed to start onboarding:', error);
+      const errData = error.response?.data?.error;
+      const errMsg = typeof errData === 'object' ? errData?.message || 'Failed to start onboarding' : errData || 'Failed to start onboarding';
+      toast.error(errMsg);
+    }
+  };
+
+  const handleResendOnboardingEmail = async (candidate: JobCandidate) => {
+    // Only resend if candidate is in onboarding
+    if (candidate.status !== 'ONBOARDING_IN_PROGRESS') {
+      toast.error('Can only resend email for candidates in onboarding');
+      return;
+    }
+    
+    try {
+      const result = await candidateApi.resendOnboardingEmail(candidate.id);
+      toast.success(result.message || 'New onboarding credentials sent to candidate!');
+      loadData();
+    } catch (error: any) {
+      console.error('Failed to resend onboarding email:', error);
+      const errData = error.response?.data?.error;
+      const errMsg = typeof errData === 'object' ? errData?.message || 'Failed to resend onboarding email' : errData || 'Failed to resend onboarding email';
+      toast.error(errMsg);
+    }
+  };
+
   const handleMarkAsHired = async (candidate: JobCandidate) => {
-    // Only allow hiring if candidate has been offered
-    if (candidate.status !== 'OFFERED') {
-      toast.error('Candidate must be in OFFERED status before being marked as hired');
+    // Only allow hiring if onboarding is completed
+    if (!['ONBOARDING_COMPLETED', 'ONBOARDING_IN_PROGRESS'].includes(candidate.status)) {
+      toast.error('Candidate must complete onboarding before being marked as hired');
       return;
     }
     
@@ -140,7 +183,9 @@ export default function CandidatesPage() {
       loadData();
     } catch (error: any) {
       console.error('Failed to mark as hired:', error);
-      toast.error(error.response?.data?.error || 'Failed to mark as hired');
+      const errData = error.response?.data?.error;
+      const errMsg = typeof errData === 'object' ? errData?.message || 'Failed to mark as hired' : errData || 'Failed to mark as hired';
+      toast.error(errMsg);
     }
   };
 
@@ -535,7 +580,7 @@ export default function CandidatesPage() {
               <div className="rounded-full bg-primary/10 p-6 mb-4">
                 <Users className="h-16 w-16 text-primary" />
               </div>
-              <h3 className="text-xl font-semibold mb-2">No Candidates Yet</h3>
+              <h3 className="text-xl font-semibold mb-2">No candidates yet</h3>
               <p className="text-muted-foreground text-center max-w-md mb-6">
                 {searchTerm || statusFilter !== 'all' || jobFilter !== 'all'
                   ? 'No candidates match your current filters. Try adjusting your search criteria.'
@@ -635,7 +680,7 @@ export default function CandidatesPage() {
                             <span className="text-sm font-medium">{candidate.rating}</span>
                           </>
                         ) : (
-                          <span className="text-muted-foreground text-sm">-</span>
+                          <Badge variant="outline" className="text-xs font-normal text-muted-foreground">No Rating</Badge>
                         )}
                       </div>
                     </td>
@@ -666,14 +711,32 @@ export default function CandidatesPage() {
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuLabel>Final Decision</DropdownMenuLabel>
-                          <DropdownMenuItem onClick={() => {
-                              setCandidateForOffer(candidate);
-                              setSendOfferOpen(true);
-                            }}>
-                            <Award className="h-4 w-4 mr-2 text-amber-500" />
-                            Send Offer
-                          </DropdownMenuItem>
-                          {candidate.status === 'OFFERED' && (
+                          {!['OFFERED', 'OFFER_ACCEPTED', 'OFFER_DECLINED', 'HIRED', 'REJECTED'].includes(candidate.status) && (
+                            <DropdownMenuItem onClick={() => {
+                                setCandidateForOffer(candidate);
+                                setSendOfferOpen(true);
+                              }}>
+                              <Award className="h-4 w-4 mr-2 text-amber-500" />
+                              Send Offer
+                            </DropdownMenuItem>
+                          )}
+                          {candidate.status === 'OFFER_ACCEPTED' && (
+                            <DropdownMenuItem 
+                              onClick={() => handleStartOnboarding(candidate)}
+                            >
+                              <PlayCircle className="h-4 w-4 mr-2 text-blue-500" />
+                              Start Onboarding
+                            </DropdownMenuItem>
+                          )}
+                          {candidate.status === 'ONBOARDING_IN_PROGRESS' && (
+                            <DropdownMenuItem 
+                              onClick={() => handleResendOnboardingEmail(candidate)}
+                            >
+                              <Mail className="h-4 w-4 mr-2 text-cyan-500" />
+                              Resend Onboarding Email
+                            </DropdownMenuItem>
+                          )}
+                          {['ONBOARDING_IN_PROGRESS', 'ONBOARDING_COMPLETED'].includes(candidate.status) && (
                             <DropdownMenuItem 
                               onClick={() => handleMarkAsHired(candidate)}
                             >

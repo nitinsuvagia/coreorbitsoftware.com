@@ -13,7 +13,8 @@ COPY packages/shared-utils/package*.json ./packages/shared-utils/
 COPY packages/tenant-db-manager/package*.json ./packages/tenant-db-manager/
 COPY services/notification-service/package*.json ./services/notification-service/
 
-RUN npm ci --workspace=packages/database --workspace=packages/event-bus --workspace=packages/shared-types --workspace=packages/shared-utils --workspace=packages/tenant-db-manager --workspace=services/notification-service
+RUN npm ci --workspace=packages/database --workspace=packages/event-bus --workspace=packages/shared-types --workspace=packages/shared-utils --workspace=packages/tenant-db-manager --workspace=services/notification-service && \
+    npm install dotenv@16.6.1 --save-exact --ignore-scripts
 
 FROM base AS builder
 RUN apk add --no-cache ca-certificates

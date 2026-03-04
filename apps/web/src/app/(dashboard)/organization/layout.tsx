@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, createContext, useContext } from 'react';
+import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
+import { useEmployeeStatusCounts } from '@/hooks/use-employees';
 
 // Import hooks
 import {
@@ -26,158 +27,27 @@ import {
   useDepartments,
   useDesignations,
   useTeamMembers,
-  useBilling,
   useOrganizationSettings,
   useIntegrations,
 } from './hooks';
-import type { OpenAISettings } from './types';
+
+// Import context
+import { OrganizationContext, OrganizationContextType } from './context';
 
 // Navigation items
 const NAV_ITEMS = [
   { href: '/organization', label: 'General', exact: true },
   { href: '/organization/settings', label: 'Settings' },
   { href: '/organization/email', label: 'Email' },
+  { href: '/organization/email-templates', label: 'Email Templates' },
   { href: '/organization/departments', label: 'Departments' },
   { href: '/organization/designations', label: 'Designations' },
+  { href: '/organization/roles', label: 'Roles' },
   { href: '/organization/team', label: 'Team' },
-  { href: '/organization/billing', label: 'Billing' },
+  { href: '/organization/badges', label: 'Badges' },
+  { href: '/organization/sso', label: 'SSO' },
   { href: '/organization/integrations', label: 'Integrations' },
-  { href: '/organization/usage', label: 'Usage' },
 ];
-
-// Context to share data between layout and pages
-// Use ReturnType to automatically match hook return types
-type OrganizationHookReturn = ReturnType<typeof useOrganization>;
-type DepartmentsHookReturn = ReturnType<typeof useDepartments>;
-type DesignationsHookReturn = ReturnType<typeof useDesignations>;
-type TeamMembersHookReturn = ReturnType<typeof useTeamMembers>;
-type BillingHookReturn = ReturnType<typeof useBilling>;
-type OrganizationSettingsHookReturn = ReturnType<typeof useOrganizationSettings>;
-type IntegrationsHookReturn = ReturnType<typeof useIntegrations>;
-
-interface OrganizationContextType {
-  // Organization
-  org: OrganizationHookReturn['org'];
-  orgForm: OrganizationHookReturn['orgForm'];
-  orgErrors: OrganizationHookReturn['orgErrors'];
-  loadingOrg: boolean;
-  savingOrg: boolean;
-  fetchOrganization: OrganizationHookReturn['fetchOrganization'];
-  saveOrganization: OrganizationHookReturn['saveOrganization'];
-  updateFormField: OrganizationHookReturn['updateFormField'];
-  updateAddressField: OrganizationHookReturn['updateAddressField'];
-  setOrgErrors: OrganizationHookReturn['setOrgErrors'];
-  
-  // Departments
-  departments: DepartmentsHookReturn['departments'];
-  loadingDepts: boolean;
-  savingDept: boolean;
-  deptDialogOpen: boolean;
-  editingDept: DepartmentsHookReturn['editingDept'];
-  deleteDeptId: string | null;
-  deptForm: DepartmentsHookReturn['formData'];
-  deptErrors: DepartmentsHookReturn['errors'];
-  fetchDepartments: DepartmentsHookReturn['fetchDepartments'];
-  openAddDept: DepartmentsHookReturn['openAddDialog'];
-  openEditDept: DepartmentsHookReturn['openEditDialog'];
-  closeDeptDialog: DepartmentsHookReturn['closeDialog'];
-  handleSaveDept: DepartmentsHookReturn['saveDepartment'];
-  handleDeleteDept: DepartmentsHookReturn['deleteDepartment'];
-  handlePermanentDeleteDept: DepartmentsHookReturn['permanentlyDeleteDepartment'];
-  setDeleteDeptId: DepartmentsHookReturn['setDeleteId'];
-  updateDeptFormField: DepartmentsHookReturn['updateFormField'];
-  
-  // Designations
-  designations: DesignationsHookReturn['designations'];
-  loadingDesigs: boolean;
-  savingDesig: boolean;
-  desigDialogOpen: boolean;
-  editingDesig: DesignationsHookReturn['editingDesig'];
-  deleteDesigId: string | null;
-  desigForm: DesignationsHookReturn['formData'];
-  desigErrors: DesignationsHookReturn['errors'];
-  fetchDesignations: DesignationsHookReturn['fetchDesignations'];
-  openAddDesig: DesignationsHookReturn['openAddDialog'];
-  openEditDesig: DesignationsHookReturn['openEditDialog'];
-  closeDesigDialog: DesignationsHookReturn['closeDialog'];
-  handleSaveDesig: DesignationsHookReturn['saveDesignation'];
-  handleDeleteDesig: DesignationsHookReturn['deleteDesignation'];
-  handlePermanentDeleteDesig: DesignationsHookReturn['permanentlyDeleteDesignation'];
-  setDeleteDesigId: DesignationsHookReturn['setDeleteId'];
-  updateDesigFormField: DesignationsHookReturn['updateFormField'];
-  
-  // Team Members
-  teamMembers: TeamMembersHookReturn['teamMembers'];
-  loadingTeam: boolean;
-  sendingInvite: boolean;
-  inviteDialogOpen: boolean;
-  editingMember: TeamMembersHookReturn['editingMember'];
-  removeMemberId: string | null;
-  inviteForm: TeamMembersHookReturn['inviteForm'];
-  fetchTeamMembers: TeamMembersHookReturn['fetchTeamMembers'];
-  openInviteDialog: TeamMembersHookReturn['openInviteDialog'];
-  closeInviteDialog: TeamMembersHookReturn['closeInviteDialog'];
-  handleSendInvite: TeamMembersHookReturn['sendInvite'];
-  handleUpdateMemberRole: TeamMembersHookReturn['updateMemberRole'];
-  handleRemoveMember: TeamMembersHookReturn['removeMember'];
-  handleResendInvite: TeamMembersHookReturn['resendInvite'];
-  setEditingMember: TeamMembersHookReturn['setEditingMember'];
-  setRemoveMemberId: TeamMembersHookReturn['setRemoveId'];
-  updateInviteForm: TeamMembersHookReturn['updateInviteForm'];
-  
-  // Billing
-  invoices: BillingHookReturn['invoices'];
-  loadingInvoices: boolean;
-  loadingBilling: boolean;
-  billingInfo: BillingHookReturn['billingInfo'];
-  fetchInvoices: BillingHookReturn['fetchInvoices'];
-  fetchBillingData: BillingHookReturn['fetchBillingData'];
-  changePlan: BillingHookReturn['changePlan'];
-  cancelSubscription: BillingHookReturn['cancelSubscription'];
-  updatePaymentMethod: BillingHookReturn['updatePaymentMethod'];
-  getSetupIntent: BillingHookReturn['getSetupIntent'];
-  
-  // Integrations
-  integrations: IntegrationsHookReturn['integrations'];
-  loadingIntegrations: boolean;
-  connectingIntegration: string | null;
-  fetchIntegrations: IntegrationsHookReturn['fetchIntegrations'];
-  connectIntegration: IntegrationsHookReturn['connectIntegration'];
-  disconnectIntegration: IntegrationsHookReturn['disconnectIntegration'];
-  openAISettings: OpenAISettings;
-  openAIDialogOpen: boolean;
-  savingOpenAI: boolean;
-  testingConnection: boolean;
-  saveOpenAISettings: IntegrationsHookReturn['saveOpenAISettings'];
-  testOpenAIConnection: IntegrationsHookReturn['testOpenAIConnection'];
-  openOpenAIDialog: IntegrationsHookReturn['openOpenAIDialog'];
-  closeOpenAIDialog: IntegrationsHookReturn['closeOpenAIDialog'];
-  
-  // Organization Settings
-  orgSettings: OrganizationSettingsHookReturn['settings'];
-  orgSettingsForm: OrganizationSettingsHookReturn['settingsForm'];
-  orgSettingsErrors: OrganizationSettingsHookReturn['errors'];
-  loadingSettings: boolean;
-  savingSettings: boolean;
-  fetchOrgSettings: OrganizationSettingsHookReturn['fetchSettings'];
-  saveOrgSettings: OrganizationSettingsHookReturn['saveSettings'];
-  saveRegionalSettings: OrganizationSettingsHookReturn['saveRegionalSettings'];
-  saveWorkingEnvironmentSettings: OrganizationSettingsHookReturn['saveWorkingEnvironmentSettings'];
-  updateOrgSettingsField: OrganizationSettingsHookReturn['updateFormField'];
-  resetOrgSettingsForm: OrganizationSettingsHookReturn['resetForm'];
-  resetRegionalSettings: OrganizationSettingsHookReturn['resetRegionalSettings'];
-  resetWorkingEnvironmentSettings: OrganizationSettingsHookReturn['resetWorkingEnvironmentSettings'];
-}
-
-const OrganizationContext = createContext<OrganizationContextType | null>(null);
-
-export function useOrganizationContext() {
-  const context = useContext(OrganizationContext);
-  if (!context) {
-    throw new Error('useOrganizationContext must be used within OrganizationLayout');
-  }
-  return context;
-}
 
 export default function OrganizationLayout({
   children,
@@ -192,9 +62,9 @@ export default function OrganizationLayout({
   const departmentsHook = useDepartments();
   const designationsHook = useDesignations();
   const teamMembersHook = useTeamMembers();
-  const billingHook = useBilling();
   const orgSettingsHook = useOrganizationSettings();
   const integrationsHook = useIntegrations();
+  const { data: statusCounts } = useEmployeeStatusCounts();
 
   const {
     org,
@@ -270,19 +140,6 @@ export default function OrganizationLayout({
   } = teamMembersHook;
 
   const {
-    invoices,
-    loadingInvoices,
-    loadingBilling,
-    billingInfo,
-    fetchInvoices,
-    fetchBillingData,
-    changePlan,
-    cancelSubscription,
-    updatePaymentMethod,
-    getSetupIntent,
-  } = billingHook;
-
-  const {
     integrations,
     loadingIntegrations,
     connectingIntegration,
@@ -321,9 +178,8 @@ export default function OrganizationLayout({
     fetchDepartments();
     fetchDesignations();
     fetchTeamMembers();
-    fetchInvoices();
     fetchOrgSettings();
-  }, [fetchOrganization, fetchDepartments, fetchDesignations, fetchTeamMembers, fetchInvoices, fetchOrgSettings]);
+  }, [fetchOrganization, fetchDepartments, fetchDesignations, fetchTeamMembers, fetchOrgSettings]);
 
   // Context value
   const contextValue: OrganizationContextType = {
@@ -388,16 +244,6 @@ export default function OrganizationLayout({
     setEditingMember,
     setRemoveMemberId,
     updateInviteForm,
-    invoices,
-    loadingInvoices,
-    loadingBilling,
-    billingInfo,
-    fetchInvoices,
-    fetchBillingData,
-    changePlan,
-    cancelSubscription,
-    updatePaymentMethod,
-    getSetupIntent,
     // Integrations
     integrations,
     loadingIntegrations,
@@ -460,6 +306,9 @@ export default function OrganizationLayout({
         <div className="text-center">
           <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
           <h3 className="text-lg font-medium">Failed to load organization</h3>
+          {organizationHook.fetchError && (
+            <p className="text-sm text-muted-foreground mt-2">{organizationHook.fetchError}</p>
+          )}
           <Button onClick={fetchOrganization} className="mt-4">
             <RefreshCw className="mr-2 h-4 w-4" />
             Retry
@@ -469,7 +318,8 @@ export default function OrganizationLayout({
     );
   }
 
-  const totalEmployees = departments.reduce((sum, d) => sum + (d._count?.employees || 0), 0);
+  // Get active employees count (current + probation)
+  const activeEmployeesCount = (statusCounts?.current || 0) + (statusCounts?.probation || 0);
 
   return (
     <OrganizationContext.Provider value={contextValue}>
@@ -513,7 +363,7 @@ export default function OrganizationLayout({
                 <div className="flex flex-wrap gap-4 mt-4 text-sm text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Users className="h-4 w-4" />
-                    {totalEmployees} employees
+                    {activeEmployeesCount} employees
                   </span>
                   <span className="flex items-center gap-1">
                     <FolderTree className="h-4 w-4" />

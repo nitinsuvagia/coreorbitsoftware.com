@@ -22,7 +22,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  Brain,
   Loader2,
   Sparkles,
   CheckCircle,
@@ -32,9 +31,7 @@ import {
   ToggleLeft,
   Type,
   Download,
-  RefreshCw,
   Zap,
-  Database,
   Settings,
 } from 'lucide-react';
 import { assessmentApi, AIGeneratedQuestion, AssessmentDifficulty } from '@/lib/api/assessments';
@@ -130,14 +127,13 @@ export function AIImportDialog({ open, onOpenChange, onImportSuccess }: AIImport
       const questions = result.questions;
       setGeneratedQuestions(Array.isArray(questions) ? questions : []);
       setQuestionSource(result.source);
-      // Select all by default
-      setSelectedQuestions(new Set(questions.map((_, i) => i)));
+      // Don't select any by default - user selects manually
+      setSelectedQuestions(new Set());
       
       if (questions.length === 0) {
-        toast.info('No questions found for this category and difficulty. Try different settings.');
+        toast.info('No questions found. Try different settings.');
       } else {
-        const sourceLabel = result.source === 'openai' ? 'OpenAI' : 'Question Database';
-        toast.success(`Generated ${questions.length} questions from ${sourceLabel}`);
+        toast.success(`Generated ${questions.length} questions`);
       }
     } catch (error) {
       console.error('Failed to generate questions:', error);
@@ -206,42 +202,32 @@ export function AIImportDialog({ open, onOpenChange, onImportSuccess }: AIImport
       <DialogContent className="max-w-5xl max-h-[90vh] w-[90vw] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Brain className="h-5 w-5 text-primary" />
+            <Sparkles className="h-5 w-5 text-primary" />
             AI Question Generator
             {openaiEnabled ? (
               <Badge className="bg-green-100 text-green-700 ml-2">
                 <Zap className="h-3 w-3 mr-1" />
-                OpenAI Connected
+                AI Enabled
               </Badge>
             ) : (
               <Badge variant="secondary" className="ml-2">
-                <Database className="h-3 w-3 mr-1" />
-                Using Question Database
+                Not Configured
               </Badge>
             )}
           </DialogTitle>
           <DialogDescription>
-            {openaiEnabled ? (
-              <>Generate unique questions using OpenAI. Questions are tailored to your selected category and difficulty.</>
-            ) : (
-              <>
-                Generate questions from our predefined database. 
-                <Link href="/organization?tab=integrations" className="text-primary hover:underline ml-1">
-                  Connect OpenAI
-                </Link> for AI-generated custom questions.
-              </>
-            )}
+            Generate assessment questions tailored to your selected category and difficulty.
           </DialogDescription>
         </DialogHeader>
 
-        {/* OpenAI Status Banner */}
+        {/* Not Configured Banner */}
         {!openaiEnabled && (
           <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm">
             <Sparkles className="h-5 w-5 text-blue-600 shrink-0" />
             <div className="flex-1">
-              <span className="font-medium text-blue-800">Want AI-generated questions?</span>
+              <span className="font-medium text-blue-800">AI not configured</span>
               <span className="text-blue-600 ml-1">
-                Configure your OpenAI API key in Organization Settings to unlock unlimited custom questions.
+                Configure your OpenAI API key in Organization Settings to use AI question generation.
               </span>
             </div>
             <Link href="/organization?tab=integrations">
@@ -367,35 +353,12 @@ export function AIImportDialog({ open, onOpenChange, onImportSuccess }: AIImport
         <div className="flex-1 min-h-0 flex flex-col border-t border-b -mx-6" style={{ maxHeight: '400px' }}>
           {generatedQuestions.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground px-6">
-              <Brain className="h-12 w-12 mb-4 opacity-50" />
+              <Sparkles className="h-12 w-12 mb-4 opacity-50" />
               <p className="text-lg font-medium">No questions generated yet</p>
               <p className="text-sm">Select a category and difficulty, then click Generate</p>
             </div>
           ) : (
             <>
-              {/* Source Indicator - Fixed at top */}
-              {questionSource && (
-                <div className="px-6 pt-4 pb-2">
-                  <div className={`flex items-center gap-2 p-2 rounded-lg text-sm ${
-                    questionSource === 'openai' 
-                      ? 'bg-green-50 text-green-700 border border-green-200' 
-                      : 'bg-gray-50 text-gray-600 border border-gray-200'
-                  }`}>
-                    {questionSource === 'openai' ? (
-                      <>
-                        <Zap className="h-4 w-4" />
-                        <span>Questions generated by <strong>OpenAI</strong></span>
-                      </>
-                    ) : (
-                      <>
-                        <Database className="h-4 w-4" />
-                        <span>Questions from <strong>Predefined Database</strong></span>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
-
               {/* Select All Header - Sticky */}
               <div className="sticky top-0 z-10 bg-background border-b px-6 py-3">
                 <div className="flex items-center gap-3">

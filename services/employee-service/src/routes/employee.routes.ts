@@ -6,6 +6,8 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { PrismaClient } from '.prisma/tenant-client';
 import { v4 as uuidv4 } from 'uuid';
+import bcrypt from 'bcryptjs';
+import { randomBytes } from 'crypto';
 
 import { logger } from '../utils/logger';
 import { getMasterPrisma } from '../utils/database';
@@ -47,6 +49,7 @@ const bankDetailSchema = z.object({
   branchName: z.string().optional(),
   accountNumber: z.string().min(1),
   accountType: z.enum(['SAVINGS', 'CHECKING', 'CURRENT']).default('SAVINGS'),
+  accountHolderName: z.string().optional(),
   routingNumber: z.string().optional(),
   swiftCode: z.string().optional(),
   ifscCode: z.string().optional(),
@@ -83,6 +86,8 @@ const createEmployeeSchema = z.object({
   gender: z.enum(['MALE', 'FEMALE', 'OTHER', 'PREFER_NOT_TO_SAY']).optional().or(z.literal('')).transform(v => v || undefined),
   maritalStatus: z.enum(['SINGLE', 'MARRIED', 'DIVORCED', 'WIDOWED', 'OTHER']).optional().or(z.literal('')).transform(v => v || undefined),
   nationality: z.string().optional(),
+  bloodGroup: z.string().optional(),
+  avatar: z.string().url().optional().or(z.string().startsWith('/')).nullable(),
   
   // Address
   addressLine1: z.string().optional(),
@@ -98,6 +103,7 @@ const createEmployeeSchema = z.object({
   reportingManagerId: z.string().uuid().optional().or(z.literal('')),
   employmentType: z.enum(['FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERN', 'FREELANCE', 'CONSULTANT']).default('FULL_TIME'),
   joinDate: z.string(),
+  confirmationDate: z.string().optional().nullable(),
   probationEndDate: z.string().optional(),
   workLocation: z.string().optional(),
   workShift: z.string().optional(),
@@ -123,9 +129,11 @@ const listSchema = z.object({
   departmentId: z.string().uuid().optional(),
   designationId: z.string().uuid().optional(),
   status: z.string().optional(),
+  statuses: z.string().optional(),  // comma-separated list of statuses to include
+  excludeStatuses: z.string().optional(),  // comma-separated list of statuses to exclude
   employmentType: z.string().optional(),
   page: z.coerce.number().min(1).default(1),
-  limit: z.coerce.number().min(1).max(100).default(20),
+  limit: z.coerce.number().min(1).max(1000).default(20),
 });
 
 const offboardSchema = z.object({
@@ -140,6 +148,7 @@ const offboardSchema = z.object({
 interface EmployeeCodeSettings {
   autoGenerate: boolean;
   prefix: string;
+  includeYear: boolean;
   yearSeqDigits: number;
   totalSeqDigits: number;
   separator: string;
@@ -158,9 +167,10 @@ async function getEmployeeCodeSettings(tenantSlug: string): Promise<EmployeeCode
   return {
     autoGenerate: settings?.employeeCodeAutoGenerate ?? true,
     prefix: settings?.employeeCodePrefix || 'EMP',
+    includeYear: settings?.employeeCodeIncludeYear ?? false,
     yearSeqDigits: settings?.employeeCodeYearSeqDigits ?? 5,
     totalSeqDigits: settings?.employeeCodeTotalSeqDigits ?? 5,
-    separator: settings?.employeeCodeSeparator || '-',
+    separator: settings?.employeeCodeSeparator ?? '-',
   };
 }
 
@@ -172,27 +182,30 @@ async function generateEmployeeCode(prisma: any, tenantSlug: string): Promise<st
     throw new Error('Employee code auto-generation is disabled. Please provide an employee code manually.');
   }
   
-  const { prefix, separator, yearSeqDigits, totalSeqDigits } = settings;
+  const { prefix, separator, includeYear, yearSeqDigits, totalSeqDigits } = settings;
   const currentYear = new Date().getFullYear();
   
-  // Count employees created this year (for year sequence)
-  const employeesThisYear = await prisma.employee.count({
-    where: {
-      createdAt: {
-        gte: new Date(`${currentYear}-01-01T00:00:00.000Z`),
-        lt: new Date(`${currentYear + 1}-01-01T00:00:00.000Z`),
-      },
-    },
-  });
-  
-  // Count total employees (for total sequence)
+  // Count total employees (always needed)
   const totalEmployees = await prisma.employee.count();
-  
-  // Generate code: {PREFIX}-{YYYY}-{YEAR_SEQ}-{TOTAL_SEQ}
-  const yearSeq = String(employeesThisYear + 1).padStart(yearSeqDigits, '0');
   const totalSeq = String(totalEmployees + 1).padStart(totalSeqDigits, '0');
   
-  return `${prefix}${separator}${currentYear}${separator}${yearSeq}${separator}${totalSeq}`;
+  if (includeYear) {
+    // Full format: PREFIX-YEAR-YEAR_SEQ-TOTAL_SEQ (e.g., EMP-2026-00001-00001)
+    // Count employees created this year (for year sequence)
+    const employeesThisYear = await prisma.employee.count({
+      where: {
+        createdAt: {
+          gte: new Date(`${currentYear}-01-01T00:00:00.000Z`),
+          lt: new Date(`${currentYear + 1}-01-01T00:00:00.000Z`),
+        },
+      },
+    });
+    const yearSeq = String(employeesThisYear + 1).padStart(yearSeqDigits, '0');
+    return `${prefix}${separator}${currentYear}${separator}${yearSeq}${separator}${totalSeq}`;
+  } else {
+    // Simple format: PREFIX-TOTAL_SEQ (e.g., EMP-00001)
+    return `${prefix}${separator}${totalSeq}`;
+  }
 }
 
 // ============================================================================
@@ -408,6 +421,18 @@ router.get('/', async (req: Request, res: Response) => {
       where.status = filters.status;
     }
 
+    // Support multiple statuses (comma-separated)
+    if (filters.statuses) {
+      const statusList = filters.statuses.split(',').map((s: string) => s.trim().toUpperCase());
+      where.status = { in: statusList };
+    }
+
+    // Support excluding statuses (comma-separated)
+    if (filters.excludeStatuses) {
+      const excludeList = filters.excludeStatuses.split(',').map((s: string) => s.trim().toUpperCase());
+      where.status = { notIn: excludeList };
+    }
+
     if (filters.employmentType) {
       where.employmentType = filters.employmentType;
     }
@@ -509,6 +534,62 @@ router.get('/designations', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: { code: 'LIST_FAILED', message: (error as Error).message },
+    });
+  }
+});
+
+/**
+ * GET /employees/status-counts - Get employee counts by status category (for tabs)
+ */
+router.get('/status-counts', async (req: Request, res: Response) => {
+  try {
+    const prisma = getPrismaFromRequest(req);
+
+    const [current, probation, relieving, exEmployees] = await Promise.all([
+      // Current: Active + On Leave (excludes terminated, resigned, retired, probation, notice_period)
+      prisma.employee.count({
+        where: {
+          deletedAt: null,
+          status: { notIn: ['TERMINATED', 'RESIGNED', 'RETIRED', 'PROBATION', 'NOTICE_PERIOD'] },
+        },
+      }),
+      // Probation
+      prisma.employee.count({
+        where: {
+          deletedAt: null,
+          status: 'PROBATION',
+        },
+      }),
+      // Relieving (Notice Period)
+      prisma.employee.count({
+        where: {
+          deletedAt: null,
+          status: 'NOTICE_PERIOD',
+        },
+      }),
+      // Ex-Employees: Terminated + Resigned + Retired
+      prisma.employee.count({
+        where: {
+          deletedAt: null,
+          status: { in: ['TERMINATED', 'RESIGNED', 'RETIRED'] },
+        },
+      }),
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        current,
+        probation,
+        relieving,
+        exEmployees,
+      },
+    });
+  } catch (error) {
+    logger.error({ error: (error as Error).message }, 'Failed to get status counts');
+    res.status(500).json({
+      success: false,
+      error: { code: 'STATUS_COUNTS_FAILED', message: (error as Error).message },
     });
   }
 });
@@ -1112,7 +1193,7 @@ router.get('/hr-alerts', async (req: Request, res: Response) => {
           description: `${pendingLeaves} leave request(s) awaiting approval`,
           timestamp: 'System Alert',
           action: 'Review',
-          actionUrl: '/leaves/pending',
+          actionUrl: '/hr/leave-management',
         });
       }
     } catch (e) {
@@ -1362,16 +1443,19 @@ router.get('/leave-requests-summary', async (req: Request, res: Response) => {
       },
     });
 
-    // Get leave type names
+    // Get leave type names - only paid leave types
     const leaveTypes = await prisma.leaveType.findMany({
-      where: { isActive: true },
+      where: { isActive: true, isPaid: true },
       select: { id: true, name: true },
     });
 
     const leaveTypeMap = new Map(leaveTypes.map((lt) => [lt.id, lt.name]));
+    const paidLeaveTypeIds = new Set(leaveTypes.map((lt) => lt.id));
 
     const leaveBalance: Record<string, number> = {};
     for (const balance of balanceSummary) {
+      // Only include paid leave types in balance
+      if (!paidLeaveTypeIds.has(balance.leaveTypeId)) continue;
       const typeName = leaveTypeMap.get(balance.leaveTypeId) || 'Other';
       const available = (Number(balance._sum.totalDays) || 0) - (Number(balance._sum.usedDays) || 0);
       leaveBalance[typeName.toLowerCase().replace(/\s+/g, '')] = Math.round(available);
@@ -1432,10 +1516,11 @@ router.get('/upcoming-events', async (req: Request, res: Response) => {
     now.setHours(0, 0, 0, 0); // Start of today
     const thirtyDaysLater = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-    // Get upcoming birthdays (next 30 days)
-    const employees = await prisma.employee.findMany({
+    const EX_EMPLOYEE_STATUSES = ['TERMINATED', 'RESIGNED', 'RETIRED'];
+
+    // Get all employees (active + ex) for birthdays, active-only for anniversaries
+    const allEmployees = await prisma.employee.findMany({
       where: {
-        status: 'ACTIVE',
         deletedAt: null,
       },
       select: {
@@ -1446,6 +1531,7 @@ router.get('/upcoming-events', async (req: Request, res: Response) => {
         dateOfBirth: true,
         joinDate: true,
         avatar: true,
+        status: true,
         department: { select: { name: true } },
       },
     });
@@ -1454,8 +1540,10 @@ router.get('/upcoming-events', async (req: Request, res: Response) => {
     const birthdays: any[] = [];
     const anniversaries: any[] = [];
 
-    for (const emp of employees) {
-      // Check birthday
+    for (const emp of allEmployees) {
+      const isFormer = EX_EMPLOYEE_STATUSES.includes(emp.status);
+
+      // Check birthday — include both active and ex-employees
       if (emp.dateOfBirth) {
         const birthdayThisYear = new Date(
           currentYear,
@@ -1474,6 +1562,7 @@ router.get('/upcoming-events', async (req: Request, res: Response) => {
             id: `birthday-${emp.id}`,
             type: 'birthday',
             date: birthdayThisYear.toISOString(),
+            isFormer,
             employee: {
               id: emp.id,
               firstName: emp.firstName,
@@ -1486,8 +1575,8 @@ router.get('/upcoming-events', async (req: Request, res: Response) => {
         }
       }
 
-      // Check work anniversary
-      if (emp.joinDate) {
+      // Check work anniversary — ONLY for active employees
+      if (!isFormer && emp.joinDate) {
         const joinDate = new Date(emp.joinDate);
         const anniversaryThisYear = new Date(
           currentYear,
@@ -1555,8 +1644,24 @@ router.get('/upcoming-events', async (req: Request, res: Response) => {
     res.json({
       success: true,
       data: {
-        birthdays: birthdays.slice(0, 10),
-        workAnniversaries: anniversaries.slice(0, 10),
+        birthdays: birthdays.slice(0, 10).map((b: any) => ({
+          id: b.employee.id,
+          name: `${b.employee.firstName} ${b.employee.lastName}`.trim(),
+          department: b.employee.department?.name || 'N/A',
+          avatar: b.employee.avatar,
+          date: b.date,
+          daysUntil: b.daysUntil,
+          isFormer: b.isFormer || false,
+        })),
+        workAnniversaries: anniversaries.slice(0, 10).map((a: any) => ({
+          id: a.employee.id,
+          name: `${a.employee.firstName} ${a.employee.lastName}`.trim(),
+          department: a.employee.department?.name || 'N/A',
+          avatar: a.employee.avatar,
+          date: a.date,
+          years: a.years,
+          daysUntil: a.daysUntil,
+        })),
         holidays,
       },
     });
@@ -1677,7 +1782,7 @@ router.get('/recent-activities', async (req: Request, res: Response) => {
               select: { firstName: true, lastName: true },
             },
             job: { select: { title: true } },
-          },
+          } as any,
           orderBy: { scheduledAt: 'desc' },
           take: 5,
         });
@@ -1687,10 +1792,10 @@ router.get('/recent-activities', async (req: Request, res: Response) => {
             id: `interview-${interview.id}`,
             type: 'interview',
             action: 'Interview scheduled',
-            employee: `${interview.candidate?.firstName} ${interview.candidate?.lastName}`,
+            employee: `${(interview as any).candidate?.firstName} ${(interview as any).candidate?.lastName}`,
             entityType: 'interview',
             entityId: interview.id,
-            details: `For ${interview.job?.title}`,
+            details: `For ${(interview as any).job?.title}`,
             timestamp: formatRelativeTime(interview.scheduledAt),
             createdAt: interview.scheduledAt.toISOString(),
           });
@@ -1773,10 +1878,15 @@ router.get('/recruitment-stats', async (req: Request, res: Response) => {
         offersExtended += c._count.id; 
       }
       else if (status === 'offer_accepted') { 
-        offersAccepted = c._count.id; 
+        offersAccepted += c._count.id; 
         offersExtended += c._count.id; // Offer was extended before being accepted
       }
-      else if (status === 'hired') { candidatesByStage.hired = c._count.id; }
+      else if (status === 'hired') { 
+        candidatesByStage.hired = c._count.id;
+        // Hired candidates also accepted the offer
+        offersAccepted += c._count.id;
+        offersExtended += c._count.id;
+      }
       totalCandidates += c._count.id;
     }
 
@@ -2266,7 +2376,7 @@ router.get('/compliance-stats', async (req: Request, res: Response) => {
     // Try to get document data
     try {
       // Documents expiring in next 30 days
-      const expiring = await prisma.document.findMany({
+      const expiring = await (prisma as any).document.findMany({
         where: {
           expiryDate: { gte: now, lte: thirtyDaysFromNow },
           deletedAt: null,
@@ -2293,7 +2403,7 @@ router.get('/compliance-stats', async (req: Request, res: Response) => {
       }
 
       // Pending documents
-      const pending = await prisma.document.count({
+      const pending = await (prisma as any).document.count({
         where: {
           status: 'PENDING',
           deletedAt: null,
@@ -2302,8 +2412,8 @@ router.get('/compliance-stats', async (req: Request, res: Response) => {
       documentsPending = pending;
 
       // Calculate compliance rate
-      const totalDocs = await prisma.document.count({ where: { deletedAt: null } });
-      const validDocs = await prisma.document.count({
+      const totalDocs = await (prisma as any).document.count({ where: { deletedAt: null } });
+      const validDocs = await (prisma as any).document.count({
         where: {
           deletedAt: null,
           OR: [
@@ -2368,6 +2478,384 @@ router.get('/compliance-stats', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: { code: 'COMPLIANCE_STATS_FAILED', message: (error as Error).message },
+    });
+  }
+});
+
+/**
+ * GET /employees/performance-stats - Get performance statistics for HR dashboard
+ */
+router.get('/performance-stats', async (req: Request, res: Response) => {
+  try {
+    const prisma = getPrismaFromRequest(req);
+    
+    // Get all performance reviews - using raw query since schema varies
+    // Use LOWER() to handle case-insensitive status matching
+    const reviews = await prisma.$queryRaw<any[]>`
+      SELECT 
+        pr.id,
+        pr.employee_id,
+        pr.status,
+        pr.overall_rating,
+        pr.areas_for_improvement,
+        e.id as emp_id,
+        e.display_name,
+        e.avatar,
+        d.name as department_name
+      FROM performance_reviews pr
+      JOIN employees e ON e.id = pr.employee_id
+      LEFT JOIN departments d ON d.id = e.department_id
+      WHERE LOWER(pr.status) IN ('submitted', 'acknowledged', 'completed')
+    `;
+
+    // Calculate avg score
+    let totalScore = 0;
+    reviews.forEach((r) => {
+      if (r.overall_rating) {
+        totalScore += parseFloat(r.overall_rating.toString());
+      }
+    });
+    const avgScore = reviews.length > 0 
+      ? parseFloat((totalScore / reviews.length).toFixed(1)) 
+      : 0;
+
+    // Review counts - use lowercase for case-insensitive matching
+    const reviewsCompleted = reviews.filter(r => {
+      const status = (r.status || '').toLowerCase();
+      return status === 'completed' || status === 'acknowledged' || status === 'submitted';
+    }).length;
+    const pendingCount = await prisma.$queryRaw<[{count: bigint}]>`SELECT COUNT(*) as count FROM performance_reviews WHERE LOWER(status) = 'draft'`;
+    const dueCount = await prisma.$queryRaw<[{count: bigint}]>`SELECT COUNT(*) as count FROM performance_reviews WHERE LOWER(status) = 'submitted'`;
+    const reviewsPending = Number(pendingCount[0]?.count || 0);
+    const reviewsDue = Number(dueCount[0]?.count || 0);
+
+    // Top performers - aggregate by employee, showing highest score per employee
+    const employeeScores: Record<string, { id: string; name: string; department: string; avatar: string; maxScore: number; avgScore: number; count: number }> = {};
+    reviews.forEach(r => {
+      const score = parseFloat(r.overall_rating?.toString() || '0');
+      if (!employeeScores[r.emp_id]) {
+        employeeScores[r.emp_id] = {
+          id: r.emp_id,
+          name: r.display_name || 'Unknown',
+          department: r.department_name || 'N/A',
+          avatar: r.avatar,
+          maxScore: score,
+          avgScore: score,
+          count: 1,
+        };
+      } else {
+        const emp = employeeScores[r.emp_id];
+        emp.maxScore = Math.max(emp.maxScore, score);
+        emp.avgScore = ((emp.avgScore * emp.count) + score) / (emp.count + 1);
+        emp.count++;
+      }
+    });
+
+    const topPerformers = Object.values(employeeScores)
+      .sort((a, b) => b.avgScore - a.avgScore)
+      .slice(0, 5)
+      .map(e => ({
+        id: e.id,
+        name: e.name,
+        department: e.department,
+        avatar: e.avatar,
+        score: parseFloat(e.avgScore.toFixed(1)),
+      }));
+
+    // Needs improvement - employees with avg score < 5
+    const needsImprovement = Object.values(employeeScores).filter(e => e.avgScore < 5).length;
+
+    // Department scores
+    const deptScores: Record<string, { total: number; count: number }> = {};
+    reviews.forEach(r => {
+      const dept = r.department_name || 'Other';
+      if (!deptScores[dept]) deptScores[dept] = { total: 0, count: 0 };
+      if (r.overall_rating) {
+        deptScores[dept].total += parseFloat(r.overall_rating.toString());
+        deptScores[dept].count++;
+      }
+    });
+    
+    const departmentScores = Object.entries(deptScores)
+      .map(([dept, data]) => ({
+        department: dept,
+        score: data.count > 0 ? parseFloat((data.total / data.count).toFixed(1)) : 0,
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 6);
+
+    res.json({
+      success: true,
+      data: {
+        avgScore,
+        reviewsCompleted,
+        reviewsPending,
+        reviewsDue,
+        topPerformers,
+        needsImprovement,
+        departmentScores,
+      },
+    });
+  } catch (error) {
+    logger.error({ error: (error as Error).message }, 'Failed to get performance stats');
+    res.status(500).json({
+      success: false,
+      error: { code: 'PERFORMANCE_STATS_FAILED', message: (error as Error).message },
+    });
+  }
+});
+
+/**
+ * GET /employees/compensation-stats - Get compensation statistics for HR dashboard
+ */
+router.get('/compensation-stats', async (req: Request, res: Response) => {
+  try {
+    const prisma = getPrismaFromRequest(req);
+    
+    // Get all active employees with salary and department
+    const employees = await prisma.employee.findMany({
+      where: { 
+        status: 'ACTIVE', 
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        baseSalary: true,
+        currency: true,
+        departmentId: true,
+        department: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    const employeesWithSalary = employees.filter(e => e.baseSalary && e.baseSalary.toNumber() > 0);
+    const employeesWithoutSalary = employees.length - employeesWithSalary.length;
+
+    const totalPayroll = employeesWithSalary.reduce((sum, e) => sum + (e.baseSalary?.toNumber() || 0), 0);
+    const avgSalary = employeesWithSalary.length > 0 ? Math.round(totalPayroll / employeesWithSalary.length) : 0;
+    
+    // Get most common currency
+    const currencyCounts: Record<string, number> = {};
+    employees.forEach(e => {
+      const cur = e.currency || 'INR';
+      currencyCounts[cur] = (currencyCounts[cur] || 0) + 1;
+    });
+    const primaryCurrency = Object.entries(currencyCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'INR';
+
+    // Salary bands (based on INR)
+    const bands = [
+      { range: '< ₹5L', min: 0, max: 500000 },
+      { range: '₹5L - ₹10L', min: 500000, max: 1000000 },
+      { range: '₹10L - ₹15L', min: 1000000, max: 1500000 },
+      { range: '₹15L - ₹25L', min: 1500000, max: 2500000 },
+      { range: '> ₹25L', min: 2500000, max: Infinity },
+    ];
+
+    const salaryBands = bands.map(b => {
+      const count = employeesWithSalary.filter(e => {
+        const salary = e.baseSalary?.toNumber() || 0;
+        return salary >= b.min && salary < b.max;
+      }).length;
+      return {
+        range: b.range,
+        count,
+      };
+    });
+
+    // Department-wise salary distribution
+    const departmentSalaryMap: Record<string, { total: number; count: number; name: string }> = {};
+    employeesWithSalary.forEach(e => {
+      const deptId = e.departmentId || 'unassigned';
+      const deptName = e.department?.name || 'Unassigned';
+      if (!departmentSalaryMap[deptId]) {
+        departmentSalaryMap[deptId] = { total: 0, count: 0, name: deptName };
+      }
+      departmentSalaryMap[deptId].total += e.baseSalary?.toNumber() || 0;
+      departmentSalaryMap[deptId].count += 1;
+    });
+
+    const departmentSalaries = Object.entries(departmentSalaryMap)
+      .map(([id, data]) => ({
+        departmentId: id,
+        department: data.name,
+        totalSalary: data.total,
+        employeeCount: data.count,
+        avgSalary: Math.round(data.total / data.count),
+      }))
+      .sort((a, b) => b.totalSalary - a.totalSalary);
+
+    res.json({
+      success: true,
+      data: {
+        totalPayroll,
+        avgSalary,
+        currency: primaryCurrency === 'INR' ? '₹' : primaryCurrency,
+        employeesWithSalary: employeesWithSalary.length,
+        employeesWithoutSalary,
+        salaryBands,
+        departmentSalaries,
+      },
+    });
+  } catch (error) {
+    logger.error({ error: (error as Error).message }, 'Failed to get compensation stats');
+    res.status(500).json({
+      success: false,
+      error: { code: 'COMPENSATION_STATS_FAILED', message: (error as Error).message },
+    });
+  }
+});
+
+/**
+ * GET /employees/engagement-stats - Get engagement statistics for HR dashboard
+ */
+router.get('/engagement-stats', async (req: Request, res: Response) => {
+  try {
+    const prisma = getPrismaFromRequest(req);
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    // Get recent activities
+    let recentRecognitions: any[] = [];
+    try {
+      const activities = await prisma.activity.findMany({
+        where: {
+          type: { in: ['RECOGNITION', 'BADGE_AWARD', 'MILESTONE'] as any },
+          createdAt: { gte: startOfMonth },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+      });
+      
+      recentRecognitions = activities.map((a: any) => ({
+        from: a.createdBy || 'System',
+        to: a.entityName || 'Employee',
+        message: a.action,
+        timestamp: formatRelativeTime(a.createdAt),
+      }));
+    } catch (e) {
+      // Activity table might not exist
+    }
+
+    // Count recognitions this month
+    let recognitionsThisMonth = 0;
+    try {
+      recognitionsThisMonth = await prisma.activity.count({
+        where: {
+          type: { in: ['RECOGNITION', 'BADGE_AWARD'] as any },
+          createdAt: { gte: startOfMonth },
+        },
+      });
+    } catch (e) {}
+
+    res.json({
+      success: true,
+      data: {
+        satisfactionScore: 0,
+        engagementScore: 0,
+        eNPS: 0,
+        surveyResponseRate: 0,
+        recognitionsThisMonth,
+        feedbackSubmitted: 0,
+        oneOnOnesMeetings: 0,
+        teamEvents: 0,
+        pendingSurveys: 0,
+        recentRecognitions,
+      },
+    });
+  } catch (error) {
+    logger.error({ error: (error as Error).message }, 'Failed to get engagement stats');
+    res.status(500).json({
+      success: false,
+      error: { code: 'ENGAGEMENT_STATS_FAILED', message: (error as Error).message },
+    });
+  }
+});
+
+/**
+ * GET /employees/skills-stats - Get skills statistics for HR dashboard
+ */
+router.get('/skills-stats', async (req: Request, res: Response) => {
+  try {
+    const prisma = getPrismaFromRequest(req);
+    
+    // Get all skills from employee_skills table (not the employees.skills JSON column)
+    const skills = await prisma.$queryRaw<any[]>`
+      SELECT 
+        es.name as skill_name,
+        es.employee_id,
+        es.category,
+        es.level
+      FROM employee_skills es
+      JOIN employees e ON e.id = es.employee_id
+      WHERE e.status = 'ACTIVE' AND e.deleted_at IS NULL
+    `;
+
+    // Aggregate skills by name
+    const skillCounts: Record<string, number> = {};
+    const employeeIds = new Set<string>();
+    
+    skills.forEach(s => {
+      const skillName = s.skill_name;
+      skillCounts[skillName] = (skillCounts[skillName] || 0) + 1;
+      employeeIds.add(s.employee_id);
+    });
+
+    const topSkills = Object.entries(skillCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 15)
+      .map(([skill, count]) => ({
+        skill,
+        count,
+      }));
+
+    const totalUniqueSkills = Object.keys(skillCounts).length;
+    const employeesWithSkills = employeeIds.size;
+    const avgSkillsPerEmployee = employeesWithSkills > 0 
+      ? parseFloat((skills.length / employeesWithSkills).toFixed(1)) 
+      : 0;
+
+    res.json({
+      success: true,
+      data: {
+        totalUniqueSkills,
+        employeesWithSkills,
+        avgSkillsPerEmployee,
+        topSkills,
+      },
+    });
+  } catch (error) {
+    logger.error({ error: (error as Error).message }, 'Failed to get skills stats');
+    res.status(500).json({
+      success: false,
+      error: { code: 'SKILLS_STATS_FAILED', message: (error as Error).message },
+    });
+  }
+});
+
+/**
+ * GET /employees/assets-stats - Get assets statistics for HR dashboard (zeroed out)
+ */
+router.get('/assets-stats', async (req: Request, res: Response) => {
+  try {
+    res.json({
+      success: true,
+      data: {
+        totalAssigned: 0,
+        pendingReturns: 0,
+        pendingIssues: 0,
+        assetsByCategory: [],
+        recentAssignments: [],
+      },
+    });
+  } catch (error) {
+    logger.error({ error: (error as Error).message }, 'Failed to get assets stats');
+    res.status(500).json({
+      success: false,
+      error: { code: 'ASSETS_STATS_FAILED', message: (error as Error).message },
     });
   }
 });
@@ -2529,9 +3017,9 @@ router.get('/today-schedule', async (req: Request, res: Response) => {
           where: {
             employeeId,
             status: 'APPROVED',
-            startDate: { lte: tomorrow },
-            endDate: { gte: today },
-          },
+            fromDate: { lte: tomorrow },
+            toDate: { gte: today },
+          } as any,
           include: {
             leaveType: { select: { name: true, color: true } },
           },
@@ -2541,15 +3029,15 @@ router.get('/today-schedule', async (req: Request, res: Response) => {
           scheduleItems.push({
             id: leave.id,
             type: 'leave',
-            title: `On Leave: ${leave.leaveType.name}`,
+            title: `On Leave: ${(leave as any).leaveType?.name || 'Leave'}`,
             description: leave.reason || undefined,
-            startTime: leave.startDate,
-            endTime: leave.endDate,
+            startTime: (leave as any).fromDate,
+            endTime: (leave as any).toDate,
             allDay: true,
             status: 'APPROVED',
             metadata: {
-              leaveType: leave.leaveType.name,
-              color: leave.leaveType.color,
+              leaveType: (leave as any).leaveType?.name || 'Leave',
+              color: (leave as any).leaveType?.color,
               isHalfDay: leave.isHalfDay,
               halfDayType: leave.halfDayType,
             },
@@ -2565,8 +3053,7 @@ router.get('/today-schedule', async (req: Request, res: Response) => {
       const holidays = await prisma.holiday.findMany({
         where: {
           date: { gte: today, lt: tomorrow },
-          isActive: true,
-        },
+        } as any,
       });
 
       for (const holiday of holidays) {
@@ -2580,7 +3067,7 @@ router.get('/today-schedule', async (req: Request, res: Response) => {
           status: holiday.type,
           metadata: {
             holidayType: holiday.type,
-            isOptional: holiday.isOptional,
+            isOptional: (holiday as any).isOptional,
           },
         });
       }
@@ -2996,9 +3483,28 @@ router.get('/:id', async (req: Request, res: Response) => {
       });
     }
 
+    // Fetch user with system role for this employee
+    const user = await (prisma as any).user.findUnique({
+      where: { employeeId: employee.id },
+      include: {
+        roles: {
+          include: {
+            role: { select: { id: true, name: true, slug: true } },
+          },
+        },
+      },
+    });
+
+    // Get the system role (first role assigned to the user)
+    const systemRole = user?.roles?.[0]?.role || null;
+
     res.json({
       success: true,
-      data: employee,
+      data: {
+        ...employee,
+        userId: user?.id || null,
+        systemRole,
+      },
     });
   } catch (error) {
     logger.error({ error: (error as Error).message }, 'Failed to get employee');
@@ -3041,9 +3547,12 @@ router.put('/:id', async (req: Request, res: Response) => {
           phone: data.phone,
           mobile: data.mobile,
           dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : undefined,
-          gender: data.gender || null,
-          maritalStatus: data.maritalStatus || null,
+          // Only update gender/maritalStatus if explicitly provided (not undefined)
+          ...(data.gender !== undefined && { gender: data.gender || null }),
+          ...(data.maritalStatus !== undefined && { maritalStatus: data.maritalStatus || null }),
           nationality: data.nationality,
+          ...(data.bloodGroup !== undefined && { bloodGroup: data.bloodGroup || null }),
+          ...(data.avatar !== undefined && { avatar: data.avatar }),
           addressLine1: data.addressLine1,
           addressLine2: data.addressLine2,
           city: data.city,
@@ -3055,6 +3564,7 @@ router.put('/:id', async (req: Request, res: Response) => {
           reportingManagerId: data.reportingManagerId || null,
           employmentType: data.employmentType,
           joinDate: data.joinDate ? new Date(data.joinDate) : undefined,
+          ...(data.confirmationDate !== undefined && { confirmationDate: data.confirmationDate ? new Date(data.confirmationDate) : null }),
           probationEndDate: data.probationEndDate ? new Date(data.probationEndDate) : null,
           workLocation: data.workLocation,
           workShift: data.workShift,
@@ -3101,6 +3611,7 @@ router.put('/:id', async (req: Request, res: Response) => {
               branchName: bank.branchName || null,
               accountNumber: bank.accountNumber,
               accountType: bank.accountType,
+              accountHolderName: bank.accountHolderName || null,
               routingNumber: bank.routingNumber || null,
               swiftCode: bank.swiftCode || null,
               ifscCode: bank.ifscCode || null,
@@ -3158,6 +3669,136 @@ router.put('/:id', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: { code: 'UPDATE_FAILED', message: (error as Error).message },
+    });
+  }
+});
+
+/**
+ * PUT /employees/:id/system-role - Change employee's system role
+ * Only Tenant Admin, Admin, and HR Manager can change system roles
+ */
+router.put('/:id/system-role', async (req: Request, res: Response) => {
+  try {
+    const prisma = getPrismaFromRequest(req);
+    const { roleId } = req.body;
+
+    if (!roleId) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'roleId is required' },
+      });
+    }
+
+    // Check if user has permission (Tenant Admin, Admin, or HR Manager)
+    const userRoles = ((req.headers['x-user-roles'] as string) || '').split(',').map(r => r.trim().toLowerCase());
+    const isTenantAdmin = userRoles.includes('tenant_admin');
+    const isAdmin = userRoles.includes('admin');
+    const isHRManager = userRoles.includes('hr_manager');
+    const canChangeRole = isTenantAdmin || isAdmin || isHRManager;
+
+    if (!canChangeRole) {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Only Tenant Admin, Admin, or HR Manager can change system roles' },
+      });
+    }
+
+    // Find the employee
+    const employee = await prisma.employee.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, firstName: true, lastName: true },
+    });
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Employee not found' },
+      });
+    }
+
+    // Find the user linked to this employee
+    const user = await (prisma as any).user.findUnique({
+      where: { employeeId: employee.id },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'User account not found for this employee' },
+      });
+    }
+
+    // Verify the role exists
+    const newRole = await (prisma as any).role.findUnique({
+      where: { id: roleId },
+      select: { id: true, name: true, slug: true },
+    });
+
+    if (!newRole) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Role not found' },
+      });
+    }
+
+    // Enforce role assignment restrictions:
+    // - tenant_admin can NEVER be assigned (registration role only)
+    // - Tenant Admin can assign any role except tenant_admin
+    // - Admin and HR Manager can assign any role except tenant_admin and admin
+
+    if (newRole.slug === 'tenant_admin') {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Tenant Admin role cannot be assigned. It is only set during tenant registration.' },
+      });
+    }
+
+    // Admin and HR Manager cannot assign Admin role
+    if ((isAdmin || isHRManager) && !isTenantAdmin && newRole.slug === 'admin') {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Only Tenant Admin can assign the Admin role' },
+      });
+    }
+
+    // Update user's role - delete all existing roles and add the new one
+    const userId = req.headers['x-user-id'] as string;
+    
+    await (prisma as any).$transaction(async (tx: any) => {
+      // Delete existing role assignments
+      await tx.userRole.deleteMany({
+        where: { userId: user.id },
+      });
+
+      // Assign new role
+      await tx.userRole.create({
+        data: {
+          id: require('uuid').v4(),
+          userId: user.id,
+          roleId: newRole.id,
+          assignedBy: userId,
+        },
+      });
+    });
+
+    logger.info({ 
+      employeeId: employee.id, 
+      userId: user.id, 
+      newRole: newRole.slug 
+    }, 'Employee system role changed');
+
+    res.json({
+      success: true,
+      data: {
+        employee: { id: employee.id, name: `${employee.firstName} ${employee.lastName}` },
+        newRole,
+      },
+    });
+  } catch (error) {
+    logger.error({ error: (error as Error).message }, 'Failed to change employee system role');
+    res.status(500).json({
+      success: false,
+      error: { code: 'ROLE_CHANGE_FAILED', message: (error as Error).message },
     });
   }
 });
@@ -3237,6 +3878,224 @@ router.delete('/:id', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: { code: 'DELETE_FAILED', message: (error as Error).message },
+    });
+  }
+});
+
+// ============================================================================
+// SEND SIGN-IN EMAIL
+// ============================================================================
+
+/**
+ * POST /employees/:id/send-signin-email
+ * Create/reset user credentials and send sign-in email to employee's personal email
+ */
+router.post('/:id/send-signin-email', async (req: Request, res: Response) => {
+  try {
+    const prisma = getPrismaFromRequest(req);
+    const tenantSlug = (req as any).tenantSlug as string;
+
+    // Get employee
+    const employee = await prisma.employee.findUnique({
+      where: { id: req.params.id },
+    });
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Employee not found' },
+      });
+    }
+
+    if (!employee.personalEmail) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'NO_PERSONAL_EMAIL', message: 'Employee does not have a personal email address. Please add one first.' },
+      });
+    }
+
+    if (!employee.email) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'NO_WORK_EMAIL', message: 'Employee does not have a work email address.' },
+      });
+    }
+
+    // Generate a temporary password
+    const tempPassword = randomBytes(8).toString('base64').replace(/[^a-zA-Z0-9]/g, '').slice(0, 12);
+    const passwordHash = await bcrypt.hash(tempPassword, 12);
+
+    // Check if employee already has a user account
+    let user = await (prisma as any).user.findFirst({
+      where: { employeeId: employee.id },
+    });
+
+    // Get the "Employee" role
+    const employeeRole = await (prisma as any).role.findFirst({
+      where: { slug: 'employee' },
+    });
+
+    if (user) {
+      // Update existing user's password
+      await (prisma as any).user.update({
+        where: { id: user.id },
+        data: {
+          passwordHash,
+          passwordChangedAt: new Date(),
+          loginAttempts: 0,
+          lockedUntil: null,
+          status: 'ACTIVE',
+        },
+      });
+    } else {
+      // Create a new user account for this employee
+      const userId = uuidv4();
+      user = await (prisma as any).user.create({
+        data: {
+          id: userId,
+          employeeId: employee.id,
+          email: employee.email,
+          firstName: employee.firstName,
+          lastName: employee.lastName,
+          displayName: employee.displayName || `${employee.firstName} ${employee.lastName}`,
+          passwordHash,
+          status: 'ACTIVE',
+          authProvider: 'LOCAL',
+          phone: employee.phone || employee.mobile,
+          avatar: employee.avatar,
+        },
+      });
+
+      // Assign Employee role if it exists
+      if (employeeRole) {
+        await (prisma as any).userRole.create({
+          data: {
+            id: uuidv4(),
+            userId: user.id,
+            roleId: employeeRole.id,
+          },
+        });
+      }
+    }
+
+    // Build login URL with tenant subdomain
+    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const urlObj = new URL(baseUrl);
+    const loginUrl = `${urlObj.protocol}//${tenantSlug}.${urlObj.host}/login`;
+
+    // Get company info for email template
+    const masterDb = getMasterPrisma();
+    const tenant = await masterDb.tenant.findUnique({
+      where: { slug: tenantSlug },
+      select: {
+        name: true,
+        legalName: true,
+        logo: true,
+        settings: {
+          select: {
+            primaryColor: true,
+          },
+        },
+      },
+    });
+
+    const companyName = tenant?.legalName || tenant?.name || tenantSlug;
+    const primaryColor = tenant?.settings?.primaryColor || '#667eea';
+
+    // Build email HTML
+    const html = `
+      <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background: #f8fafc;">
+        <div style="background: linear-gradient(135deg, ${primaryColor}, ${primaryColor}dd); padding: 40px 30px; text-align: center; border-radius: 8px 8px 0 0;">
+          ${tenant?.logo ? `<img src="${tenant.logo}" alt="${companyName}" style="height: 50px; margin-bottom: 15px;" />` : ''}
+          <h1 style="color: white; margin: 0; font-size: 24px;">Welcome to ${companyName}</h1>
+          <p style="color: rgba(255,255,255,0.85); margin-top: 8px; font-size: 14px;">Your sign-in credentials are ready</p>
+        </div>
+        <div style="padding: 30px; background: white;">
+          <p style="color: #334155; font-size: 16px;">Hi ${employee.firstName},</p>
+          <p style="color: #475569; font-size: 15px; line-height: 1.6;">
+            Your account has been set up. Below are your sign-in details to access the ${companyName} portal:
+          </p>
+          
+          <div style="background: #f1f5f9; border-left: 4px solid ${primaryColor}; padding: 20px; margin: 24px 0; border-radius: 0 8px 8px 0;">
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px; width: 100px;">Login URL</td>
+                <td style="padding: 8px 0; color: #0f172a; font-weight: 600; font-size: 14px;">
+                  <a href="${loginUrl}" style="color: ${primaryColor}; text-decoration: none;">${loginUrl}</a>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Username</td>
+                <td style="padding: 8px 0; color: #0f172a; font-weight: 600; font-size: 14px;">${employee.email}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Password</td>
+                <td style="padding: 8px 0; color: #0f172a; font-weight: 600; font-size: 14px; font-family: 'Courier New', monospace; letter-spacing: 1px;">${tempPassword}</td>
+              </tr>
+            </table>
+          </div>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${loginUrl}" style="background: ${primaryColor}; color: white; padding: 14px 40px; text-decoration: none; border-radius: 8px; font-weight: 600; display: inline-block; font-size: 15px;">
+              Sign In Now
+            </a>
+          </div>
+          
+          <div style="background: #fef3c7; border: 1px solid #fde68a; padding: 14px 18px; border-radius: 8px; margin-top: 20px;">
+            <p style="color: #92400e; margin: 0; font-size: 13px;">
+              ⚠️ <strong>Important:</strong> Please change your password after your first sign-in for security.
+            </p>
+          </div>
+        </div>
+        <div style="background: #1e293b; padding: 20px; text-align: center; border-radius: 0 0 8px 8px;">
+          <p style="color: #94a3b8; margin: 0; font-size: 13px;">
+            This email was sent by ${companyName}. If you did not expect this, please contact your HR department.
+          </p>
+        </div>
+      </div>
+    `;
+
+    // Send email via notification service
+    const notificationServiceUrl = process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:3008';
+    const emailResponse = await fetch(`${notificationServiceUrl}/api/notifications/tenant/email`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Tenant-Slug': tenantSlug,
+      },
+      body: JSON.stringify({
+        to: employee.personalEmail,
+        subject: `Your Sign-In Credentials for ${companyName}`,
+        message: `Hi ${employee.firstName}, your login credentials: URL: ${loginUrl}, Username: ${employee.email}, Password: ${tempPassword}`,
+        html,
+      }),
+    });
+
+    const emailResult = await emailResponse.json().catch(() => ({})) as any;
+
+    if (!emailResponse.ok || !emailResult.success) {
+      logger.error({ status: emailResponse.status, emailResult }, 'Failed to send sign-in email');
+      return res.status(500).json({
+        success: false,
+        error: { code: 'EMAIL_FAILED', message: 'Failed to send sign-in email. Please check email configuration.' },
+      });
+    }
+
+    logger.info({ employeeId: employee.id, email: employee.personalEmail }, 'Sign-in email sent successfully');
+
+    res.json({
+      success: true,
+      message: `Sign-in credentials sent to ${employee.personalEmail}`,
+      data: {
+        sentTo: employee.personalEmail,
+        username: employee.email,
+      },
+    });
+  } catch (error) {
+    logger.error({ error: (error as Error).message }, 'Failed to send sign-in email');
+    res.status(500).json({
+      success: false,
+      error: { code: 'SEND_SIGNIN_EMAIL_FAILED', message: (error as Error).message },
     });
   }
 });

@@ -11,6 +11,7 @@ import { LRUCache } from 'lru-cache';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
+import * as fs from 'fs';
 import { 
   TenantDbConfig, 
   getDefaultConfig, 
@@ -18,11 +19,62 @@ import {
   TenantConnectionInfo 
 } from './config';
 
-// Import Prisma clients directly - these are generated and available at runtime
-// @ts-ignore - These are generated at build time
-import { PrismaClient as TenantPrismaClientClass } from '.prisma/tenant-client';
-// @ts-ignore - These are generated at build time  
-import { PrismaClient as MasterPrismaClientClass } from '.prisma/master-client';
+// ============================================================================
+// PRISMA CLIENT LOADING
+// ============================================================================
+
+// Use eval('require') to bypass esbuild's static analysis that converts require() to ESM imports
+// eslint-disable-next-line @typescript-eslint/no-var-requires, no-eval
+const dynamicRequire = eval('require');
+
+// Find monorepo root by looking for package.json with workspaces
+// In Docker containers, use MONOREPO_ROOT env var or default to /app
+function findMonorepoRoot(startDir: string): string {
+  // Check for Docker environment or explicit override
+  if (process.env.MONOREPO_ROOT) {
+    return process.env.MONOREPO_ROOT;
+  }
+  
+  // Check if we're in a Docker container (common indicator)
+  const isDocker = fs.existsSync('/.dockerenv') || fs.existsSync('/app/node_modules/.prisma');
+  if (isDocker) {
+    return '/app';
+  }
+  
+  let dir = startDir;
+  while (dir !== path.dirname(dir)) {
+    const pkgPath = path.join(dir, 'package.json');
+    if (fs.existsSync(pkgPath)) {
+      try {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+        if (pkg.workspaces) {
+          return dir;
+        }
+      } catch {
+        // Continue searching
+      }
+    }
+    dir = path.dirname(dir);
+  }
+  
+  // Last resort: try /app for Docker
+  if (fs.existsSync('/app/node_modules')) {
+    return '/app';
+  }
+  
+  throw new Error('Could not find monorepo root');
+}
+
+// Load Prisma clients from the monorepo root's node_modules
+const monorepoRoot = findMonorepoRoot(__dirname);
+const loadPrismaClient = (clientName: string) => {
+  const prismaClientPath = path.join(monorepoRoot, 'node_modules', '.prisma', clientName);
+  return dynamicRequire(prismaClientPath);
+};
+
+// Lazy load Prisma clients
+let _TenantPrismaClientClass: any = null;
+let _MasterPrismaClientClass: any = null;
 
 // ============================================================================
 // TYPES
@@ -36,14 +88,20 @@ type PrismaClient = any;
  * This is loaded dynamically at runtime after Prisma generate has run
  */
 function getTenantPrismaClientClass(): new (options?: any) => PrismaClient {
-  return TenantPrismaClientClass;
+  if (!_TenantPrismaClientClass) {
+    _TenantPrismaClientClass = loadPrismaClient('tenant-client').PrismaClient;
+  }
+  return _TenantPrismaClientClass;
 }
 
 /**
  * Get the master Prisma client class
  */
 function getMasterPrismaClientClass(): new (options?: any) => PrismaClient {
-  return MasterPrismaClientClass;
+  if (!_MasterPrismaClientClass) {
+    _MasterPrismaClientClass = loadPrismaClient('master-client').PrismaClient;
+  }
+  return _MasterPrismaClientClass;
 }
 
 /**
@@ -489,28 +547,36 @@ export class TenantDbManager {
     // Create default roles
     await this.createDefaultRoles(client);
     
+    // Create default permissions and assign to roles
+    await this.createDefaultPermissions(client);
+    
     // Create default departments
     await this.createDefaultDepartments(client);
     
     // Create default designations
     await this.createDefaultDesignations(client);
     
+    // Create default leave types
+    await this.createDefaultLeaveTypes(client);
+    
     // Create admin user (after departments exist)
-    await this.createAdminUser(client, seedData);
+    const adminUserId = await this.createAdminUser(client, seedData);
+    
+    // Create default document folders (needs admin user for createdBy)
+    await this.createDefaultFolders(client, adminUserId);
   }
   
   private async createDefaultDepartments(client: PrismaClient): Promise<void> {
     const departments = [
       { name: 'Engineering', code: 'ENG', description: 'Software development, architecture, and DevOps' },
+      { name: 'Finance & Accounts', code: 'FIN', description: 'Accounting, budgeting, and financial planning' },
+      { name: 'Human Resources', code: 'HR', description: 'Recruitment, employee relations, and payroll' },
+      { name: 'Legal & Compliance', code: 'LEGAL', description: 'Contracts, compliance, and data privacy' },
+      { name: 'Marketing', code: 'MKT', description: 'Digital marketing, branding, and content' },
+      { name: 'Operations', code: 'OPS', description: 'IT infrastructure, facilities, and administration' },
       { name: 'Product', code: 'PROD', description: 'Product management and UX/UI design' },
       { name: 'Quality Assurance', code: 'QA', description: 'Testing, automation, and quality control' },
-      { name: 'Human Resources', code: 'HR', description: 'Recruitment, employee relations, and payroll' },
-      { name: 'Finance & Accounts', code: 'FIN', description: 'Accounting, budgeting, and financial planning' },
-      { name: 'Operations', code: 'OPS', description: 'IT infrastructure, facilities, and administration' },
       { name: 'Sales', code: 'SALES', description: 'Business development and client acquisition' },
-      { name: 'Marketing', code: 'MKT', description: 'Digital marketing, branding, and content' },
-      { name: 'Customer Success', code: 'CS', description: 'Support, client management, and onboarding' },
-      { name: 'Legal & Compliance', code: 'LEGAL', description: 'Contracts, compliance, and data privacy' },
     ];
     
     for (const department of departments) {
@@ -525,6 +591,7 @@ export class TenantDbManager {
   private async createDefaultRoles(client: PrismaClient): Promise<void> {
     const roles = [
       { name: 'Tenant Admin', slug: 'tenant_admin', isSystem: true, description: 'Full access to tenant' },
+      { name: 'Admin', slug: 'admin', isSystem: true, description: 'Administrator with full access except billing' },
       { name: 'HR Manager', slug: 'hr_manager', isSystem: true, description: 'Manage employees, attendance, leaves' },
       { name: 'Project Manager', slug: 'project_manager', isSystem: true, description: 'Manage projects and tasks' },
       { name: 'Team Lead', slug: 'team_lead', isSystem: true, description: 'Manage team members and tasks' },
@@ -541,27 +608,178 @@ export class TenantDbManager {
     }
   }
   
-  private async createAdminUser(client: PrismaClient, seedData: TenantSeedData): Promise<void> {
-    // Create admin user and employee
-    const employee = await (client as any).employee.create({
-      data: {
-        employeeCode: 'EMP001',
-        firstName: seedData.adminFirstName,
-        lastName: seedData.adminLastName,
-        displayName: `${seedData.adminFirstName} ${seedData.adminLastName}`,
-        email: seedData.adminEmail,
-        joinDate: new Date(),
-        status: 'ACTIVE',
-      },
-    });
+  private async createDefaultPermissions(client: PrismaClient): Promise<void> {
+    // Define all 39 permissions with exact IDs matching softqube database
+    const permissions = [
+      { id: 'perm-admin360-view', resource: 'admin_360', action: 'view', description: 'View Admin 360° overview' },
+      { id: 'perm-attendance-read', resource: 'attendance', action: 'read', description: 'View all attendance records' },
+      { id: 'perm-attendance-self', resource: 'attendance', action: 'self', description: 'View/mark own attendance' },
+      { id: 'perm-attendance-write', resource: 'attendance', action: 'write', description: 'Manage attendance records' },
+      { id: 'perm-billing-manage', resource: 'billing', action: 'manage', description: 'Manage billing/subscriptions' },
+      { id: 'perm-billing-view', resource: 'billing', action: 'view', description: 'View billing information' },
+      { id: 'perm-dashboard-view', resource: 'dashboard', action: 'view', description: 'View main dashboard' },
+      { id: 'perm-documents-read', resource: 'documents', action: 'read', description: 'View all documents' },
+      { id: 'perm-documents-self', resource: 'documents', action: 'self', description: 'View/upload own documents' },
+      { id: 'perm-documents-write', resource: 'documents', action: 'write', description: 'Manage all documents' },
+      { id: 'perm-employees-delete', resource: 'employees', action: 'delete', description: 'Delete/terminate employees' },
+      { id: 'perm-employees-read', resource: 'employees', action: 'read', description: 'View employee list and profiles' },
+      { id: 'perm-employees-write', resource: 'employees', action: 'write', description: 'Create and edit employees' },
+      { id: 'perm-holidays-read', resource: 'holidays', action: 'read', description: 'View holidays calendar' },
+      { id: 'perm-holidays-write', resource: 'holidays', action: 'write', description: 'Manage holidays' },
+      { id: 'perm-hr-assessments-read', resource: 'hr_assessments', action: 'read', description: 'View assessments' },
+      { id: 'perm-hr-assessments-write', resource: 'hr_assessments', action: 'write', description: 'Create/manage assessments' },
+      { id: 'perm-hr-candidates-read', resource: 'hr_candidates', action: 'read', description: 'View candidates' },
+      { id: 'perm-hr-candidates-write', resource: 'hr_candidates', action: 'write', description: 'Manage candidates' },
+      { id: 'perm-hr-interviews-read', resource: 'hr_interviews', action: 'read', description: 'View interviews' },
+      { id: 'perm-hr-interviews-write', resource: 'hr_interviews', action: 'write', description: 'Schedule/manage interviews' },
+      { id: 'perm-hr-jobs-read', resource: 'hr_jobs', action: 'read', description: 'View job descriptions' },
+      { id: 'perm-hr-jobs-write', resource: 'hr_jobs', action: 'write', description: 'Create/edit job descriptions' },
+      { id: 'perm-leave-read', resource: 'leave', action: 'read', description: 'View all leave requests' },
+      { id: 'perm-leave-self', resource: 'leave', action: 'self', description: 'Apply/view own leave' },
+      { id: 'perm-leave-write', resource: 'leave', action: 'write', description: 'Approve/reject leave requests' },
+      { id: 'perm-notifications-read', resource: 'notifications', action: 'read', description: 'View notifications' },
+      { id: 'perm-org-manage', resource: 'organization', action: 'manage', description: 'Manage organization settings' },
+      { id: 'perm-org-view', resource: 'organization', action: 'view', description: 'View organization settings' },
+      { id: 'perm-performance-read', resource: 'performance', action: 'read', description: 'View all performance reviews' },
+      { id: 'perm-performance-self', resource: 'performance', action: 'self', description: 'View own performance reviews' },
+      { id: 'perm-performance-write', resource: 'performance', action: 'write', description: 'Create/manage performance reviews' },
+      { id: 'perm-projects-read', resource: 'projects', action: 'read', description: 'View projects' },
+      { id: 'perm-projects-write', resource: 'projects', action: 'write', description: 'Create/manage projects' },
+      { id: 'perm-reports-view', resource: 'reports', action: 'view', description: 'View reports' },
+      { id: 'perm-settings-manage', resource: 'settings', action: 'manage', description: 'Manage system settings' },
+      { id: 'perm-settings-view', resource: 'settings', action: 'view', description: 'View system settings' },
+      { id: 'perm-tasks-read', resource: 'tasks', action: 'read', description: 'View tasks' },
+      { id: 'perm-tasks-write', resource: 'tasks', action: 'write', description: 'Create/manage tasks' },
+    ];
     
+    // Create all permissions with specific IDs
+    for (const perm of permissions) {
+      await (client as any).permission.upsert({
+        where: { id: perm.id },
+        create: perm,
+        update: { resource: perm.resource, action: perm.action, description: perm.description },
+      });
+    }
+    
+    // Define role-permission mappings matching softqube database
+    const rolePermissions: Record<string, string[]> = {
+      // Tenant Admin - All 39 permissions
+      tenant_admin: [
+        'perm-admin360-view', 'perm-attendance-read', 'perm-attendance-self', 'perm-attendance-write',
+        'perm-billing-manage', 'perm-billing-view',
+        'perm-dashboard-view', 'perm-documents-read', 'perm-documents-self', 'perm-documents-write',
+        'perm-employees-delete', 'perm-employees-read', 'perm-employees-write',
+        'perm-holidays-read', 'perm-holidays-write',
+        'perm-hr-assessments-read', 'perm-hr-assessments-write',
+        'perm-hr-candidates-read', 'perm-hr-candidates-write',
+        'perm-hr-interviews-read', 'perm-hr-interviews-write',
+        'perm-hr-jobs-read', 'perm-hr-jobs-write',
+        'perm-leave-read', 'perm-leave-self', 'perm-leave-write',
+        'perm-notifications-read', 'perm-org-manage', 'perm-org-view',
+        'perm-performance-read', 'perm-performance-self', 'perm-performance-write',
+        'perm-projects-read', 'perm-projects-write',
+        'perm-reports-view', 'perm-settings-manage', 'perm-settings-view',
+        'perm-tasks-read', 'perm-tasks-write',
+      ],
+      // Admin - 37 permissions (all except billing)
+      admin: [
+        'perm-admin360-view', 'perm-attendance-read', 'perm-attendance-self', 'perm-attendance-write',
+        'perm-dashboard-view', 'perm-documents-read', 'perm-documents-self', 'perm-documents-write',
+        'perm-employees-delete', 'perm-employees-read', 'perm-employees-write',
+        'perm-holidays-read', 'perm-holidays-write',
+        'perm-hr-assessments-read', 'perm-hr-assessments-write',
+        'perm-hr-candidates-read', 'perm-hr-candidates-write',
+        'perm-hr-interviews-read', 'perm-hr-interviews-write',
+        'perm-hr-jobs-read', 'perm-hr-jobs-write',
+        'perm-leave-read', 'perm-leave-self', 'perm-leave-write',
+        'perm-notifications-read', 'perm-org-manage', 'perm-org-view',
+        'perm-performance-read', 'perm-performance-self', 'perm-performance-write',
+        'perm-projects-read', 'perm-projects-write',
+        'perm-reports-view', 'perm-settings-manage', 'perm-settings-view',
+        'perm-tasks-read', 'perm-tasks-write',
+      ],
+      // HR Manager - 28 permissions
+      hr_manager: [
+        'perm-attendance-read', 'perm-attendance-self', 'perm-attendance-write',
+        'perm-dashboard-view', 'perm-documents-read', 'perm-documents-self', 'perm-documents-write',
+        'perm-employees-delete', 'perm-employees-read', 'perm-employees-write',
+        'perm-holidays-read', 'perm-holidays-write',
+        'perm-hr-assessments-read', 'perm-hr-assessments-write',
+        'perm-hr-candidates-read', 'perm-hr-candidates-write',
+        'perm-hr-interviews-read', 'perm-hr-interviews-write',
+        'perm-hr-jobs-read', 'perm-hr-jobs-write',
+        'perm-leave-read', 'perm-leave-self', 'perm-leave-write',
+        'perm-notifications-read',
+        'perm-performance-read', 'perm-performance-self', 'perm-performance-write',
+        'perm-reports-view',
+      ],
+      // Project Manager - 15 permissions
+      project_manager: [
+        'perm-attendance-read', 'perm-attendance-self',
+        'perm-dashboard-view', 'perm-documents-self',
+        'perm-employees-read', 'perm-holidays-read',
+        'perm-leave-read', 'perm-leave-self',
+        'perm-notifications-read', 'perm-performance-self',
+        'perm-projects-read', 'perm-projects-write',
+        'perm-reports-view',
+        'perm-tasks-read', 'perm-tasks-write',
+      ],
+      // Team Lead - 14 permissions
+      team_lead: [
+        'perm-attendance-read', 'perm-attendance-self',
+        'perm-dashboard-view', 'perm-documents-self',
+        'perm-holidays-read',
+        'perm-leave-read', 'perm-leave-self', 'perm-leave-write',
+        'perm-notifications-read',
+        'perm-performance-read', 'perm-performance-self',
+        'perm-projects-read',
+        'perm-tasks-read', 'perm-tasks-write',
+      ],
+      // Employee - 10 permissions
+      employee: [
+        'perm-attendance-self',
+        'perm-dashboard-view', 'perm-documents-self',
+        'perm-holidays-read',
+        'perm-leave-self',
+        'perm-notifications-read', 'perm-performance-self',
+        'perm-projects-read',
+        'perm-tasks-read', 'perm-tasks-write',
+      ],
+      // Viewer - 7 permissions
+      viewer: [
+        'perm-dashboard-view',
+        'perm-employees-read', 'perm-holidays-read',
+        'perm-notifications-read',
+        'perm-projects-read', 'perm-reports-view',
+        'perm-tasks-read',
+      ],
+    };
+    
+    // Assign permissions to roles
+    for (const [roleSlug, permIds] of Object.entries(rolePermissions)) {
+      const role = await (client as any).role.findUnique({ where: { slug: roleSlug } });
+      if (!role) continue;
+      
+      for (const permId of permIds) {
+        await (client as any).rolePermission.upsert({
+          where: { roleId_permissionId: { roleId: role.id, permissionId: permId } },
+          create: { roleId: role.id, permissionId: permId },
+          update: {},
+        });
+      }
+    }
+  }
+  
+  private async createAdminUser(client: PrismaClient, seedData: TenantSeedData): Promise<string> {
+    // Get the tenant admin role (for the person who registers the tenant)
     const adminRole = await (client as any).role.findUnique({
       where: { slug: 'tenant_admin' },
     });
     
+    // Create admin user
+    // Tenant Admin has full access including billing management
     const user = await (client as any).user.create({
       data: {
-        employeeId: employee.id,
         email: seedData.adminEmail,
         firstName: seedData.adminFirstName,
         lastName: seedData.adminLastName,
@@ -575,6 +793,8 @@ export class TenantDbManager {
         },
       },
     });
+    
+    return user.id;
   }
   
   private async createDefaultDesignations(client: PrismaClient): Promise<void> {
@@ -653,6 +873,210 @@ export class TenantDbManager {
         update: {},
       });
     }
+  }
+  
+  private async createDefaultLeaveTypes(client: PrismaClient): Promise<void> {
+    const leaveTypes = [
+      {
+        name: 'Casual Leave',
+        code: 'CL',
+        description: 'For personal work and urgent matters',
+        defaultDaysPerYear: 12,
+        carryForwardAllowed: false,
+        requiresApproval: true,
+        isPaid: true,
+        color: '#3B82F6',
+      },
+      {
+        name: 'Sick Leave',
+        code: 'SL',
+        description: 'For illness and medical appointments',
+        defaultDaysPerYear: 12,
+        carryForwardAllowed: false,
+        requiresApproval: true,
+        isPaid: true,
+        color: '#EF4444',
+      },
+      {
+        name: 'Earned Leave',
+        code: 'EL',
+        description: 'Privilege leave earned based on service',
+        defaultDaysPerYear: 15,
+        carryForwardAllowed: true,
+        maxCarryForwardDays: 30,
+        requiresApproval: true,
+        isPaid: true,
+        color: '#10B981',
+      },
+      {
+        name: 'Maternity Leave',
+        code: 'ML',
+        description: 'For childbirth and post-natal care',
+        defaultDaysPerYear: 182,
+        carryForwardAllowed: false,
+        requiresApproval: true,
+        isPaid: true,
+        color: '#EC4899',
+      },
+      {
+        name: 'Paternity Leave',
+        code: 'PL',
+        description: 'For fathers after childbirth',
+        defaultDaysPerYear: 15,
+        carryForwardAllowed: false,
+        requiresApproval: true,
+        isPaid: true,
+        color: '#8B5CF6',
+      },
+      {
+        name: 'Bereavement Leave',
+        code: 'BL',
+        description: 'For death of immediate family member',
+        defaultDaysPerYear: 5,
+        carryForwardAllowed: false,
+        requiresApproval: true,
+        isPaid: true,
+        color: '#6B7280',
+      },
+      {
+        name: 'Compensatory Off',
+        code: 'COMP',
+        description: 'Compensatory off for working on holidays/weekends',
+        defaultDaysPerYear: 0,
+        carryForwardAllowed: true,
+        maxCarryForwardDays: 5,
+        requiresApproval: true,
+        isPaid: true,
+        color: '#F59E0B',
+      },
+      {
+        name: 'Leave Without Pay',
+        code: 'LWP',
+        description: 'Unpaid leave when all other leaves are exhausted',
+        defaultDaysPerYear: 0,
+        carryForwardAllowed: false,
+        requiresApproval: true,
+        isPaid: false,
+        color: '#9CA3AF',
+      },
+    ];
+    
+    for (const leaveType of leaveTypes) {
+      await (client as any).leaveType.upsert({
+        where: { code: leaveType.code },
+        create: leaveType,
+        update: {},
+      });
+    }
+  }
+  
+  /**
+   * Create default document folders for a tenant
+   */
+  private async createDefaultFolders(client: PrismaClient, adminUserId: string): Promise<void> {
+    // Define the folder structure
+    interface FolderDef {
+      name: string;
+      description?: string;
+      color?: string;
+      children?: FolderDef[];
+    }
+    
+    // Company Documents - main company folder
+    const COMPANY_DOCUMENTS: FolderDef = {
+      name: 'Company Documents',
+      description: 'Company-wide documents and resources',
+      color: 'blue',
+      children: [
+        { name: 'Policies', description: 'Company policies and procedures', color: 'red' },
+        { name: 'Forms', description: 'Standard company forms and templates', color: 'green' },
+        { name: 'Templates', description: 'Document templates', color: 'purple' },
+        { name: 'Certifications', description: 'Company certifications and licenses', color: 'orange' },
+        { name: 'Legal Documents', description: 'Legal agreements and contracts', color: 'red' },
+        { name: 'Training Materials', description: 'Training resources and materials', color: 'blue' },
+        { name: 'Company Assets', description: 'Logos, branding, and marketing assets', color: 'pink' },
+        { name: 'HR Documents', description: 'HR policies, handbooks, and guidelines', color: 'indigo' },
+      ],
+    };
+    
+    // Company Master - legacy folder name (same structure as Company Documents)
+    const COMPANY_MASTER: FolderDef = {
+      name: 'Company Master',
+      description: 'Company master documents and templates',
+      color: 'blue',
+      children: [
+        { name: 'Policies', description: 'Company policies and procedures', color: 'red' },
+        { name: 'Forms', description: 'Standard company forms and templates', color: 'green' },
+        { name: 'Templates', description: 'Document templates', color: 'purple' },
+        { name: 'Certifications', description: 'Company certifications and licenses', color: 'orange' },
+        { name: 'Legal Documents', description: 'Legal agreements and contracts', color: 'red' },
+        { name: 'Training Materials', description: 'Training resources and materials', color: 'blue' },
+        { name: 'Company Assets', description: 'Logos, branding, and marketing assets', color: 'pink' },
+      ],
+    };
+    
+    // Employee Documents - for individual employee folders
+    const EMPLOYEE_DOCUMENTS: FolderDef = {
+      name: 'Employee Documents',
+      description: 'Employee-specific documents organized by employee',
+      color: 'green',
+    };
+    
+    // On-Boarding - for candidates going through hiring process
+    const ON_BOARDING: FolderDef = {
+      name: 'On-Boarding',
+      description: 'Documents for candidates going through on-boarding process',
+      color: 'indigo',
+    };
+    
+    // Helper to create folder recursively
+    const createFolder = async (
+      folder: FolderDef,
+      parentId: string | null,
+      parentPath: string
+    ): Promise<string> => {
+      const path = parentPath ? `${parentPath}/${folder.name}` : `/${folder.name}`;
+      const depth = parentPath ? parentPath.split('/').filter(Boolean).length + 1 : 1;
+      
+      // Check if exists
+      const existing = await (client as any).folder.findFirst({
+        where: { name: folder.name, parentId },
+      });
+      
+      let folderId: string;
+      
+      if (existing) {
+        folderId = existing.id;
+      } else {
+        const created = await (client as any).folder.create({
+          data: {
+            name: folder.name,
+            description: folder.description,
+            color: folder.color,
+            parentId,
+            path,
+            depth,
+            createdBy: adminUserId,
+          },
+        });
+        folderId = created.id;
+      }
+      
+      // Create children
+      if (folder.children) {
+        for (const child of folder.children) {
+          await createFolder(child, folderId, path);
+        }
+      }
+      
+      return folderId;
+    };
+    
+    // Create the default folders
+    await createFolder(COMPANY_DOCUMENTS, null, '');
+    await createFolder(COMPANY_MASTER, null, '');
+    await createFolder(EMPLOYEE_DOCUMENTS, null, '');
+    await createFolder(ON_BOARDING, null, '');
   }
   
   // ==========================================================================

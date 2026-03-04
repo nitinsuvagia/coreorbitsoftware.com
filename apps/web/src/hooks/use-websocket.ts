@@ -64,7 +64,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const connect = useCallback(() => {
     if (socketRef.current?.connected) return;
     if (!userId || !tenantId) {
-      console.warn('WebSocket: Missing userId or tenantId');
       return;
     }
 

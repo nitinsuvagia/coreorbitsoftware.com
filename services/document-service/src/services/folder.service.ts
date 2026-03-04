@@ -13,9 +13,14 @@ import * as storageService from './storage.service';
 // ============================================================================
 
 // Root folders that are protected
-const PROTECTED_ROOT_FOLDERS = ['Company Master', 'Employee Documents', 'On-Boarding'];
+const PROTECTED_ROOT_FOLDERS = [
+  'Company Master',
+  'Company Documents',  // New name for company-wide docs
+  'Employee Documents',
+  'On-Boarding',
+];
 
-// Default subfolder names under Company Master
+// Default subfolder names under Company Master/Company Documents
 const COMPANY_MASTER_SUBFOLDERS = [
   'Policies',
   'Forms',
@@ -24,6 +29,7 @@ const COMPANY_MASTER_SUBFOLDERS = [
   'Legal Documents',
   'Training Materials',
   'Company Assets',
+  'HR Documents',  // Added for HR policies and handbooks
 ];
 
 // Default subfolder names under Employee folders

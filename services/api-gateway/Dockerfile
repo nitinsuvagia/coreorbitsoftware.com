@@ -81,6 +81,9 @@ COPY --from=builder /app/node_modules/.prisma/tenant-client ./node_modules/.pris
 # Copy Prisma schema files for runtime migrations
 COPY --from=builder /app/packages/database/prisma ./packages/database/prisma
 
+# Create backups directory with proper permissions
+RUN mkdir -p /app/backups && chown appuser:nodejs /app/backups
+
 USER appuser
 
 EXPOSE 4000

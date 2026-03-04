@@ -197,7 +197,7 @@ router.get('/revenue/by-plan', async (req: Request, res: Response) => {
     const plans = await masterPrisma.subscriptionPlan.findMany({
       select: { id: true, name: true, tier: true },
     });
-    const planMap = new Map(plans.map((p: any) => [p.id, p]));
+    const planMap = new Map<string, any>(plans.map((p: any) => [p.id, p]));
     
     // Calculate total revenue
     const totalRevenue = subscriptionsByPlan.reduce(
@@ -208,10 +208,11 @@ router.get('/revenue/by-plan', async (req: Request, res: Response) => {
     // Format response
     const revenueByPlan = subscriptionsByPlan.map((item) => {
       const revenue = Number(item._sum?.amount || 0);
+      const planData = planMap.get(item.planId);
       return {
         planId: item.planId,
-        plan: planMap.get(item.planId)?.name || 'Unknown',
-        tier: planMap.get(item.planId)?.tier || 'Unknown',
+        plan: planData?.name || 'Unknown',
+        tier: planData?.tier || 'Unknown',
         revenue,
         count: item._count.id,
         percentage: totalRevenue > 0 ? Math.round((revenue / totalRevenue) * 1000) / 10 : 0,

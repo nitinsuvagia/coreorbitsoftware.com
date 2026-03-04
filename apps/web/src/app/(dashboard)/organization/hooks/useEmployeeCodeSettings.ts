@@ -7,6 +7,7 @@ import { apiClient } from '@/lib/api/client';
 export interface EmployeeCodeSettings {
   autoGenerate: boolean;
   prefix: string;
+  includeYear: boolean;
   yearSeqDigits: number;
   totalSeqDigits: number;
   separator: '-' | '_' | '';
@@ -16,8 +17,8 @@ export interface EmployeeCodePreview {
   previewCode: string;
   breakdown: {
     prefix: string;
-    year: number;
-    yearSequence: number;
+    year: number | null;
+    yearSequence: number | null;
     totalSequence: number;
   };
 }
@@ -25,6 +26,7 @@ export interface EmployeeCodePreview {
 const DEFAULT_SETTINGS: EmployeeCodeSettings = {
   autoGenerate: true,
   prefix: 'EMP',
+  includeYear: false,
   yearSeqDigits: 5,
   totalSeqDigits: 5,
   separator: '-',
@@ -117,7 +119,7 @@ export function useEmployeeCodeSettings() {
 
   // Generate live preview based on current form values
   const generateLivePreview = useCallback(() => {
-    const { prefix, separator, yearSeqDigits, totalSeqDigits } = settingsForm;
+    const { prefix, separator, includeYear, yearSeqDigits, totalSeqDigits } = settingsForm;
     const year = new Date().getFullYear();
     const yearSeq = preview?.breakdown.yearSequence || 1;
     const totalSeq = preview?.breakdown.totalSequence || 1;
@@ -125,7 +127,13 @@ export function useEmployeeCodeSettings() {
     const yearSeqStr = String(yearSeq).padStart(yearSeqDigits, '0');
     const totalSeqStr = String(totalSeq).padStart(totalSeqDigits, '0');
     
-    return `${prefix}${separator}${year}${separator}${yearSeqStr}${separator}${totalSeqStr}`;
+    if (includeYear) {
+      // Full format: PREFIX-YEAR-YEAR_SEQ-TOTAL_SEQ
+      return `${prefix}${separator}${year}${separator}${yearSeqStr}${separator}${totalSeqStr}`;
+    } else {
+      // Simple format: PREFIX-TOTAL_SEQ
+      return `${prefix}${separator}${totalSeqStr}`;
+    }
   }, [settingsForm, preview]);
 
   return {

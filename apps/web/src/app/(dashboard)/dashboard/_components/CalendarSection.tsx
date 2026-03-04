@@ -36,6 +36,7 @@ import {
   Sun,
   Briefcase,
   PartyPopper,
+  UserX,
 } from 'lucide-react';
 import {
   Tooltip,
@@ -84,16 +85,12 @@ interface Celebration {
   id: string;
   type: 'birthday' | 'anniversary';
   date: string;
-  employee: {
-    id: string;
-    firstName: string;
-    lastName: string;
-    avatar?: string;
-    department?: {
-      name: string;
-    };
-  };
+  name: string;
+  department?: string;
+  avatar?: string;
+  daysUntil?: number;
   years?: number;
+  isFormer?: boolean;
 }
 
 interface CalendarEvent {
@@ -116,6 +113,7 @@ interface CalendarEvent {
     years?: number;
     isHalfDay?: boolean;
     totalDays?: string;
+    isFormer?: boolean;
   };
 }
 
@@ -290,39 +288,47 @@ export function CalendarSection({ loading: parentLoading = false }: CalendarSect
         
         birthdays.forEach((birthday) => {
           const birthdayDate = new Date(birthday.date);
+          const nameParts = (birthday.name || '').split(' ');
+          const firstName = nameParts[0] || '';
+          const lastName = nameParts.slice(1).join(' ') || '';
+          const isFormer = birthday.isFormer || false;
           calendarEvents.push({
-            id: `birthday-${birthday.employee.id}`,
-            title: `${birthday.employee.firstName} ${birthday.employee.lastName}'s Birthday`,
+            id: `birthday-${birthday.id}`,
+            title: isFormer ? `${birthday.name}'s Birthday (Former)` : `${birthday.name}'s Birthday`,
             date: birthdayDate,
             type: 'BIRTHDAY',
-            color: EVENT_CONFIG.BIRTHDAY.color,
+            color: isFormer ? 'bg-gray-400' : EVENT_CONFIG.BIRTHDAY.color,
             icon: 'birthday',
             metadata: {
               employee: {
-                firstName: birthday.employee.firstName,
-                lastName: birthday.employee.lastName,
-                avatar: birthday.employee.avatar,
-                department: birthday.employee.department?.name,
+                firstName,
+                lastName,
+                avatar: birthday.avatar,
+                department: birthday.department,
               },
+              isFormer,
             },
           });
         });
 
         workAnniversaries.forEach((anniversary) => {
           const anniversaryDate = new Date(anniversary.date);
+          const nameParts = (anniversary.name || '').split(' ');
+          const firstName = nameParts[0] || '';
+          const lastName = nameParts.slice(1).join(' ') || '';
           calendarEvents.push({
-            id: `anniversary-${anniversary.employee.id}`,
-            title: `${anniversary.employee.firstName} ${anniversary.employee.lastName} - ${anniversary.years} Year${anniversary.years !== 1 ? 's' : ''} Work Anniversary`,
+            id: `anniversary-${anniversary.id}`,
+            title: `${anniversary.name} - ${anniversary.years} Year${anniversary.years !== 1 ? 's' : ''} Work Anniversary`,
             date: anniversaryDate,
             type: 'ANNIVERSARY',
             color: EVENT_CONFIG.ANNIVERSARY.color,
             icon: 'anniversary',
             metadata: {
               employee: {
-                firstName: anniversary.employee.firstName,
-                lastName: anniversary.employee.lastName,
-                avatar: anniversary.employee.avatar,
-                department: anniversary.employee.department?.name,
+                firstName,
+                lastName,
+                avatar: anniversary.avatar,
+                department: anniversary.department,
               },
               years: anniversary.years,
             },
@@ -450,14 +456,15 @@ export function CalendarSection({ loading: parentLoading = false }: CalendarSect
     return getEventsForDate(selectedDate);
   }, [selectedDate, getEventsForDate]);
 
-  // Upcoming events (next 30 days, including today)
+  // Upcoming events (next 30 days, starting from tomorrow - today's events shown in calendar)
   const upcomingEvents = useMemo(() => {
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-    const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const tomorrow = new Date();
+    tomorrow.setHours(0, 0, 0, 0);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const thirtyDaysFromTomorrow = new Date(tomorrow.getTime() + 30 * 24 * 60 * 60 * 1000);
     
     return filteredEvents
-      .filter((event) => event.date >= now && event.date <= thirtyDaysFromNow)
+      .filter((event) => event.date >= tomorrow && event.date <= thirtyDaysFromTomorrow)
       .sort((a, b) => a.date.getTime() - b.date.getTime())
       .slice(0, 8);
   }, [filteredEvents]);
@@ -720,8 +727,8 @@ export function CalendarSection({ loading: parentLoading = false }: CalendarSect
         {/* Sidebar */}
         <div className="space-y-4">
           {/* Selected Date Events */}
-          <Card className="h-[300px] flex flex-col">
-            <CardHeader className="pb-3 flex-shrink-0">
+          <Card className="h-[300px] flex flex-col overflow-hidden">
+            <CardHeader className="pb-2 px-4 flex-shrink-0">
               <CardTitle className="text-base flex items-center gap-2">
                 <CalendarIcon className="h-4 w-4 text-primary" />
                 {selectedDate ? (
@@ -737,15 +744,16 @@ export function CalendarSection({ loading: parentLoading = false }: CalendarSect
                 )}
               </CardTitle>
             </CardHeader>
-            <CardContent className="flex-1 overflow-hidden pb-4">
-              <ScrollArea className="h-full pr-2">
+            <CardContent className="flex-1 overflow-hidden px-4 pb-4">
+              <ScrollArea className="h-full">
                 {selectedDateEvents.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-4">
                     No events on this day
                   </p>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="space-y-2 pr-3">
                     {selectedDateEvents.map((event) => {
+                      const isFormerBirthday = event.type === 'BIRTHDAY' && event.metadata?.isFormer;
                       const config = EVENT_CONFIG[event.type];
                       const IconComponent = config.icon;
                       return (
@@ -753,21 +761,27 @@ export function CalendarSection({ loading: parentLoading = false }: CalendarSect
                           key={event.id}
                           onClick={() => setSelectedEventDetail(event)}
                           className={cn(
-                            "p-3 rounded-lg border cursor-pointer transition-all hover:shadow-md",
-                            config.bgColor,
-                            config.borderColor
+                            "p-2 rounded-lg border cursor-pointer transition-all hover:shadow-md",
+                            isFormerBirthday
+                              ? 'bg-gray-50 dark:bg-gray-900/30 border-gray-200 dark:border-gray-700 opacity-75'
+                              : `${config.bgColor} ${config.borderColor}`
                           )}
                         >
-                          <div className="flex items-start gap-3">
-                            <div className={cn("p-1.5 rounded-md shrink-0", config.color, "text-white")}>
-                              <IconComponent className="h-4 w-4" />
+                          <div className="flex items-start gap-2">
+                            <div className={cn("p-1 rounded-md shrink-0 relative", isFormerBirthday ? 'bg-gray-400' : config.color, "text-white")}>
+                              <IconComponent className="h-3.5 w-3.5" />
+                              {isFormerBirthday && (
+                                <UserX className="h-2.5 w-2.5 absolute -bottom-1 -right-1 text-gray-500 bg-white dark:bg-gray-800 rounded-full" />
+                              )}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className={cn("text-sm font-medium truncate", config.textColor)}>
-                                {event.title}
-                              </p>
+                              <div className="flex items-center gap-1">
+                                <p className={cn("text-sm font-medium leading-snug", isFormerBirthday ? 'text-gray-500 dark:text-gray-400' : config.textColor)} title={event.title} style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                  {event.title}
+                                </p>
+                              </div>
                               {event.metadata?.employee && (
-                                <p className="text-xs text-muted-foreground mt-0.5">
+                                <p className="text-xs text-muted-foreground mt-0.5 truncate">
                                   {event.metadata.employee.department}
                                 </p>
                               )}
@@ -799,6 +813,7 @@ export function CalendarSection({ loading: parentLoading = false }: CalendarSect
                 ) : (
                   <div className="space-y-3">
                     {upcomingEvents.map((event) => {
+                      const isFormerBirthday = event.type === 'BIRTHDAY' && event.metadata?.isFormer;
                       const config = EVENT_CONFIG[event.type];
                       const IconComponent = config.icon;
                       const isMultiDay = event.endDate && !isSameDay(event.date, event.endDate);
@@ -813,13 +828,24 @@ export function CalendarSection({ loading: parentLoading = false }: CalendarSect
                             setCurrentDate(event.date);
                             setSelectedEventDetail(event);
                           }}
-                          className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
+                          className={cn(
+                            "flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors",
+                            isFormerBirthday ? 'hover:bg-gray-100/50 dark:hover:bg-gray-800/50 opacity-70' : 'hover:bg-muted/50'
+                          )}
                         >
-                          <div className={cn("p-1.5 rounded-md shrink-0", config.color, "text-white")}>
+                          <div className={cn("p-1.5 rounded-md shrink-0 relative", isFormerBirthday ? 'bg-gray-400' : config.color, "text-white")}>
                             <IconComponent className="h-3.5 w-3.5" />
+                            {isFormerBirthday && (
+                              <UserX className="h-2.5 w-2.5 absolute -bottom-1 -right-1 text-gray-500 bg-white dark:bg-gray-800 rounded-full" />
+                            )}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{event.title}</p>
+                            <div className="flex items-center gap-1.5">
+                              <p className={cn("text-sm font-medium truncate", isFormerBirthday && 'text-gray-500 dark:text-gray-400')}>{event.title}</p>
+                              {isFormerBirthday && (
+                                <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 shrink-0 border-gray-300 text-gray-500">Ex</Badge>
+                              )}
+                            </div>
                             <p className="text-xs text-muted-foreground">
                               {isMultiDay ? (
                                 <>{formatDate(event.date)} - {formatDate(event.endDate!, true)} ({totalDays} days)</>
@@ -900,6 +926,7 @@ export function CalendarSection({ loading: parentLoading = false }: CalendarSect
       <Dialog open={!!selectedEventDetail} onOpenChange={(open) => !open && setSelectedEventDetail(null)}>
         <DialogContent className="sm:max-w-[425px]">
           {selectedEventDetail && (() => {
+            const isFormerBirthday = selectedEventDetail.type === 'BIRTHDAY' && selectedEventDetail.metadata?.isFormer;
             const config = EVENT_CONFIG[selectedEventDetail.type];
             const IconComponent = config.icon;
             
@@ -907,15 +934,21 @@ export function CalendarSection({ loading: parentLoading = false }: CalendarSect
               <>
                 <DialogHeader>
                   <div className="flex items-start gap-3">
-                    <div className={cn("p-2 rounded-lg", config.color, "text-white")}>
+                    <div className={cn("p-2 rounded-lg", isFormerBirthday ? 'bg-gray-400' : config.color, "text-white")}>
                       <IconComponent className="h-5 w-5" />
                     </div>
                     <div className="flex-1">
                       <DialogTitle className="text-lg">{selectedEventDetail.title}</DialogTitle>
-                      <DialogDescription className="mt-1">
-                        <Badge variant="outline" className={cn(config.bgColor, config.textColor, "border-0")}>
+                      <DialogDescription className="mt-1 flex items-center gap-2">
+                        <Badge variant="outline" className={cn(isFormerBirthday ? 'bg-gray-50 text-gray-500' : `${config.bgColor} ${config.textColor}`, "border-0")}>
                           {config.label.slice(0, -1)}
                         </Badge>
+                        {isFormerBirthday && (
+                          <Badge variant="outline" className="border-gray-300 text-gray-500 bg-gray-50">
+                            <UserX className="h-3 w-3 mr-1" />
+                            Former Employee
+                          </Badge>
+                        )}
                       </DialogDescription>
                     </div>
                   </div>
@@ -944,9 +977,13 @@ export function CalendarSection({ loading: parentLoading = false }: CalendarSect
 
                   {/* Employee Details */}
                   {selectedEventDetail.metadata?.employee && (
-                    <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                      <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                        <Users className="h-5 w-5 text-primary" />
+                    <div className={cn("flex items-center gap-3 p-3 rounded-lg", isFormerBirthday ? 'bg-gray-50 dark:bg-gray-900/30' : 'bg-muted/50')}>
+                      <div className={cn("h-10 w-10 rounded-full flex items-center justify-center", isFormerBirthday ? 'bg-gray-200 dark:bg-gray-700' : 'bg-primary/10')}>
+                        {isFormerBirthday ? (
+                          <UserX className="h-5 w-5 text-gray-500" />
+                        ) : (
+                          <Users className="h-5 w-5 text-primary" />
+                        )}
                       </div>
                       <div>
                         <p className="text-sm font-medium">
@@ -955,6 +992,7 @@ export function CalendarSection({ loading: parentLoading = false }: CalendarSect
                         {selectedEventDetail.metadata.employee.department && (
                           <p className="text-xs text-muted-foreground">
                             {selectedEventDetail.metadata.employee.department}
+                            {isFormerBirthday && ' · Former Employee'}
                           </p>
                         )}
                       </div>

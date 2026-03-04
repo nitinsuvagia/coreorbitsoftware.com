@@ -12,6 +12,7 @@ import { ZodError } from 'zod';
 import { logger } from './utils/logger';
 import { config } from './config';
 import notificationRoutes from './routes/notification.routes';
+import templateRoutes from './routes/template.routes';
 
 const app = express();
 
@@ -77,6 +78,7 @@ app.get('/ready', (req: Request, res: Response) => {
 
 // API routes
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/email-templates', templateRoutes);
 
 // ============================================================================
 // ERROR HANDLING

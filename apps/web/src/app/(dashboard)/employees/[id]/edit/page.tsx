@@ -24,9 +24,10 @@ import {
 } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowLeft, Save, Loader2, Plus, Trash2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Plus, Trash2, AlertCircle, FileText } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
+import { OtherInformationTab } from '../../_components/OtherInformationTab';
 
 interface EmergencyContact {
   id?: string;
@@ -360,6 +361,21 @@ export default function EditEmployeePage() {
     );
   }
 
+  // Wait until formData is populated from employee
+  if (!formData.firstName && employee.firstName) {
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardContent className="pt-6 space-y-4">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -381,17 +397,21 @@ export default function EditEmployeePage() {
       </div>
 
       {/* Form */}
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} key={employee?.id}>
         <Card>
           <Tabs defaultValue="personal" className="w-full">
             <CardHeader>
-              <TabsList className="grid w-full grid-cols-6">
+              <TabsList className="grid w-full grid-cols-7">
                 <TabsTrigger value="personal">Personal</TabsTrigger>
                 <TabsTrigger value="employment">Employment</TabsTrigger>
                 <TabsTrigger value="address">Address</TabsTrigger>
                 <TabsTrigger value="emergency">Emergency</TabsTrigger>
                 <TabsTrigger value="bank">Bank</TabsTrigger>
                 <TabsTrigger value="education">Education</TabsTrigger>
+                <TabsTrigger value="other">
+                  <FileText className="h-4 w-4 mr-1 hidden sm:block" />
+                  Other
+                </TabsTrigger>
               </TabsList>
             </CardHeader>
             <CardContent>
@@ -1111,6 +1131,11 @@ export default function EditEmployeePage() {
                   <Plus className="mr-2 h-4 w-4" />
                   Add Education
                 </Button>
+              </TabsContent>
+
+              {/* Other Information Tab */}
+              <TabsContent value="other">
+                <OtherInformationTab employeeId={employeeId} />
               </TabsContent>
             </CardContent>
           </Tabs>

@@ -12,12 +12,98 @@ import app from './app';
 import { config } from './config';
 import { logger } from './utils/logger';
 import { verifyEmailConnection } from './services/email.service';
-import { handleNotificationEvent } from './services/dispatcher.service';
+import { handleEvent } from './services/event-handlers';
 import { initializeWebSocket, shutdown as shutdownWebSocket, getStats } from './services/websocket.service';
 import { preloadTemplates } from './services/template.service';
 import { startEmailQueueProcessor } from './services/queue.service';
+import { initializeScheduledJobs, stopScheduledJobs } from './services/scheduled-jobs.service';
 
 const server = createServer(app);
+
+/**
+ * Subscribe to Redis topics for real-time event processing
+ */
+function subscribeToEvents(eventBus: any): void {
+  // Generic notification event handler
+  const createEventHandler = (eventType: string) => async (event: any) => {
+    await handleEvent(eventType, event.payload, {
+      tenantId: event.tenantId,
+      tenantSlug: event.tenantSlug,
+    });
+  };
+
+  // ============================================================================
+  // TASK EVENTS
+  // ============================================================================
+  eventBus.subscribeToTopic('task-created', createEventHandler('task.assigned'));
+  eventBus.subscribeToTopic('task-assigned', createEventHandler('task.assigned'));
+  eventBus.subscribeToTopic('task-mentioned', createEventHandler('task.mentioned'));
+  eventBus.subscribeToTopic('task-commented', createEventHandler('task.commented'));
+  
+  // ============================================================================
+  // LEAVE EVENTS
+  // ============================================================================
+  eventBus.subscribeToTopic('leave-requested', createEventHandler('leave.requested'));
+  eventBus.subscribeToTopic('leave-approved', createEventHandler('leave.approved'));
+  eventBus.subscribeToTopic('leave-rejected', createEventHandler('leave.rejected'));
+  
+  // ============================================================================
+  // EMPLOYEE EVENTS
+  // ============================================================================
+  eventBus.subscribeToTopic('employee-created', createEventHandler('employee.onboarded'));
+  eventBus.subscribeToTopic('employee-onboarded', createEventHandler('employee.onboarded'));
+  
+  // ============================================================================
+  // RECRUITMENT EVENTS
+  // ============================================================================
+  eventBus.subscribeToTopic('job-description-created', createEventHandler('job.created'));
+  eventBus.subscribeToTopic('job-description-published', createEventHandler('job.published'));
+  eventBus.subscribeToTopic('candidate-applied', createEventHandler('candidate.applied'));
+  eventBus.subscribeToTopic('candidate-shortlisted', createEventHandler('candidate.shortlisted'));
+  eventBus.subscribeToTopic('candidate-hired', createEventHandler('candidate.hired'));
+  
+  // ============================================================================
+  // INTERVIEW EVENTS
+  // ============================================================================
+  eventBus.subscribeToTopic('interview-scheduled', createEventHandler('interview.scheduled'));
+  eventBus.subscribeToTopic('interview-rescheduled', createEventHandler('interview.rescheduled'));
+  eventBus.subscribeToTopic('interview-cancelled', createEventHandler('interview.cancelled'));
+  
+  // ============================================================================
+  // ASSESSMENT EVENTS
+  // ============================================================================
+  eventBus.subscribeToTopic('assessment-assigned', createEventHandler('assessment.assigned'));
+  eventBus.subscribeToTopic('assessment-submitted', createEventHandler('assessment.submitted'));
+  eventBus.subscribeToTopic('assessment-evaluated', createEventHandler('assessment.evaluated'));
+  
+  // ============================================================================
+  // HOLIDAY EVENTS
+  // ============================================================================
+  eventBus.subscribeToTopic('holiday-created', createEventHandler('holiday.created'));
+  
+  // ============================================================================
+  // DOCUMENT EVENTS
+  // ============================================================================
+  eventBus.subscribeToTopic('document-expiring', createEventHandler('document.expiring'));
+  eventBus.subscribeToTopic('document-expired', createEventHandler('document.expired'));
+  
+  // ============================================================================
+  // BILLING EVENTS
+  // ============================================================================
+  eventBus.subscribeToTopic('billing-invoice-created', createEventHandler('billing.invoice_created'));
+  eventBus.subscribeToTopic('billing-payment-received', createEventHandler('billing.payment_received'));
+  eventBus.subscribeToTopic('billing-payment-failed', createEventHandler('billing.payment_failed'));
+  eventBus.subscribeToTopic('billing-subscription-changed', createEventHandler('billing.subscription_changed'));
+  eventBus.subscribeToTopic('billing-subscription-activated', createEventHandler('billing.subscription_activated'));
+  eventBus.subscribeToTopic('billing-subscription-canceled', createEventHandler('billing.subscription_canceled'));
+  
+  // ============================================================================
+  // PROJECT EVENTS
+  // ============================================================================
+  eventBus.subscribeToTopic('project-member-added', createEventHandler('project.member_added'));
+  
+  logger.info('Subscribed to all notification event topics');
+}
 
 async function start(): Promise<void> {
   try {
@@ -34,64 +120,13 @@ async function start(): Promise<void> {
     
     logger.info('Event bus initialized');
 
-    // Get event bus instance for queue consumption
+    // Get event bus instance and subscribe to events
     const eventBus = getEventBus();
+    subscribeToEvents(eventBus);
     
-    // Subscribe to notification events
-    eventBus.startQueueConsumer(
-      SQS_QUEUES.NOTIFICATION_SEND,
-      async (event) => {
-        await handleNotificationEvent(event.type, event.payload, {
-          tenantId: event.tenantId,
-          tenantSlug: event.tenantSlug,
-        });
-      }
-    );
-    
-    // Subscribe to task events for notifications
-    eventBus.startQueueConsumer(
-      SQS_QUEUES.TASK_CREATED,
-      async (event) => {
-        await handleNotificationEvent(event.type, event.payload, {
-          tenantId: event.tenantId,
-          tenantSlug: event.tenantSlug,
-        });
-      }
-    );
-    
-    eventBus.startQueueConsumer(
-      SQS_QUEUES.TASK_ASSIGNED,
-      async (event) => {
-        await handleNotificationEvent(event.type, event.payload, {
-          tenantId: event.tenantId,
-          tenantSlug: event.tenantSlug,
-        });
-      }
-    );
-    
-    // Subscribe to leave events
-    eventBus.startQueueConsumer(
-      SQS_QUEUES.ATTENDANCE_LEAVE_APPROVED,
-      async (event) => {
-        await handleNotificationEvent('leave.approved', event.payload, {
-          tenantId: event.tenantId,
-          tenantSlug: event.tenantSlug,
-        });
-      }
-    );
-    
-    // Subscribe to employee events  
-    eventBus.startQueueConsumer(
-      SQS_QUEUES.EMPLOYEE_ONBOARDED,
-      async (event) => {
-        await handleNotificationEvent('employee.created', event.payload, {
-          tenantId: event.tenantId,
-          tenantSlug: event.tenantSlug,
-        });
-      }
-    );
-    
-    logger.info('Subscribed to notification queues');
+    // Initialize scheduled jobs for recurring notifications
+    initializeScheduledJobs();
+    logger.info('Scheduled notification jobs initialized');
     
     // Initialize WebSocket server
     initializeWebSocket(server);
@@ -132,6 +167,9 @@ async function start(): Promise<void> {
 
 async function shutdown(): Promise<void> {
   logger.info('Shutting down Notification Service...');
+  
+  // Stop scheduled jobs
+  stopScheduledJobs();
   
   // Shutdown WebSocket server first
   await shutdownWebSocket();

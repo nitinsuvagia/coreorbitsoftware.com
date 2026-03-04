@@ -13,10 +13,11 @@ data:
   ATTENDANCE_SERVICE_URL: "http://attendance-service:3003"
   PROJECT_SERVICE_URL: "http://project-service:3004"
   TASK_SERVICE_URL: "http://task-service:3005"
-  NOTIFICATION_SERVICE_URL: "http://notification-service:3006"
+  BILLING_SERVICE_URL: "http://billing-service:3006"
   DOCUMENT_SERVICE_URL: "http://document-service:3007"
-  BILLING_SERVICE_URL: "http://billing-service:3008"
+  NOTIFICATION_SERVICE_URL: "http://notification-service:3008"
   REPORT_SERVICE_URL: "http://report-service:3009"
+  AI_SERVICE_URL: "http://ai-service:3012"
   
   # Database (without password)
   DATABASE_HOST: "postgres"

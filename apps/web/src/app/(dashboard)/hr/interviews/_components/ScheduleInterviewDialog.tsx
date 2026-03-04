@@ -294,11 +294,14 @@ export function ScheduleInterviewDialog({
     }
   }, []);
 
-  // Load employees from API
+  // Load employees from API (only active employees for interviewers)
   const loadEmployees = useCallback(async (search?: string) => {
     try {
       setLoadingEmployees(true);
-      const params: Record<string, string> = { pageSize: '100' };
+      const params: Record<string, string> = { 
+        pageSize: '100',
+        excludeStatuses: 'TERMINATED,RESIGNED,RETIRED'  // Only show active employees
+      };
       if (search) {
         params.search = search;
       }

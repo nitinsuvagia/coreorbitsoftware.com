@@ -15,6 +15,7 @@ function getCookie(name: string): string | null {
 /**
  * Extract tenant slug from the current hostname
  * For subdomain.localhost:3000 pattern, extracts "subdomain"
+ * Returns null if no tenant subdomain is detected (security: no default tenant)
  */
 function getTenantSlugFromHost(): string | null {
   if (typeof window === 'undefined') return null;
@@ -35,6 +36,7 @@ function getTenantSlugFromHost(): string | null {
     return parts[0];
   }
   
+  // No tenant subdomain detected - return null (DO NOT default to any tenant for security)
   return null;
 }
 
@@ -61,6 +63,11 @@ publicApi.interceptors.request.use(
     const tenantSlug = getTenantSlugFromHost();
     if (tenantSlug) {
       config.headers['X-Tenant-Slug'] = tenantSlug;
+    }
+    
+    // Forward the original hostname to the API gateway for domain resolution
+    if (typeof window !== 'undefined') {
+      config.headers['X-Forwarded-Host'] = window.location.host;
     }
     
     return config;
@@ -92,6 +99,12 @@ api.interceptors.request.use(
     const tenantSlug = getTenantSlugFromHost();
     if (tenantSlug) {
       config.headers['X-Tenant-Slug'] = tenantSlug;
+    }
+    
+    // Forward the original hostname to the API gateway for domain resolution
+    // This is critical for determining if it's main domain vs tenant subdomain
+    if (typeof window !== 'undefined') {
+      config.headers['X-Forwarded-Host'] = window.location.host;
     }
     
     return config;
@@ -210,6 +223,7 @@ export async function publicPost<T>(url: string, data?: any): Promise<T> {
 interface ApiResponse<T> {
   success: boolean;
   data?: T;
+  message?: string;  // Success/info message from backend
   error?: {
     code?: string;
     message: string;

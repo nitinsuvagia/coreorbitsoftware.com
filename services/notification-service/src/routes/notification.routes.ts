@@ -87,6 +87,13 @@ const sendBulkPlatformEmailSchema = z.object({
   useQueue: z.boolean().optional(),
 });
 
+const sendTemplatedPlatformEmailSchema = z.object({
+  to: z.string().email(),
+  templateName: z.string().min(1).max(100),
+  subject: z.string().min(1).max(200),
+  data: z.record(z.any()).optional(),
+});
+
 // ============================================================================
 // MIDDLEWARE
 // ============================================================================
@@ -106,6 +113,63 @@ function getTenantContext(req: Request) {
 function asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => Promise<any>) {
   return (req: Request, res: Response, next: NextFunction) => {
     Promise.resolve(fn(req, res, next)).catch(next);
+  };
+}
+
+// ============================================================================
+// RESPONSE TRANSFORMATION
+// ============================================================================
+
+/**
+ * Transform notification from database format to frontend format
+ * Database fields: id, userId, type (enum), category, title, message, isRead, readAt, actionUrl, metadata, createdAt
+ * Frontend expects: id, type, title, message, time, createdAt, read, archived, actionUrl, metadata
+ */
+function transformNotification(notification: any): any {
+  // Map category to frontend type
+  const categoryToType: Record<string, string> = {
+    'task': 'task',
+    'project': 'project',
+    'leave': 'leave',
+    'mention': 'mention',
+    'system': 'system',
+    'attendance': 'attendance',
+    'billing': 'billing',
+    'team': 'team',
+    'employee': 'team',
+    'interview': 'task',
+    'job': 'task',
+    'candidate': 'task',
+    'assessment': 'task',
+    'holiday': 'system',
+    'document': 'system',
+  };
+  
+  const type = categoryToType[notification.category] || 'system';
+  
+  // Calculate time ago
+  const createdAt = new Date(notification.createdAt);
+  const now = new Date();
+  const seconds = Math.floor((now.getTime() - createdAt.getTime()) / 1000);
+  
+  let time: string;
+  if (seconds < 60) time = 'Just now';
+  else if (seconds < 3600) time = `${Math.floor(seconds / 60)} mins ago`;
+  else if (seconds < 86400) time = `${Math.floor(seconds / 3600)} hours ago`;
+  else if (seconds < 604800) time = `${Math.floor(seconds / 86400)} days ago`;
+  else time = createdAt.toLocaleDateString();
+  
+  return {
+    id: notification.id,
+    type,
+    title: notification.title,
+    message: notification.message,
+    time,
+    createdAt: notification.createdAt.toISOString(),
+    read: notification.isRead,
+    archived: false, // We don't have an archive field yet
+    actionUrl: notification.actionUrl,
+    metadata: notification.metadata,
   };
 }
 
@@ -133,7 +197,17 @@ router.get(
       pageSize: filters.pageSize,
     });
     
-    res.json({ success: true, ...result });
+    // Transform notifications to frontend format
+    const transformedData = result.data.map(transformNotification);
+    
+    res.json({ 
+      success: true, 
+      data: transformedData,
+      total: result.total,
+      unreadCount: result.unreadCount,
+      page: result.page,
+      pageSize: result.pageSize,
+    });
   })
 );
 
@@ -540,6 +614,49 @@ router.post(
     res.json({ 
       success: result.sent > 0,
       data: result
+    });
+  })
+);
+
+// Templated platform email endpoint (e.g., tenant registration welcome)
+router.post(
+  '/platform/email/templated',
+  asyncHandler(async (req: Request, res: Response) => {
+    const input = sendTemplatedPlatformEmailSchema.parse(req.body);
+    
+    const { renderTemplate } = await import('../services/template.service');
+    const { sendEmail } = await import('../services/email.service');
+    
+    // Render the template with provided data
+    const rendered = renderTemplate(input.templateName, {
+      ...input.data,
+      subject: input.subject,
+    }, 'platform');
+    
+    if (!rendered) {
+      return res.status(400).json({
+        success: false,
+        error: `Template '${input.templateName}' not found`,
+      });
+    }
+    
+    const results = await sendEmail({
+      to: { email: input.to },
+      subject: input.subject,
+      html: rendered.html,
+      text: rendered.text,
+      emailType: 'platform',
+    });
+    
+    const success = results.every(r => r.success);
+    
+    res.json({
+      success,
+      data: {
+        sent: results.filter(r => r.success).length,
+        failed: results.filter(r => !r.success).length,
+        results,
+      },
     });
   })
 );

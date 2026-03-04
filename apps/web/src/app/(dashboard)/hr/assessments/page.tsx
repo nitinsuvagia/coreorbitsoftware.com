@@ -101,6 +101,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  Sparkles,
 } from 'lucide-react';
 
 // ============================================================================
@@ -1297,8 +1298,11 @@ function QuestionBankTab() {
             ))}
           </SelectContent>
         </Select>
-        <Button variant="outline" onClick={() => setAiImportDialogOpen(true)}>
-          <Brain className="h-4 w-4 mr-2" />
+        <Button 
+          onClick={() => setAiImportDialogOpen(true)}
+          className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white border-0"
+        >
+          <Sparkles className="h-4 w-4 mr-2" />
           AI Import
         </Button>
         <Button onClick={() => router.push('/hr/assessments/questions/new')}>

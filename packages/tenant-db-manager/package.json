@@ -3,13 +3,13 @@
   "version": "1.0.0",
   "description": "Dynamic tenant database connection manager for multi-tenant architecture",
   "main": "./dist/index.js",
-  "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.mjs",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
       "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "default": "./dist/index.js"
     }
   },
   "scripts": {
@@ -22,9 +22,7 @@
   },
   "dependencies": {
     "@prisma/client": "^5.10.0",
-    "eslint-config-next": "16.1.1",
-    "lru-cache": "^10.2.0",
-    "nodemailer": "7.0.12"
+    "lru-cache": "^10.2.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

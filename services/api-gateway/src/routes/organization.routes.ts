@@ -30,18 +30,18 @@ interface TenantRequest extends Request {
 
 const updateOrganizationSchema = z.object({
   name: z.string().min(2).max(100).optional(),
-  legalName: z.string().optional(),
-  email: z.string().email().optional(),
-  phone: z.string().optional(),
-  website: z.string().url().optional().or(z.literal('')),
-  addressLine1: z.string().optional(),
-  addressLine2: z.string().optional(),
-  city: z.string().optional(),
-  state: z.string().optional(),
-  country: z.string().optional(),
-  postalCode: z.string().optional(),
-  logo: z.string().optional(),
-  reportLogo: z.string().nullable().optional(),
+  legalName: z.string().nullish(),
+  email: z.string().email().nullish().or(z.literal('')),
+  phone: z.string().nullish(),
+  website: z.string().url().nullish().or(z.literal('')),
+  addressLine1: z.string().nullish(),
+  addressLine2: z.string().nullish(),
+  city: z.string().nullish(),
+  state: z.string().nullish(),
+  country: z.string().nullish(),
+  postalCode: z.string().nullish(),
+  logo: z.string().nullish(),
+  reportLogo: z.string().nullish(),
   metadata: z.record(z.unknown()).optional(),
 });
 
@@ -179,7 +179,7 @@ router.get('/', async (req: TenantRequest, res: Response, next: NextFunction) =>
           currency: tenant.subscription.plan.currency,
           maxUsers: tenant.subscription.plan.maxUsers,
           maxStorage: Number(tenant.subscription.plan.maxStorage),
-          maxStorageGB: Math.round(Number(tenant.subscription.plan.maxStorage) / (1024 * 1024 * 1024)),
+          maxStorageGB: Number(tenant.subscription.plan.maxStorage), // DB stores GB directly
           maxProjects: tenant.subscription.plan.maxProjects,
           maxClients: tenant.subscription.plan.maxClients,
           features: tenant.subscription.plan.features,
@@ -458,23 +458,23 @@ router.get('/dashboard', async (req: TenantRequest, res: Response, next: NextFun
         tenantPrisma.employee.count({ where: { status: 'ACTIVE' } }),
       ]);
       
-      // Query today's attendance
-      const [presentToday, totalActiveForAttendance] = await Promise.all([
-        tenantPrisma.attendance.count({
-          where: {
-            date: {
-              gte: today,
-              lt: tomorrow,
-            },
-            status: { in: ['present', 'PRESENT'] },
+      // Query today's attendance - count UNIQUE employees, not records
+      const todayAttendanceRecords = await tenantPrisma.attendance.findMany({
+        where: {
+          date: {
+            gte: today,
+            lt: tomorrow,
           },
-        }),
-        activeEmployees, // Already fetched
-      ]);
+          status: { in: ['present', 'PRESENT', 'half_day', 'HALF_DAY'] },
+        },
+        select: { employeeId: true },
+      });
+      const uniquePresentEmployees = new Set(todayAttendanceRecords.map(a => a.employeeId));
+      const presentToday = uniquePresentEmployees.size;
       
       // Calculate attendance rate
-      const attendanceRate = totalActiveForAttendance > 0 
-        ? Math.round((presentToday / totalActiveForAttendance) * 100) 
+      const attendanceRate = activeEmployees > 0 
+        ? Math.round((presentToday / activeEmployees) * 100) 
         : 0;
       
       // Query pending leave requests
@@ -563,7 +563,7 @@ router.get('/dashboard', async (req: TenantRequest, res: Response, next: NextFun
           maxUsers,
           maxProjects,
           maxStorageBytes: maxStorage.toString(),
-          maxStorageGB: Math.round(Number(maxStorage) / (1024 * 1024 * 1024)),
+          maxStorageGB: Number(maxStorage), // DB stores GB directly
         },
         modules: tenant.settings ? {
           employee: tenant.settings.moduleEmployee,
@@ -732,7 +732,7 @@ router.get('/dashboard/alerts', async (req: TenantRequest, res: Response, next: 
           title: 'Pending Leave Requests',
           message: `${pendingLeaveRequests} leave request${pendingLeaveRequests > 1 ? 's' : ''} awaiting approval`,
           priority: 2,
-          link: '/hr/leave-requests',
+          link: '/hr/leave-management',
           createdAt: new Date(),
         });
       }
@@ -895,18 +895,10 @@ router.get('/dashboard/admin-360', async (req: TenantRequest, res: Response, nex
     const [
       totalEmployees,
       activeEmployees,
-      onLeaveToday,
       totalDepartments,
     ] = await Promise.all([
       tenantPrisma.employee.count(),
       tenantPrisma.employee.count({ where: { status: 'ACTIVE' } }),
-      tenantPrisma.leaveRequest.count({
-        where: {
-          status: { in: ['approved', 'APPROVED'] },
-          fromDate: { lte: today },
-          toDate: { gte: today },
-        },
-      }),
       tenantPrisma.department.count({ where: { isActive: true } }),
     ]);
     
@@ -914,12 +906,14 @@ router.get('/dashboard/admin-360', async (req: TenantRequest, res: Response, nex
     const [
       todayAttendance,
       avgWorkMinutes,
+      todayLeavesData,
     ] = await Promise.all([
       tenantPrisma.attendance.findMany({
         where: {
           date: { gte: today, lt: tomorrow },
         },
         select: {
+          employeeId: true,
           status: true,
           isLate: true,
           isRemote: true,
@@ -934,14 +928,32 @@ router.get('/dashboard/admin-360', async (req: TenantRequest, res: Response, nex
         },
         _avg: { workMinutes: true },
       }),
+      tenantPrisma.leaveRequest.findMany({
+        where: {
+          status: { in: ['approved', 'APPROVED'] },
+          fromDate: { lte: today },
+          toDate: { gte: today },
+        },
+        select: { employeeId: true },
+      }),
     ]);
     
-    const todayPresent = todayAttendance.filter(a => 
-      a.status === 'present' || a.status === 'PRESENT'
-    ).length;
-    const todayAbsent = activeEmployees - todayPresent - onLeaveToday;
-    const todayLate = todayAttendance.filter(a => a.isLate).length;
-    const todayRemote = todayAttendance.filter(a => a.isRemote).length;
+    // Count UNIQUE employees for each category (same employee may have multiple sessions)
+    const presentEmployeeIds = new Set(
+      todayAttendance
+        .filter(a => a.status === 'present' || a.status === 'PRESENT' || a.status === 'half_day' || a.status === 'HALF_DAY')
+        .map(a => a.employeeId)
+    );
+    const lateEmployeeIds = new Set(todayAttendance.filter(a => a.isLate).map(a => a.employeeId));
+    const remoteEmployeeIds = new Set(todayAttendance.filter(a => a.isRemote).map(a => a.employeeId));
+    const onLeaveEmployeeIds = new Set(todayLeavesData.map(l => l.employeeId));
+    
+    const todayPresent = presentEmployeeIds.size;
+    // Employees on leave who also checked in are counted as present, not on leave
+    const actualOnLeave = [...onLeaveEmployeeIds].filter(id => !presentEmployeeIds.has(id)).length;
+    const todayAbsent = Math.max(0, activeEmployees - todayPresent - actualOnLeave);
+    const todayLate = lateEmployeeIds.size;
+    const todayRemote = remoteEmployeeIds.size;
     const attendanceRate = activeEmployees > 0 
       ? Math.round((todayPresent / activeEmployees) * 100 * 10) / 10
       : 0;
@@ -1002,60 +1014,121 @@ router.get('/dashboard/admin-360', async (req: TenantRequest, res: Response, nex
     })).sort((a, b) => b.count - a.count);
     
     // ========== PERFORMANCE METRICS ==========
-    // Get all completed performance reviews
+    // Get all completed performance reviews (case-insensitive status matching)
     let avgTeamScore = 0;
-    let topPerformers: Array<{ name: string; score: number; department: string }> = [];
+    let topPerformers: Array<{ 
+      id: string;
+      name: string; 
+      score: number; 
+      department: string;
+      avatar?: string | null;
+      email?: string | null;
+      reviewCount: number;
+    }> = [];
+    let needsImprovementList: Array<{
+      id: string;
+      name: string;
+      score: number;
+      department: string;
+      avatar?: string | null;
+      email?: string | null;
+      reviewCount: number;
+    }> = [];
     let improvementNeeded = 0;
     let departmentScores: Array<{ dept: string; score: number }> = [];
     
     try {
-      const performanceReviews = await tenantPrisma.performanceReview.findMany({
-        where: { status: 'COMPLETED' },
-        select: {
-          performanceScore: true,
-          employeeId: true,
-          employee: {
-            select: {
-              firstName: true,
-              lastName: true,
-              department: {
-                select: { id: true, name: true }
-              }
-            }
-          }
-        }
-      });
+      // Use raw query for case-insensitive status matching with avatar and email
+      const performanceReviews = await tenantPrisma.$queryRaw<Array<{
+        overall_rating: number | null;
+        employee_id: string;
+        first_name: string;
+        last_name: string;
+        avatar: string | null;
+        email: string | null;
+        department_id: string | null;
+        department_name: string | null;
+      }>>`
+        SELECT 
+          pr.overall_rating,
+          pr.employee_id,
+          e.first_name,
+          e.last_name,
+          e.avatar,
+          e.email,
+          d.id AS department_id,
+          d.name AS department_name
+        FROM performance_reviews pr
+        JOIN employees e ON pr.employee_id = e.id
+        LEFT JOIN departments d ON e.department_id = d.id
+        WHERE LOWER(pr.status) IN ('submitted', 'completed')
+      `;
       
       if (performanceReviews.length > 0) {
-        // Calculate average team score
-        const totalScore = performanceReviews.reduce((sum, r) => 
-          sum + (r.performanceScore ? Number(r.performanceScore) : 0), 0);
-        avgTeamScore = Number((totalScore / performanceReviews.length).toFixed(1));
+        // Aggregate reviews by employee
+        const employeeScoreMap: { [key: string]: {
+          total: number;
+          count: number;
+          firstName: string;
+          lastName: string;
+          avatar: string | null;
+          email: string | null;
+          departmentName: string | null;
+        } } = {};
         
-        // Get top performers (score >= 8.5)
-        topPerformers = performanceReviews
-          .filter(r => r.performanceScore && Number(r.performanceScore) >= 8.5)
-          .map(r => ({
-            name: `${r.employee.firstName} ${r.employee.lastName}`,
-            score: Number(r.performanceScore),
-            department: r.employee.department?.name || 'Unknown'
-          }))
-          .sort((a, b) => b.score - a.score)
-          .slice(0, 5);
-        
-        // Count employees needing improvement (score < 7.0)
-        improvementNeeded = performanceReviews.filter(r => 
-          r.performanceScore && Number(r.performanceScore) < 7.0
-        ).length;
-        
-        // Calculate department scores
-        const deptScoreMap: { [key: string]: { total: number; count: number } } = {};
         performanceReviews.forEach(r => {
-          const deptName = r.employee.department?.name || 'Unknown';
+          const score = r.overall_rating ? Number(r.overall_rating) : 0;
+          if (!employeeScoreMap[r.employee_id]) {
+            employeeScoreMap[r.employee_id] = {
+              total: 0,
+              count: 0,
+              firstName: r.first_name,
+              lastName: r.last_name,
+              avatar: r.avatar,
+              email: r.email,
+              departmentName: r.department_name,
+            };
+          }
+          employeeScoreMap[r.employee_id].total += score;
+          employeeScoreMap[r.employee_id].count += 1;
+        });
+        
+        // Convert to array with average scores
+        const employeeScores = Object.entries(employeeScoreMap).map(([id, data]) => ({
+          id,
+          name: `${data.firstName} ${data.lastName}`,
+          score: Number((data.total / data.count).toFixed(1)),
+          department: data.departmentName || 'Unknown',
+          avatar: data.avatar,
+          email: data.email,
+          reviewCount: data.count,
+        }));
+        
+        // Calculate overall average team score
+        const totalAvg = employeeScores.reduce((sum, e) => sum + e.score, 0);
+        avgTeamScore = employeeScores.length > 0 
+          ? Number((totalAvg / employeeScores.length).toFixed(1)) 
+          : 0;
+        
+        // Get top performers (average score >= 8.5) - all of them for "View All" modal
+        topPerformers = employeeScores
+          .filter(e => e.score >= 8.5)
+          .sort((a, b) => b.score - a.score);
+        
+        // Get employees needing improvement (average score < 7.0) with details
+        needsImprovementList = employeeScores
+          .filter(e => e.score < 7.0)
+          .sort((a, b) => a.score - b.score);
+        improvementNeeded = needsImprovementList.length;
+        
+        // Calculate department scores (using aggregated employee scores)
+        const deptScoreMap: { [key: string]: { total: number; count: number } } = {};
+        employeeScores.forEach(e => {
+          const deptName = e.department;
           if (!deptScoreMap[deptName]) {
             deptScoreMap[deptName] = { total: 0, count: 0 };
           }
-          deptScoreMap[deptName].total += r.performanceScore ? Number(r.performanceScore) : 0;
+          deptScoreMap[deptName].total += e.score;
           deptScoreMap[deptName].count += 1;
         });
         
@@ -1111,13 +1184,23 @@ router.get('/dashboard/admin-360', async (req: TenantRequest, res: Response, nex
     });
     
     // Convert to array sorted by salary (descending)
-    const departmentSalaries = Object.entries(salaryByDepartment)
+    let departmentSalaries = Object.entries(salaryByDepartment)
       .map(([name, annualSalary]) => ({
         name,
         annualSalary,
         monthlySalary: Math.round(annualSalary / 12),
       }))
       .sort((a, b) => b.annualSalary - a.annualSalary);
+    
+    // Fill in missing departments with $0 salary (show ALL departments)
+    const deptNamesWithSalary = departmentSalaries.map(d => d.name);
+    departments.forEach(dept => {
+      if (!deptNamesWithSalary.includes(dept.name)) {
+        departmentSalaries.push({ name: dept.name, annualSalary: 0, monthlySalary: 0 });
+      }
+    });
+    // Re-sort after adding missing departments
+    departmentSalaries = departmentSalaries.sort((a, b) => b.annualSalary - a.annualSalary);
     
     // ========== RECENT ACTIVITIES ==========
     let recentActivities: Array<{
@@ -1257,7 +1340,7 @@ router.get('/dashboard/admin-360', async (req: TenantRequest, res: Response, nex
         organization: {
           totalEmployees,
           activeEmployees,
-          onLeave: onLeaveToday,
+          onLeave: actualOnLeave,
           departments: totalDepartments,
           activeProjects: 0, // Would need projects table
           completedProjects: 0,
@@ -1300,6 +1383,7 @@ router.get('/dashboard/admin-360', async (req: TenantRequest, res: Response, nex
           avgTeamScore,
           topPerformers,
           improvementNeeded,
+          needsImprovementList,
           departmentScores,
         },
         employeesByDepartment,
@@ -1833,6 +1917,7 @@ router.post('/email-settings/test', async (req: TenantRequest, res: Response, ne
 const employeeCodeSettingsSchema = z.object({
   autoGenerate: z.boolean(),
   prefix: z.string().min(1, 'Prefix is required').max(10, 'Prefix max 10 characters'),
+  includeYear: z.boolean(),
   yearSeqDigits: z.number().min(3).max(7),
   totalSeqDigits: z.number().min(3).max(7),
   separator: z.enum(['-', '_', '']),
@@ -1871,9 +1956,10 @@ router.get('/employee-code-settings', async (req: TenantRequest, res: Response, 
       data: {
         autoGenerate: settings?.employeeCodeAutoGenerate ?? true,
         prefix: settings?.employeeCodePrefix || 'EMP',
+        includeYear: settings?.employeeCodeIncludeYear ?? false,
         yearSeqDigits: settings?.employeeCodeYearSeqDigits ?? 5,
         totalSeqDigits: settings?.employeeCodeTotalSeqDigits ?? 5,
-        separator: settings?.employeeCodeSeparator || '-',
+        separator: settings?.employeeCodeSeparator ?? '-',
       },
     });
   } catch (error) {
@@ -1931,6 +2017,7 @@ router.put('/employee-code-settings', async (req: TenantRequest, res: Response, 
         data: {
           employeeCodeAutoGenerate: data.autoGenerate,
           employeeCodePrefix: data.prefix.toUpperCase(),
+          employeeCodeIncludeYear: data.includeYear,
           employeeCodeYearSeqDigits: data.yearSeqDigits,
           employeeCodeTotalSeqDigits: data.totalSeqDigits,
           employeeCodeSeparator: data.separator,
@@ -1943,6 +2030,7 @@ router.put('/employee-code-settings', async (req: TenantRequest, res: Response, 
           tenant: { connect: { id: tenant.id } },
           employeeCodeAutoGenerate: data.autoGenerate,
           employeeCodePrefix: data.prefix.toUpperCase(),
+          employeeCodeIncludeYear: data.includeYear,
           employeeCodeYearSeqDigits: data.yearSeqDigits,
           employeeCodeTotalSeqDigits: data.totalSeqDigits,
           employeeCodeSeparator: data.separator,
@@ -1955,6 +2043,7 @@ router.put('/employee-code-settings', async (req: TenantRequest, res: Response, 
       data: {
         autoGenerate: (updatedSettings as any).employeeCodeAutoGenerate,
         prefix: (updatedSettings as any).employeeCodePrefix,
+        includeYear: (updatedSettings as any).employeeCodeIncludeYear,
         yearSeqDigits: (updatedSettings as any).employeeCodeYearSeqDigits,
         totalSeqDigits: (updatedSettings as any).employeeCodeTotalSeqDigits,
         separator: (updatedSettings as any).employeeCodeSeparator,
@@ -1995,7 +2084,8 @@ router.get('/employee-code-preview', async (req: TenantRequest, res: Response, n
     
     const settings = tenant.settings as any;
     const prefix = settings?.employeeCodePrefix || 'EMP';
-    const separator = settings?.employeeCodeSeparator || '-';
+    const separator = settings?.employeeCodeSeparator ?? '-';
+    const includeYear = settings?.employeeCodeIncludeYear ?? false;
     const yearSeqDigits = settings?.employeeCodeYearSeqDigits ?? 5;
     const totalSeqDigits = settings?.employeeCodeTotalSeqDigits ?? 5;
     
@@ -2017,10 +2107,18 @@ router.get('/employee-code-preview', async (req: TenantRequest, res: Response, n
     // Count total employees (for total sequence)
     const totalEmployees = await tenantPrisma.employee.count();
     
-    // Generate preview code
+    // Generate preview code based on includeYear setting
     const yearSeq = String(employeesThisYear + 1).padStart(yearSeqDigits, '0');
     const totalSeq = String(totalEmployees + 1).padStart(totalSeqDigits, '0');
-    const previewCode = `${prefix}${separator}${currentYear}${separator}${yearSeq}${separator}${totalSeq}`;
+    
+    let previewCode: string;
+    if (includeYear) {
+      // Full format: PREFIX-YEAR-YEAR_SEQ-TOTAL_SEQ (e.g., EMP-2026-00001-00001)
+      previewCode = `${prefix}${separator}${currentYear}${separator}${yearSeq}${separator}${totalSeq}`;
+    } else {
+      // Simple format: PREFIX-TOTAL_SEQ (e.g., EMP-00001)
+      previewCode = `${prefix}${separator}${totalSeq}`;
+    }
     
     res.json({
       success: true,
@@ -2028,13 +2126,14 @@ router.get('/employee-code-preview', async (req: TenantRequest, res: Response, n
         previewCode,
         breakdown: {
           prefix,
-          year: currentYear,
-          yearSequence: employeesThisYear + 1,
+          year: includeYear ? currentYear : null,
+          yearSequence: includeYear ? employeesThisYear + 1 : null,
           totalSequence: totalEmployees + 1,
         },
         settings: {
           autoGenerate: settings?.employeeCodeAutoGenerate ?? true,
           prefix,
+          includeYear,
           yearSeqDigits,
           totalSeqDigits,
           separator,

@@ -28,10 +28,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { X, CalendarIcon } from 'lucide-react';
+import { X, CalendarIcon, Sparkles, Loader2, Zap, Settings } from 'lucide-react';
+import Link from 'next/link';
 import { useOrgSettings } from '@/hooks/use-org-settings';
 import { CURRENCIES } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
+import { apiClient } from '@/lib/api/client';
 
 interface JobDescriptionFormProps {
   open: boolean;
@@ -92,6 +95,8 @@ export function JobDescriptionForm({
   const defaultFormData = getDefaultFormData(orgSettings.currency);
   const [formData, setFormData] = useState<JobFormData>(initialData || defaultFormData);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const [aiEnabled, setAiEnabled] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
 
   // Update form data when initialData changes (for edit mode)
   useEffect(() => {
@@ -108,6 +113,76 @@ export function JobDescriptionForm({
       setFormData(prev => ({ ...prev, currency: orgSettings.currency }));
     }
   }, [orgSettings.currency, initialData]);
+
+  // Check AI status when dialog opens
+  useEffect(() => {
+    if (open) {
+      checkAIStatus();
+    }
+  }, [open]);
+
+  const checkAIStatus = async () => {
+    try {
+      // Use centralized AI service endpoint
+      const response = await apiClient.get<{ aiEnabled: boolean; configured: boolean }>('/api/v1/ai/status');
+      if (response.success && response.data) {
+        setAiEnabled(response.data.aiEnabled || response.data.configured || false);
+      } else {
+        setAiEnabled(false);
+      }
+    } catch (error) {
+      console.error('Failed to check AI status:', error);
+      setAiEnabled(false);
+    }
+  };
+
+  const generateWithAI = async () => {
+    if (!formData.title.trim()) {
+      toast.error('Please enter a job title to generate content with AI.');
+      return;
+    }
+
+    setAiLoading(true);
+    try {
+      // Use centralized AI service endpoint
+      const response = await apiClient.post<{
+        description: string;
+        requirements: string[];
+        responsibilities: string[];
+        benefits: string[];
+        techStack: string[];
+      }>('/api/v1/ai/jobs/generate', {
+        title: formData.title,
+        department: formData.department || undefined,
+        employmentType: formData.employmentType,
+        experienceMin: formData.experienceMin || 0,
+        experienceMax: formData.experienceMax || 5,
+      });
+
+      if (!response.success || !response.data) {
+        throw new Error(response.error?.message || 'Failed to generate content');
+      }
+
+      const data = response.data;
+      
+      setFormData(prev => ({
+        ...prev,
+        description: data.description || prev.description,
+        requirements: data.requirements?.length > 0 ? data.requirements : prev.requirements,
+        responsibilities: data.responsibilities?.length > 0 ? data.responsibilities : prev.responsibilities,
+        benefits: data.benefits?.length > 0 ? data.benefits : prev.benefits,
+        techStack: data.techStack?.length > 0 ? data.techStack : prev.techStack,
+      }));
+
+      toast.success('AI has generated job description content. Review and edit as needed.');
+    } catch (error) {
+      console.error('AI generation error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to generate content with AI.');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   const [currentRequirement, setCurrentRequirement] = useState('');
   const [currentResponsibility, setCurrentResponsibility] = useState('');
   const [currentBenefit, setCurrentBenefit] = useState('');
@@ -211,7 +286,15 @@ export function JobDescriptionForm({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col p-0">
         <DialogHeader className="px-6 pt-6 pb-4 border-b">
-          <DialogTitle>{mode === 'create' ? 'Create New' : 'Edit'} Job Opening</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            {mode === 'create' ? 'Create New' : 'Edit'} Job Opening
+            {aiEnabled && (
+              <Badge className="bg-green-100 text-green-700 ml-2">
+                <Zap className="h-3 w-3 mr-1" />
+                AI Enabled
+              </Badge>
+            )}
+          </DialogTitle>
           <DialogDescription>
             {mode === 'create'
               ? 'Fill in the details to create a new job opening'
@@ -485,6 +568,56 @@ export function JobDescriptionForm({
               </div>
             </div>
           </div>
+
+          {/* AI Generation */}
+          {aiEnabled ? (
+            <div className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/30 dark:to-blue-950/30 rounded-lg border border-purple-200 dark:border-purple-800">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                <div>
+                  <p className="font-medium text-sm">Generate with AI</p>
+                  <p className="text-xs text-muted-foreground">
+                    Auto-fill description, requirements, responsibilities, benefits & tech stack based on job title
+                  </p>
+                </div>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                onClick={generateWithAI}
+                disabled={aiLoading || !formData.title.trim()}
+                className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white border-0"
+              >
+                {aiLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    Generate
+                  </>
+                )}
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm">
+              <Sparkles className="h-5 w-5 text-blue-600 shrink-0" />
+              <div className="flex-1">
+                <span className="font-medium text-blue-800">AI not configured</span>
+                <span className="text-blue-600 ml-1">
+                  Configure your OpenAI API key in Organization Settings to generate job descriptions with AI.
+                </span>
+              </div>
+              <Link href="/organization?tab=integrations">
+                <Button variant="outline" size="sm" className="shrink-0">
+                  <Settings className="h-4 w-4 mr-1" />
+                  Configure
+                </Button>
+              </Link>
+            </div>
+          )}
 
           {/* Job Description */}
           <div className="space-y-4">

@@ -45,7 +45,7 @@ export async function getTenantPrismaBySlug(tenantSlug: string): Promise<PrismaC
   const tenant = await master.tenant.findFirst({
     where: { 
       slug: tenantSlug,
-      status: 'ACTIVE',
+      status: { in: ['ACTIVE', 'TRIAL'] },
     },
   });
 
@@ -54,10 +54,10 @@ export async function getTenantPrismaBySlug(tenantSlug: string): Promise<PrismaC
   }
 
   // Build tenant database URL
-  const dbHost = tenant.databaseHost || process.env.DB_HOST || 'localhost';
-  const dbPort = tenant.databasePort || process.env.DB_PORT || 5432;
-  const dbUser = process.env.DB_USER || 'postgres';
-  const dbPassword = process.env.DB_PASSWORD || 'password';
+  const dbHost = tenant.databaseHost || process.env.TENANT_DB_HOST || process.env.DB_HOST || 'localhost';
+  const dbPort = tenant.databasePort || process.env.TENANT_DB_PORT || process.env.DB_PORT || 5432;
+  const dbUser = process.env.TENANT_DB_USER || process.env.DB_USER || 'postgres';
+  const dbPassword = process.env.TENANT_DB_PASSWORD || process.env.DB_PASSWORD || 'password';
   const databaseUrl = `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${tenant.databaseName}`;
 
   // Create new Prisma client for tenant

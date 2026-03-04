@@ -18,6 +18,7 @@ import {
 import { getEventBus, SQS_QUEUES } from '@oms/event-bus';
 import { logger } from '../utils/logger';
 import { config } from '../config';
+import { getMasterPrisma } from '../utils/database';
 
 // ============================================================================
 // TYPES
@@ -67,12 +68,53 @@ export interface AttendanceRecord {
 }
 
 // ============================================================================
+// TIMEZONE HELPERS
+// ============================================================================
+
+/**
+ * Get the organization timezone for a tenant.
+ * Falls back to 'Asia/Kolkata' if not set.
+ */
+async function getTenantTimezone(tenantSlug: string): Promise<string> {
+  try {
+    const masterPrisma = getMasterPrisma();
+    const tenant = await masterPrisma.tenant.findUnique({
+      where: { slug: tenantSlug },
+      include: { settings: true },
+    });
+    return (tenant?.settings as any)?.timezone || 'Asia/Kolkata';
+  } catch (error) {
+    logger.warn({ error }, 'Failed to get tenant timezone, using default');
+    return 'Asia/Kolkata';
+  }
+}
+
+/**
+ * Get today's date (midnight UTC) for a given IANA timezone.
+ * e.g. if timezone is 'Asia/Kolkata' and it's 1:00 AM IST March 3,
+ * returns 2026-03-03T00:00:00.000Z
+ */
+function getDateInTimezone(timezone: string, date?: Date): Date {
+  const now = date || new Date();
+  // Use Intl.DateTimeFormat with en-CA locale to get YYYY-MM-DD in the target timezone
+  const dateStr = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+// ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
 
 /**
  * Parse work time from HH:mm format
  */
+
 function parseWorkTime(timeStr: string, date: Date): Date {
   const [hours, minutes] = timeStr.split(':').map(Number);
   const result = new Date(date);
@@ -147,7 +189,10 @@ export async function checkIn(
   tenantContext: { tenantId: string; tenantSlug: string }
 ): Promise<any> {
   const eventBus = getEventBus('attendance-service');
-  const today = startOfDay(new Date());
+  // Use org timezone to determine today's calendar date
+  const now = new Date();
+  const timezone = await getTenantTimezone(tenantContext.tenantSlug);
+  const today = getDateInTimezone(timezone, now);
   
   // Check if employee exists and is active
   const employee = await prisma.employee.findUnique({
@@ -155,28 +200,30 @@ export async function checkIn(
     include: { user: { select: { firstName: true, lastName: true } } },
   });
   
-  if (!employee || employee.status !== 'active') {
+  if (!employee || employee.status !== 'ACTIVE') {
     throw new Error('Employee not found or inactive');
   }
   
-  // Check if already checked in today
-  const existingAttendance = await prisma.attendance.findFirst({
+  // Check if there's an open (not checked-out) session today
+  const openSession = await prisma.attendance.findFirst({
     where: {
       employeeId: input.employeeId,
       date: today,
+      checkOutTime: null,
     },
   });
   
-  if (existingAttendance?.checkInTime && !existingAttendance.checkOutTime) {
+  if (openSession?.checkInTime) {
     throw new Error('Already checked in. Please check out first.');
   }
   
-  if (existingAttendance?.checkOutTime) {
-    throw new Error('Already completed attendance for today');
-  }
-  
-  const now = new Date();
-  const isLate = checkIsLate(now);
+  // Only the first session of the day determines if the employee is late.
+  // Subsequent sessions (after checkout + re-checkin) are not marked late.
+  const existingSessionToday = await prisma.attendance.findFirst({
+    where: { employeeId: input.employeeId, date: today },
+    orderBy: { checkInTime: 'asc' },
+  });
+  const isLate = existingSessionToday ? false : checkIsLate(now);
   
   const attendance = await prisma.attendance.create({
     data: {
@@ -259,19 +306,26 @@ export async function checkOut(
   const graceStart = new Date(workEnd.getTime() - config.workHours.graceMinutesEarly * 60000);
   const isEarlyLeave = now < graceStart;
   
-  // Calculate total break minutes
-  const breaks = await prisma.attendanceBreak.findMany({
-    where: { attendanceId: input.attendanceId },
-  });
-  
-  const totalBreakMinutes = breaks.reduce((sum, b) => {
-    if (b.endTime) {
-      return sum + differenceInMinutes(b.endTime, b.startTime);
+  // Calculate total break minutes (attendanceBreak model may not exist yet)
+  let totalBreakMinutes = 0;
+  try {
+    if ((prisma as any).attendanceBreak) {
+      const breaks = await (prisma as any).attendanceBreak.findMany({
+        where: { attendanceId: input.attendanceId },
+      });
+      totalBreakMinutes = breaks.reduce((sum: number, b: any) => {
+        if (b.endTime) {
+          return sum + differenceInMinutes(b.endTime, b.startTime);
+        }
+        return sum;
+      }, 0);
     }
-    return sum;
-  }, 0);
+  } catch {
+    // attendanceBreak table doesn't exist yet — use breakMinutes already stored
+    totalBreakMinutes = attendance.breakMinutes || 0;
+  }
   
-  // Calculate work and overtime
+  // Calculate work and overtime for THIS session
   const workMinutes = calculateWorkMinutes(
     attendance.checkInTime,
     now,
@@ -279,8 +333,20 @@ export async function checkOut(
   );
   const overtimeMinutes = calculateOvertimeMinutes(workMinutes);
   
-  // Determine final status
-  const status = determineStatus(attendance.checkInTime, now, workMinutes, false);
+  // Sum all sessions' work minutes for the same employee + date to determine daily status
+  const otherSessions = await prisma.attendance.findMany({
+    where: {
+      employeeId: attendance.employeeId,
+      date: attendance.date,
+      id: { not: attendance.id },
+      checkOutTime: { not: null },
+    },
+    select: { id: true, workMinutes: true },
+  });
+  const totalDayWorkMinutes = otherSessions.reduce((sum, s) => sum + (s.workMinutes || 0), 0) + workMinutes;
+  
+  // Determine status based on the TOTAL day's work, not just this session
+  const status = determineStatus(attendance.checkInTime, now, totalDayWorkMinutes, false);
   
   const updated = await prisma.attendance.update({
     where: { id: input.attendanceId },
@@ -304,6 +370,18 @@ export async function checkOut(
       },
     },
   });
+  
+  // Update status on all OTHER sessions for the same day (so all sessions reflect the daily total)
+  if (otherSessions.length > 0) {
+    await prisma.attendance.updateMany({
+      where: {
+        employeeId: attendance.employeeId,
+        date: attendance.date,
+        id: { not: attendance.id },
+      },
+      data: { status },
+    });
+  }
   
   // Emit check-out event
   await eventBus.sendToQueue(
@@ -344,7 +422,7 @@ export async function startBreak(
   }
   
   // Check for active break
-  const activeBreak = await prisma.attendanceBreak.findFirst({
+  const activeBreak = await (prisma as any).attendanceBreak.findFirst({
     where: {
       attendanceId: input.attendanceId,
       endTime: null,
@@ -355,7 +433,7 @@ export async function startBreak(
     throw new Error('Already on a break. Please end the current break first.');
   }
   
-  const breakRecord = await prisma.attendanceBreak.create({
+  const breakRecord = await (prisma as any).attendanceBreak.create({
     data: {
       id: uuidv4(),
       attendanceId: input.attendanceId,
@@ -377,7 +455,7 @@ export async function endBreak(
   prisma: PrismaClient,
   breakId: string
 ): Promise<any> {
-  const breakRecord = await prisma.attendanceBreak.findUnique({
+  const breakRecord = await (prisma as any).attendanceBreak.findUnique({
     where: { id: breakId },
   });
   
@@ -392,7 +470,7 @@ export async function endBreak(
   const now = new Date();
   const durationMinutes = differenceInMinutes(now, breakRecord.startTime);
   
-  const updated = await prisma.attendanceBreak.update({
+  const updated = await (prisma as any).attendanceBreak.update({
     where: { id: breakId },
     data: {
       endTime: now,
@@ -410,15 +488,29 @@ export async function endBreak(
  */
 export async function getTodayAttendance(
   prisma: PrismaClient,
-  employeeId: string
+  employeeId: string,
+  tenantSlug?: string
 ): Promise<any> {
-  const today = startOfDay(new Date());
+  const now = new Date();
+  const timezone = tenantSlug ? await getTenantTimezone(tenantSlug) : 'Asia/Kolkata';
+  const today = getDateInTimezone(timezone, now);
   
+  // Prefer the open (not checked-out) session; fall back to the most recent one
+  const openSession = await prisma.attendance.findFirst({
+    where: {
+      employeeId,
+      date: today,
+      checkOutTime: null,
+    },
+  });
+  if (openSession) return openSession;
+
   return prisma.attendance.findFirst({
     where: {
       employeeId,
       date: today,
     },
+    orderBy: { checkInTime: 'desc' },
   });
 }
 
@@ -457,7 +549,7 @@ export async function listAttendance(
   filters: AttendanceFilters
 ): Promise<{ data: any[]; total: number; page: number; pageSize: number }> {
   const page = filters.page || 1;
-  const pageSize = Math.min(filters.pageSize || 20, 100);
+  const pageSize = Math.min(filters.pageSize || 20, 5000);
   const skip = (page - 1) * pageSize;
   
   const where: any = {};
@@ -473,10 +565,13 @@ export async function listAttendance(
   if (filters.dateFrom || filters.dateTo) {
     where.date = {};
     if (filters.dateFrom) {
-      where.date.gte = startOfDay(parseISO(filters.dateFrom));
+      // Build UTC midnight date so Prisma sends the correct date to PostgreSQL DATE column
+      const [y, m, d] = filters.dateFrom.split('-').map(Number);
+      where.date.gte = new Date(Date.UTC(y, m - 1, d));
     }
     if (filters.dateTo) {
-      where.date.lte = endOfDay(parseISO(filters.dateTo));
+      const [y, m, d] = filters.dateTo.split('-').map(Number);
+      where.date.lte = new Date(Date.UTC(y, m - 1, d));
     }
   }
   
@@ -655,7 +750,7 @@ export async function getDepartmentAttendanceSummary(
   const employees = await prisma.employee.count({
     where: {
       departmentId,
-      status: 'active',
+      status: 'ACTIVE',
     },
   });
   
@@ -686,7 +781,8 @@ export async function getDepartmentAttendanceSummary(
  * Get today's attendance overview for the entire company
  */
 export async function getTodayAttendanceOverview(
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  tenantSlug?: string
 ): Promise<{
   totalEmployees: number;
   present: number;
@@ -696,10 +792,9 @@ export async function getTodayAttendanceOverview(
   workFromHome: number;
   presentRate: number;
 }> {
-  // For @db.Date fields, we need to use a date-only string in local timezone
-  const now = new Date();
-  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const todayDate = new Date(todayStr + 'T00:00:00.000Z'); // Use UTC midnight for date comparison
+  // Use org timezone to determine today's date
+  const timezone = tenantSlug ? await getTenantTimezone(tenantSlug) : 'Asia/Kolkata';
+  const todayDate = getDateInTimezone(timezone);
   
   // Get all active employees
   const totalEmployees = await prisma.employee.count({
@@ -710,8 +805,8 @@ export async function getTodayAttendanceOverview(
   });
   
   // Get today's attendance records using date range to handle timezone
-  const todayStart = new Date(todayStr + 'T00:00:00.000Z');
-  const todayEnd = new Date(todayStr + 'T23:59:59.999Z');
+  const todayStart = todayDate;
+  const todayEnd = new Date(todayDate.getTime() + 24 * 60 * 60 * 1000 - 1);
   
   const todayAttendance = await prisma.attendance.findMany({
     where: {
@@ -722,21 +817,37 @@ export async function getTodayAttendanceOverview(
     },
   });
   
-  // Get today's approved leaves
-  const todayLeaves = await prisma.leaveRequest.count({
+  // Get today's approved leaves - get unique employee IDs
+  const todayLeavesData = await prisma.leaveRequest.findMany({
     where: {
       status: { in: ['approved', 'APPROVED'] },
       fromDate: { lte: todayEnd },
       toDate: { gte: todayStart },
     },
+    select: { employeeId: true },
   });
+  const uniqueOnLeaveEmployees = new Set(todayLeavesData.map(l => l.employeeId));
   
-  const present = todayAttendance.filter(a => 
-    a.status === 'present' || a.status === 'half_day' || a.status === 'PRESENT' || a.status === 'HALF_DAY'
-  ).length;
-  const late = todayAttendance.filter(a => a.isLate).length;
-  const workFromHome = todayAttendance.filter(a => a.isRemote).length;
-  const onLeave = todayLeaves;
+  // Count UNIQUE employees for each category (same employee may have multiple sessions)
+  const presentEmployees = new Set(
+    todayAttendance
+      .filter(a => a.status === 'present' || a.status === 'half_day' || a.status === 'PRESENT' || a.status === 'HALF_DAY')
+      .map(a => a.employeeId)
+  );
+  const lateEmployees = new Set(
+    todayAttendance.filter(a => a.isLate).map(a => a.employeeId)
+  );
+  const wfhEmployees = new Set(
+    todayAttendance.filter(a => a.isRemote).map(a => a.employeeId)
+  );
+  
+  const present = presentEmployees.size;
+  const late = lateEmployees.size;
+  const workFromHome = wfhEmployees.size;
+  
+  // Employees on leave who also checked in are counted as present, not on leave
+  // (they came to work despite having leave, or cancelled leave but record not updated)
+  const onLeave = [...uniqueOnLeaveEmployees].filter(empId => !presentEmployees.has(empId)).length;
   const absent = Math.max(0, totalEmployees - present - onLeave);
   
   const presentRate = totalEmployees > 0 

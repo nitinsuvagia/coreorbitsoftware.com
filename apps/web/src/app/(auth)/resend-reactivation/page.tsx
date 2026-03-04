@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import { api } from '@/lib/api/client';
 import Link from 'next/link';
 
-export default function ResendReactivationPage() {
+function ResendReactivationContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const initialEmail = searchParams.get('email') || '';
@@ -139,5 +139,17 @@ export default function ResendReactivationPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function ResendReactivationPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    }>
+      <ResendReactivationContent />
+    </Suspense>
   );
 }

@@ -3,7 +3,7 @@
  */
 
 // Load environment variables from root .env file first
-import dotenv from 'dotenv';
+const dotenv = require('dotenv');
 import path from 'path';
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
@@ -102,6 +102,44 @@ export const config = {
     'timesheet.reminder',
     'timesheet.approved',
     'timesheet.rejected',
+    
+    // Recruitment related
+    'job.created',
+    'job.published',
+    'candidate.applied',
+    'candidate.shortlisted',
+    'candidate.hired',
+    'candidate.rejected',
+    
+    // Interview related
+    'interview.scheduled',
+    'interview.rescheduled',
+    'interview.cancelled',
+    'interview.reminder',
+    'interview.completed',
+    
+    // Assessment related
+    'assessment.assigned',
+    'assessment.submitted',
+    'assessment.evaluated',
+    
+    // Holiday related
+    'holiday.created',
+    'holiday.reminder',
+    
+    // Document related
+    'document.uploaded',
+    'document.expiring',
+    'document.expired',
+    
+    // Billing related
+    'billing.invoice_created',
+    'billing.payment_received',
+    'billing.payment_failed',
+    'billing.subscription_changed',
+    'billing.subscription_activated',
+    'billing.subscription_canceled',
+    'billing.subscription_expiring',
     
     // System
     'system.announcement',

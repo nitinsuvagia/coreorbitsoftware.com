@@ -69,7 +69,7 @@ const listAttendanceSchema = z.object({
   dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   status: z.enum(['present', 'absent', 'half_day', 'on_leave', 'holiday', 'weekend']).optional(),
   page: z.coerce.number().min(1).optional(),
-  pageSize: z.coerce.number().min(1).max(100).optional(),
+  pageSize: z.coerce.number().min(1).max(5000).optional(),
 });
 
 const monthlySummarySchema = z.object({
@@ -122,12 +122,179 @@ function validateQuery(schema: z.ZodSchema) {
 }
 
 // ============================================================================
-// ROUTES
+// HELPERS
+// ============================================================================
+
+/**
+ * Resolve userId (from JWT / x-user-id header) to employeeId.
+ * The User model has employeeId → Employee, so we look up User first.
+ */
+async function resolveEmployeeId(prisma: any, userId: string): Promise<string> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { employeeId: true },
+  });
+  if (!user?.employeeId) {
+    throw new Error('Employee profile not found for the current user');
+  }
+  // Verify the employee is active
+  const employee = await prisma.employee.findUnique({
+    where: { id: user.employeeId },
+    select: { id: true, status: true },
+  });
+  if (!employee || employee.status !== 'ACTIVE') {
+    throw new Error('Employee profile not found or inactive');
+  }
+  return employee.id;
+}
+
+// ============================================================================
+// SELF-SERVICE ROUTES (must be registered before parameterized /:id route)
+// ============================================================================
+
+/**
+ * GET /attendance/my
+ * Get the current user's attendance records (self-service)
+ */
+router.get(
+  '/my',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const tenantSlug = (req as any).tenantSlug;
+      const userId = (req as any).userId;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
+
+      const employeeId = await resolveEmployeeId(prisma, userId);
+
+      // Re-use the existing listAttendance with the resolved employeeId
+      const filters: any = {
+        employeeId,
+        dateFrom: req.query.startDate as string || req.query.dateFrom as string,
+        dateTo: req.query.endDate as string || req.query.dateTo as string,
+        status: req.query.status as string,
+        page: req.query.page ? Number(req.query.page) : 1,
+        pageSize: req.query.limit ? Number(req.query.limit) : req.query.pageSize ? Number(req.query.pageSize) : 20,
+      };
+
+      // Clean undefined values
+      Object.keys(filters).forEach(k => { if (filters[k] === undefined) delete filters[k]; });
+
+      const result = await listAttendance(prisma, filters);
+
+      // Map to the shape the frontend expects: { items, total }
+      // Also map checkInTime/checkOutTime → checkIn/checkOut, workMinutes → workHours
+      const items = result.data.map((r: any) => ({
+        ...r,
+        checkIn: r.checkInTime ? r.checkInTime : undefined,
+        checkOut: r.checkOutTime ? r.checkOutTime : undefined,
+        workHours: r.workMinutes ? r.workMinutes / 60 : 0,
+        overtime: r.overtimeMinutes ? r.overtimeMinutes / 60 : 0,
+      }));
+
+      res.json({ data: { items, total: result.total } });
+    } catch (error) {
+      logger.error({ error: (error as Error).message }, 'Failed to get my attendance');
+      if ((error as Error).message.includes('not found')) {
+        return res.status(404).json({ error: (error as Error).message });
+      }
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /attendance/check-in/self
+ * Self-service check-in — resolves employeeId from JWT userId
+ */
+router.post(
+  '/check-in/self',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const tenantSlug = (req as any).tenantSlug;
+      const tenantId = (req as any).tenantId;
+      const userId = (req as any).userId;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
+
+      const employeeId = await resolveEmployeeId(prisma, userId);
+
+      const attendance = await checkIn(
+        prisma,
+        { employeeId, ...req.body },
+        { tenantId, tenantSlug }
+      );
+
+      res.status(201).json({
+        message: 'Check-in successful',
+        data: attendance,
+      });
+    } catch (error) {
+      logger.error({ error: (error as Error).message }, 'Self check-in failed');
+      if ((error as Error).message.includes('already checked in') ||
+          (error as Error).message.includes('not found') ||
+          (error as Error).message.includes('inactive') ||
+          (error as Error).message.includes('Already completed')) {
+        return res.status(400).json({ error: (error as Error).message });
+      }
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /attendance/check-out/self
+ * Self-service check-out — finds today's attendance record for the current user
+ */
+router.post(
+  '/check-out/self',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const tenantSlug = (req as any).tenantSlug;
+      const tenantId = (req as any).tenantId;
+      const userId = (req as any).userId;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
+
+      const employeeId = await resolveEmployeeId(prisma, userId);
+
+      // Find today's open attendance record
+      const todayRecord = await getTodayAttendance(prisma, employeeId, tenantSlug);
+      if (!todayRecord) {
+        throw new Error('No check-in record found for today. Please check in first.');
+      }
+      if (todayRecord.checkOutTime) {
+        throw new Error('Already checked out for today');
+      }
+
+      const attendance = await checkOut(
+        prisma,
+        { attendanceId: todayRecord.id, ...req.body },
+        { tenantId, tenantSlug }
+      );
+
+      res.status(200).json({
+        message: 'Check-out successful',
+        data: attendance,
+      });
+    } catch (error) {
+      logger.error({ error: (error as Error).message }, 'Self check-out failed');
+      if ((error as Error).message.includes('already checked out') ||
+          (error as Error).message.includes('Already checked out') ||
+          (error as Error).message.includes('not found') ||
+          (error as Error).message.includes('No check-in') ||
+          (error as Error).message.includes('check in first')) {
+        return res.status(400).json({ error: (error as Error).message });
+      }
+      next(error);
+    }
+  }
+);
+
+// ============================================================================
+// ADMIN ROUTES
 // ============================================================================
 
 /**
  * POST /attendance/check-in
- * Check in for the day
+ * Check in for the day (admin — requires employeeId in body)
  */
 router.post(
   '/check-in',
@@ -160,7 +327,7 @@ router.post(
 
 /**
  * POST /attendance/check-out
- * Check out for the day
+ * Check out for the day (admin — requires attendanceId in body)
  */
 router.post(
   '/check-out',
@@ -260,7 +427,7 @@ router.get(
       const tenantSlug = (req as any).tenantSlug;
       const prisma = await getTenantPrismaBySlug(tenantSlug);
       
-      const overview = await getTodayAttendanceOverview(prisma);
+      const overview = await getTodayAttendanceOverview(prisma, tenantSlug);
       
       res.json({
         success: true,
@@ -285,7 +452,7 @@ router.get(
       const prisma = await getTenantPrismaBySlug(tenantSlug);
       const { employeeId } = req.params;
       
-      const attendance = await getTodayAttendance(prisma, employeeId);
+      const attendance = await getTodayAttendance(prisma, employeeId, tenantSlug);
       
       if (!attendance) {
         return res.status(404).json({

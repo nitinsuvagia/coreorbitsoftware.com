@@ -377,6 +377,7 @@ model Employee {
   gender        Gender?
   maritalStatus MaritalStatus? @map("marital_status")
   nationality   String?
+  bloodGroup    String?        @map("blood_group")
   avatar        String?
 
   // Address
@@ -438,6 +439,7 @@ model Employee {
   interviewFeedback        InterviewFeedback[]
   employeeOptionalHolidays EmployeeOptionalHoliday[]
   performanceReviews       PerformanceReview[]
+  customFields             EmployeeCustomField[]
 
   @@index([email])
   @@index([employeeCode])
@@ -570,19 +572,20 @@ model EmergencyContact {
 // ============================================================================
 
 model BankDetail {
-  id            String          @id @default(uuid())
-  employeeId    String          @map("employee_id")
-  bankName      String          @map("bank_name")
-  branchName    String?         @map("branch_name")
-  accountNumber String          @map("account_number")
-  accountType   BankAccountType @default(SAVINGS) @map("account_type")
-  routingNumber String?         @map("routing_number")
-  swiftCode     String?         @map("swift_code")
-  ifscCode      String?         @map("ifsc_code")
-  isPrimary     Boolean         @default(false) @map("is_primary")
-  isVerified    Boolean         @default(false) @map("is_verified")
-  createdAt     DateTime        @default(now()) @map("created_at")
-  updatedAt     DateTime        @updatedAt @map("updated_at")
+  id                String          @id @default(uuid())
+  employeeId        String          @map("employee_id")
+  bankName          String          @map("bank_name")
+  branchName        String?         @map("branch_name")
+  accountNumber     String          @map("account_number")
+  accountType       BankAccountType @default(SAVINGS) @map("account_type")
+  accountHolderName String?         @map("account_holder_name")
+  routingNumber     String?         @map("routing_number")
+  swiftCode         String?         @map("swift_code")
+  ifscCode          String?         @map("ifsc_code")
+  isPrimary         Boolean         @default(false) @map("is_primary")
+  isVerified        Boolean         @default(false) @map("is_verified")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
 
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
@@ -656,6 +659,28 @@ enum GradeType {
   GRADE_LETTER // A, B, C, etc.
   DIVISION // First, Second, Third
   PASS_FAIL
+}
+
+// ============================================================================
+// EMPLOYEE CUSTOM FIELDS (Other Information - Key/Value pairs)
+// ============================================================================
+
+model EmployeeCustomField {
+  id         String   @id @default(uuid())
+  employeeId String   @map("employee_id")
+  fieldKey   String   @map("field_key")
+  fieldValue String?  @map("field_value")
+  fieldType  String   @default("text") @map("field_type") // text, number, date, boolean
+  source     String?  // 'manual' or 'import' - to track where it came from
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, fieldKey])
+  @@index([employeeId])
+  @@index([fieldKey])
+  @@map("employee_custom_fields")
 }
 
 // ============================================================================
@@ -961,7 +986,7 @@ model Attendance {
   createdBy       String?   @map("created_by")
   updatedBy       String?   @map("updated_by")
 
-  @@unique([employeeId, date])
+  @@index([employeeId, date])
   @@index([date])
   @@index([status])
   @@map("attendances")
@@ -977,6 +1002,7 @@ model LeaveType {
   code                 String   @unique
   description          String?
   defaultDaysPerYear   Int      @map("default_days_per_year")
+  accrualType          String   @default("yearly") @map("accrual_type") // 'yearly' | 'monthly'
   carryForwardAllowed  Boolean  @default(false) @map("carry_forward_allowed")
   maxCarryForwardDays  Int?     @map("max_carry_forward_days")
   requiresApproval     Boolean  @default(true) @map("requires_approval")
@@ -1490,6 +1516,8 @@ model JobCandidate {
   onboardingDocuments    Json?     @map("onboarding_documents")      // Uploaded document URLs
   onboardingBankDetails  Json?     @map("onboarding_bank_details")   // Bank account details
   onboardingPersonal     Json?     @map("onboarding_personal")       // DOB, blood group, etc.
+  onboardingDeclarations Json?     @map("onboarding_declarations")   // Consent checkboxes
+  onboardingSignature    String?   @map("onboarding_signature") @db.Text // Digital signature
 
   // Metadata
   createdAt DateTime @default(now()) @map("created_at")
@@ -1918,6 +1946,50 @@ model AssessmentAnswer {
   @@index([resultId])
   @@index([questionId])
   @@map("assessment_answers")
+}
+
+// ============================================================================
+// EMAIL TEMPLATES
+// ============================================================================
+
+model EmailTemplate {
+  id          String              @id @default(uuid())
+  name        String              // Template identifier (e.g., "welcome", "password-reset")
+  displayName String              @map("display_name") // Human readable name
+  category    EmailTemplateCategory @default(SYSTEM)
+  description String?
+  
+  // Template content
+  subject     String              // Email subject (supports variables)
+  htmlContent String              @map("html_content") @db.Text // HTML body
+  textContent String?             @map("text_content") @db.Text // Plain text fallback
+  
+  // Variables documentation
+  variables   Json?               // Available variables: [{name: "userName", description: "..."}]
+  
+  // Status
+  isActive    Boolean             @default(true) @map("is_active")
+  isDefault   Boolean             @default(false) @map("is_default") // System default template
+  
+  // Metadata
+  createdBy   String?             @map("created_by")
+  updatedBy   String?             @map("updated_by")
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+  
+  @@unique([name])
+  @@index([category])
+  @@index([isActive])
+  @@map("email_templates")
+}
+
+enum EmailTemplateCategory {
+  SYSTEM        // System notifications (welcome, password reset)
+  HR            // HR related (onboarding, offboarding)
+  RECRUITMENT   // Recruitment (job offer, interview invite)
+  ATTENDANCE    // Attendance (check-in reminder, leave approval)
+  PROJECT       // Project related (task assigned, deadline reminder)
+  CUSTOM        // Custom templates created by admin
 }
 
 // Assessment Enums

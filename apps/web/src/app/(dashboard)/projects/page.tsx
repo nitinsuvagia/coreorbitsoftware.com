@@ -123,7 +123,7 @@ export default function ProjectsPage() {
             <div className="rounded-full bg-primary/10 p-6 mb-4">
               <FolderKanban className="h-16 w-16 text-primary" />
             </div>
-            <h3 className="text-xl font-semibold mb-2">No Projects Yet</h3>
+            <h3 className="text-xl font-semibold mb-2">No projects yet</h3>
             <p className="text-muted-foreground text-center max-w-md mb-6">
               Create your first project to organize tasks, manage teams, and track progress. 
               Start collaborating with your team today.

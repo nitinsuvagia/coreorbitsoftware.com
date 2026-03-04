@@ -2,10 +2,14 @@ import { defineConfig } from 'tsup';
 
 export default defineConfig({
   entry: ['src/index.ts'],
-  format: ['cjs', 'esm'],
-  dts: true,
+  format: ['cjs'],
+  dts: false, // Disabled for Docker builds - types are handled at dev time
   splitting: false,
-  sourcemap: true,
+  sourcemap: false,
   clean: true,
-  external: ['@prisma/client'],
+  // External workspace packages - prisma is loaded dynamically at runtime
+  external: [
+    '@oms/database',
+    'lru-cache',
+  ],
 });

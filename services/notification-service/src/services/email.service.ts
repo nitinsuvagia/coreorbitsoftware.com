@@ -343,7 +343,7 @@ export async function sendNotificationEmail(
   recipient: EmailRecipient,
   data: Record<string, any>
 ): Promise<EmailResult> {
-  const subjectMap: Record<NotificationType, string> = {
+  const subjectMap = {
     'task.assigned': `Task Assigned: ${data.taskNumber || data.taskTitle || 'New Task'}`,
     'task.mentioned': `You were mentioned in ${data.taskNumber || 'a task'}`,
     'task.commented': `New comment on ${data.taskNumber || 'a task'}`,
@@ -366,7 +366,7 @@ export async function sendNotificationEmail(
     'employee.onboarded': `Welcome ${data.employeeName || ''} to the team!`,
     'employee.birthday': `🎂 Happy Birthday ${data.employeeName || ''}!`,
     'employee.anniversary': `🎉 Work Anniversary: ${data.employeeName || ''}`,
-  };
+  } as Record<NotificationType, string>;
   
   const subject = subjectMap[type] || 'Notification';
   

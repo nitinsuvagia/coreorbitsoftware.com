@@ -86,7 +86,7 @@ export async function registerSubscription(
   const id = uuidv4();
   
   // Check if subscription already exists
-  const existing = await prisma.pushSubscription.findFirst({
+  const existing = await (prisma as any).pushSubscription.findFirst({
     where: { 
       userId,
       endpoint: subscription.endpoint,
@@ -95,7 +95,7 @@ export async function registerSubscription(
   
   if (existing) {
     // Update existing subscription
-    return prisma.pushSubscription.update({
+    return (prisma as any).pushSubscription.update({
       where: { id: existing.id },
       data: {
         p256dh: subscription.keys.p256dh,
@@ -108,7 +108,7 @@ export async function registerSubscription(
   }
   
   // Create new subscription
-  return prisma.pushSubscription.create({
+  return (prisma as any).pushSubscription.create({
     data: {
       id,
       userId,
@@ -129,7 +129,7 @@ export async function unregisterSubscription(
   userId: string,
   endpoint: string
 ): Promise<void> {
-  await prisma.pushSubscription.deleteMany({
+  await (prisma as any).pushSubscription.deleteMany({
     where: { userId, endpoint },
   });
   
@@ -143,7 +143,7 @@ export async function getUserSubscriptions(
   prisma: PrismaClient,
   userId: string
 ): Promise<any[]> {
-  return prisma.pushSubscription.findMany({
+  return (prisma as any).pushSubscription.findMany({
     where: { userId, isActive: true },
     orderBy: { createdAt: 'desc' },
   });
@@ -156,7 +156,7 @@ async function deactivateSubscription(
   prisma: PrismaClient,
   subscriptionId: string
 ): Promise<void> {
-  await prisma.pushSubscription.update({
+  await (prisma as any).pushSubscription.update({
     where: { id: subscriptionId },
     data: { isActive: false },
   });
@@ -287,7 +287,7 @@ export async function sendNotificationPush(
   userId: string,
   data: Record<string, any>
 ): Promise<{ sent: number; failed: number }> {
-  const payloadMap: Record<NotificationType, () => PushPayload> = {
+  const payloadMap = {
     'task.assigned': () => ({
       title: 'Task Assigned',
       body: `You have been assigned to ${data.taskNumber || 'a task'}: ${data.taskTitle || ''}`,
@@ -440,7 +440,7 @@ export async function sendNotificationPush(
       icon: '/icons/anniversary.png',
       data: { type, employeeId: data.employeeId },
     }),
-  };
+  } as unknown as Record<NotificationType, () => PushPayload>;
   
   const payloadFn = payloadMap[type];
   if (!payloadFn) {

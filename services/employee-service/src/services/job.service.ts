@@ -4,6 +4,7 @@
 
 import { getTenantPrismaBySlug } from '../utils/database';
 import { logger } from '../utils/logger';
+import { getEventBus, SNS_TOPICS } from '@oms/event-bus';
 
 export interface CreateJobDto {
   title: string;
@@ -143,6 +144,24 @@ export class JobService {
     });
 
     logger.info({ jobId: job.id }, 'Created job description');
+    
+    // Publish event for notifications
+    try {
+      const eventBus = getEventBus('employee-service');
+      await eventBus.publishToTopic(SNS_TOPICS.EMPLOYEE_EVENTS, 'job.created', {
+        jobId: job.id,
+        title: job.title,
+        department: job.department,
+        location: job.location,
+        employmentType: job.employmentType,
+        openings: job.openings,
+        closingDate: job.closingDate,
+        createdBy: userId,
+      }, { tenantId: '', tenantSlug });
+    } catch (error) {
+      logger.warn({ error }, 'Failed to publish job-description-created event');
+    }
+    
     return job;
   }
 
@@ -218,5 +237,173 @@ export class JobService {
 
     logger.info({ jobId }, 'Updated job statistics');
     return job;
+  }
+}
+
+// ============================================================================
+// AI JD GENERATION SERVICE
+// ============================================================================
+
+import { getTenantOpenAISettings } from './ai-question-generator.service';
+
+export interface AIGeneratedJobContent {
+  description: string;
+  requirements: string[];
+  responsibilities: string[];
+  benefits: string[];
+  techStack: string[];
+}
+
+export interface GenerateJobContentRequest {
+  title: string;
+  department?: string;
+  employmentType?: string;
+  experienceMin?: number;
+  experienceMax?: number;
+}
+
+/**
+ * Check if OpenAI is configured for a tenant
+ */
+export async function isOpenAIConfiguredForJD(tenantSlug: string): Promise<boolean> {
+  const settings = await getTenantOpenAISettings(tenantSlug);
+  return !!(settings?.enabled && settings?.apiKey);
+}
+
+/**
+ * Generate job description content using AI
+ */
+export async function generateJobContentWithAI(
+  tenantSlug: string,
+  request: GenerateJobContentRequest
+): Promise<AIGeneratedJobContent> {
+  const settings = await getTenantOpenAISettings(tenantSlug);
+  
+  if (!settings?.enabled || !settings?.apiKey) {
+    throw new Error('OpenAI integration is not configured. Please configure it in Organization > Integrations.');
+  }
+  
+  const { title, department, employmentType, experienceMin, experienceMax } = request;
+  
+  const systemPrompt = `You are an expert HR professional and technical recruiter. Generate comprehensive, professional job description content based on the job title provided.
+
+Rules:
+1. Be specific and detailed, tailored to the job title
+2. Use professional language suitable for job postings
+3. Include industry-standard requirements and responsibilities
+4. Be realistic about requirements - don't over-inflate
+5. Benefits should be competitive and relevant
+6. Tech stack should be appropriate for the role
+7. Return ONLY valid JSON, no markdown, no code blocks`;
+
+  const experienceText = experienceMin !== undefined || experienceMax !== undefined
+    ? `Experience level: ${experienceMin || 0}-${experienceMax || 10}+ years`
+    : '';
+    
+  const userPrompt = `Generate job description content for the following position:
+
+Job Title: ${title}
+${department ? `Department: ${department}` : ''}
+${employmentType ? `Employment Type: ${employmentType.replace('_', ' ')}` : ''}
+${experienceText}
+
+Generate a comprehensive job description with the following structure. Return as JSON:
+
+{
+  "description": "A 2-3 paragraph professional job description/overview explaining the role, its importance, and what the ideal candidate will do. Be specific to the job title.",
+  "requirements": [
+    "8-12 specific requirements/qualifications as array of strings",
+    "Include both technical skills and soft skills",
+    "Be realistic and relevant to the position"
+  ],
+  "responsibilities": [
+    "8-12 key responsibilities as array of strings",
+    "Be specific about day-to-day duties",
+    "Include collaboration and reporting aspects"
+  ],
+  "benefits": [
+    "6-10 attractive benefits as array of strings",
+    "Include standard and competitive perks",
+    "Be realistic for the industry"
+  ],
+  "techStack": [
+    "5-10 relevant technologies/tools as array of strings",
+    "Include primary technologies for the role",
+    "Only include if relevant to the position"
+  ]
+}
+
+For non-technical roles, techStack can be empty array or include relevant software tools they'd use.
+
+Generate the content now:`;
+
+  try {
+    logger.info({ title, department, model: settings.model }, 'Generating job description with AI');
+    
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${settings.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: settings.model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        max_tokens: settings.maxTokens || 2000,
+        temperature: settings.temperature || 0.7,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({})) as any;
+      logger.error({ status: response.status, error }, 'OpenAI API error');
+      throw new Error(error.error?.message || 'OpenAI API request failed');
+    }
+
+    const data = await response.json() as any;
+    const content = data.choices?.[0]?.message?.content;
+    
+    if (!content) {
+      throw new Error('No content in OpenAI response');
+    }
+
+    // Parse the JSON response - clean up markdown if present
+    let cleanContent = content.trim();
+    if (cleanContent.startsWith('```json')) {
+      cleanContent = cleanContent.slice(7);
+    } else if (cleanContent.startsWith('```')) {
+      cleanContent = cleanContent.slice(3);
+    }
+    if (cleanContent.endsWith('```')) {
+      cleanContent = cleanContent.slice(0, -3);
+    }
+    cleanContent = cleanContent.trim();
+
+    const generatedContent: AIGeneratedJobContent = JSON.parse(cleanContent);
+    
+    // Validate the response has required fields
+    if (!generatedContent.description || !Array.isArray(generatedContent.requirements) ||
+        !Array.isArray(generatedContent.responsibilities) || !Array.isArray(generatedContent.benefits)) {
+      throw new Error('Invalid AI response format');
+    }
+    
+    // Ensure techStack is an array
+    if (!Array.isArray(generatedContent.techStack)) {
+      generatedContent.techStack = [];
+    }
+    
+    logger.info({ 
+      title, 
+      requirementsCount: generatedContent.requirements.length,
+      responsibilitiesCount: generatedContent.responsibilities.length,
+    }, 'Successfully generated job description with AI');
+    
+    return generatedContent;
+  } catch (error: any) {
+    logger.error({ error: error.message, title }, 'Failed to generate job description with AI');
+    throw error;
   }
 }

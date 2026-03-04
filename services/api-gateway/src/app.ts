@@ -8,13 +8,15 @@ const helmet = require('helmet');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const compression = require('compression');
 import morgan from 'morgan';
-import rateLimit from 'express-rate-limit';
+
 import { createProxyMiddleware, fixRequestBody } from 'http-proxy-middleware';
 import { v4 as uuidv4 } from 'uuid';
 import { getTenantDbManager } from '@oms/tenant-db-manager';
+import { getMasterPrisma } from '@oms/database';
 
 import { config } from './config';
 import { logger } from './utils/logger';
+import { getTenantPrismaBySlug } from './utils/database';
 import {
   domainResolverMiddleware,
   domainAccessGuard,
@@ -24,13 +26,14 @@ import {
   requireTenantContext,
   requireMainDomain,
   requirePlatformAdmin,
+  requireAnyPermission,
   TenantContextRequest,
-  tenantRateLimiter,
   maintenanceModeMiddleware,
   getMaintenanceStatusHandler,
 } from './middleware';
 import tenantRoutes from './routes/tenant.routes';
 import organizationRoutes from './routes/organization.routes';
+import dashboardRoutes from './routes/dashboard.routes';
 import platformSettingsRoutes from './routes/platform-settings.routes';
 import pricingPlansRoutes from './routes/pricing-plans.routes';
 import platformSubscriptionsRoutes from './routes/platform-subscriptions.routes';
@@ -78,7 +81,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Request-ID, X-Tenant-ID, X-Tenant-Slug');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Request-ID, X-Tenant-ID, X-Tenant-Slug, X-Forwarded-Host');
   res.setHeader('Vary', 'Origin');
   
   // Handle preflight requests
@@ -105,12 +108,17 @@ const skipBodyParserPaths = [
   '/api/v1/leaves',
   '/api/v1/attendance',
   '/api/v1/onboarding',
+  '/api/v1/public/onboarding',
   '/api/v1/documents',
   '/api/v1/projects',
   '/api/v1/tasks',
   '/api/v1/billing',
   '/api/v1/notifications',
   '/api/v1/reports',
+  '/api/v1/ai',
+  '/api/v1/badges',
+  '/api/v1/performance-reviews',
+  '/api/v1/roles',
 ];
 
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -136,31 +144,8 @@ app.use(morgan('combined', {
   },
 }));
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: config.rateLimitWindowMs,
-  max: config.rateLimitMaxRequests,
-  message: {
-    success: false,
-    error: {
-      code: 'RATE_LIMIT_EXCEEDED',
-      message: 'Too many requests. Please try again later.',
-    },
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use(limiter);
-
 // ============================================================================
-// DOMAIN RESOLUTION (CRITICAL)
-// ============================================================================
-
-// Resolve domain FIRST - determines main vs tenant subdomain
-app.use(domainResolverMiddleware);
-
-// ============================================================================
-// HEALTH CHECKS (No auth required)
+// HEALTH CHECKS (No auth or rate limit required)
 // ============================================================================
 
 app.get('/health', (req: Request, res: Response) => {
@@ -177,6 +162,15 @@ app.get('/ready', (req: Request, res: Response) => {
     service: 'api-gateway',
   });
 });
+
+
+
+// ============================================================================
+// DOMAIN RESOLUTION (CRITICAL)
+// ============================================================================
+
+// Resolve domain FIRST - determines main vs tenant subdomain
+app.use(domainResolverMiddleware);
 
 // Internal endpoint to invalidate tenant cache (used by auth-service after reactivation)
 app.post('/internal/invalidate-tenant-cache', (req: Request, res: Response) => {
@@ -215,8 +209,7 @@ app.use(domainAccessGuard);
 // Set up tenant database context for tenant domains
 app.use(tenantContextMiddleware);
 
-// Rate limiting disabled - uncomment to enable
-// app.use(tenantRateLimiter());
+
 
 // Maintenance mode check (blocks tenant access during maintenance)
 app.use(maintenanceModeMiddleware);
@@ -227,6 +220,42 @@ app.get('/api/maintenance-status', getMaintenanceStatusHandler);
 // ============================================================================
 // PUBLIC ROUTES (No auth required)
 // ============================================================================
+
+// Public pricing plans for landing page (no auth)
+app.get('/api/v1/public/pricing-plans', async (req: Request, res: Response) => {
+  try {
+    const prisma = getMasterPrisma();
+    const plans = await prisma.subscriptionPlan.findMany({
+      where: { 
+        isActive: true,
+        isPublic: true,  // Only show public plans
+      },
+      orderBy: { monthlyPrice: 'asc' },
+    });
+    
+    // Transform to frontend-expected format
+    const formattedPlans = plans.map(plan => ({
+      id: plan.id,
+      name: plan.name,
+      slug: plan.slug,
+      tier: plan.tier,
+      description: (plan as any).description || '',
+      monthlyPrice: Number(plan.monthlyPrice),
+      yearlyPrice: Number(plan.yearlyPrice),
+      currency: plan.currency || 'USD',
+      maxUsers: plan.maxUsers,
+      maxStorageGB: Number(plan.maxStorage),
+      maxProjects: plan.maxProjects,
+      maxClients: (plan as any).maxClients,
+      features: plan.features as any || {},
+    }));
+    
+    res.json({ success: true, data: formattedPlans });
+  } catch (error: any) {
+    logger.error({ error }, 'Failed to fetch public pricing plans');
+    res.status(500).json({ success: false, error: 'Failed to fetch plans' });
+  }
+});
 
 // Login context - returns branding and SSO config for login page
 app.get('/api/v1/auth/login-context', (req: Request, res: Response) => {
@@ -340,6 +369,42 @@ app.post('/api/v1/tenants/register', async (req: Request, res: Response, next: N
 
     logger.info({ tenantId, slug: data.slug }, 'Tenant registered via public signup');
 
+    // Send welcome email (non-blocking, don't fail registration if email fails)
+    const appUrl = process.env.APP_URL || 'http://localhost:3000';
+    const loginUrl = `${appUrl}/${data.slug}/login`;
+    
+    try {
+      const emailResponse = await fetch(`${config.notificationServiceUrl}/api/notifications/platform/email/templated`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: data.adminEmail,
+          templateName: 'tenant-registration',
+          subject: `Welcome to OMS - ${data.name} is Ready!`,
+          data: {
+            adminFirstName: data.adminFirstName,
+            organizationName: data.name,
+            loginUrl,
+            adminEmail: data.adminEmail,
+            trialEndDate: tenant.trialEndsAt?.toLocaleDateString('en-US', {
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+            }),
+          },
+        }),
+      });
+      
+      if (!emailResponse.ok) {
+        const errBody = await emailResponse.text();
+        logger.warn({ tenantId, slug: data.slug, error: errBody }, 'Failed to send welcome email');
+      } else {
+        logger.info({ tenantId, slug: data.slug }, 'Welcome email sent successfully');
+      }
+    } catch (emailError) {
+      logger.warn({ tenantId, slug: data.slug, error: emailError }, 'Failed to send welcome email');
+    }
+
     res.status(201).json({
       success: true,
       data: {
@@ -377,10 +442,63 @@ app.use('/api/v1/public/offer',
 );
 
 // ============================================================================
+// PUBLIC FILE DOWNLOAD (No auth required)
+// Serves files by storage key for avatars and public assets
+// ============================================================================
+
+app.use('/api/documents/files/download',
+  createProxyMiddleware({
+    target: config.documentServiceUrl,
+    changeOrigin: true,
+    pathRewrite: { '^/api/documents/files/download': '/api/documents/files/download' },
+    onError: (err, req, res) => {
+      logger.error({ error: err.message, path: req.url }, 'Public file download proxy error');
+      (res as Response).status(502).json({
+        success: false,
+        error: { code: 'PROXY_ERROR', message: 'Document service unavailable' },
+      });
+    },
+  })
+);
+
+// ============================================================================
 // PUBLIC ONBOARDING ROUTES (No auth required)
 // Allows candidates to fill onboarding details with temp credentials
 // ============================================================================
 
+// File uploads go to Document Service (for proper folder structure)
+app.use('/api/v1/public/onboarding/:token/upload',
+  createProxyMiddleware({
+    target: config.documentServiceUrl,
+    changeOrigin: true,
+    pathRewrite: (path) => path.replace('/api/v1/public/onboarding', '/api/v1/public/onboarding'),
+    onError: (err, req, res) => {
+      logger.error({ error: err.message, path: req.url }, 'Public onboarding upload proxy error');
+      (res as Response).status(502).json({
+        success: false,
+        error: { code: 'PROXY_ERROR', message: 'Document service unavailable' },
+      });
+    },
+  })
+);
+
+// File listing goes to Document Service
+app.use('/api/v1/public/onboarding/:token/files',
+  createProxyMiddleware({
+    target: config.documentServiceUrl,
+    changeOrigin: true,
+    pathRewrite: (path) => path.replace('/api/v1/public/onboarding', '/api/v1/public/onboarding'),
+    onError: (err, req, res) => {
+      logger.error({ error: err.message, path: req.url }, 'Public onboarding files proxy error');
+      (res as Response).status(502).json({
+        success: false,
+        error: { code: 'PROXY_ERROR', message: 'Document service unavailable' },
+      });
+    },
+  })
+);
+
+// Other onboarding routes go to Employee Service
 app.use('/api/v1/public/onboarding',
   createProxyMiddleware({
     target: config.employeeServiceUrl,
@@ -888,10 +1006,97 @@ app.use('/api/v1/auth', createProxyMiddleware({
       res.setHeader('Vary', 'Origin');
       res.setHeader('Access-Control-Allow-Credentials', 'true');
       res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Request-ID,X-Tenant-ID,X-Tenant-Slug');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Request-ID,X-Tenant-ID,X-Tenant-Slug,X-Forwarded-Host');
     }
   },
 }));
+
+// Roles proxy (auth service)
+app.use('/api/v1/roles',
+  requireAuth,
+  requireTenantContext,
+  createProxyMiddleware({
+    target: config.authServiceUrl,
+    changeOrigin: true,
+    pathRewrite: { '^/api/v1/roles': '/api/v1/roles' },
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+      fixRequestBody(proxyReq, req);
+    },
+    onProxyRes: (proxyRes, req, res) => {
+      const origin = req.headers.origin;
+      if (origin) {
+        delete proxyRes.headers['access-control-allow-origin'];
+        delete proxyRes.headers['access-control-allow-credentials'];
+        delete proxyRes.headers['access-control-allow-methods'];
+        delete proxyRes.headers['access-control-allow-headers'];
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Vary', 'Origin');
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Request-ID,X-Tenant-ID,X-Tenant-Slug,X-Forwarded-Host');
+      }
+    },
+  })
+);
+
+// Onboarding proxy (employee service - for candidate onboarding)
+app.use('/api/v1/onboarding',
+  requireAuth,
+  requireTenantContext,
+  createProxyMiddleware({
+    target: config.employeeServiceUrl,
+    changeOrigin: true,
+    pathRewrite: { '^/api/v1/onboarding': '/api/v1/onboarding' },
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+      fixRequestBody(proxyReq, req);
+    },
+    onProxyRes: (proxyRes, req, res) => {
+      const origin = req.headers.origin;
+      if (origin) {
+        delete proxyRes.headers['access-control-allow-origin'];
+        delete proxyRes.headers['access-control-allow-credentials'];
+        delete proxyRes.headers['access-control-allow-methods'];
+        delete proxyRes.headers['access-control-allow-headers'];
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Vary', 'Origin');
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Request-ID,X-Tenant-ID,X-Tenant-Slug,X-Forwarded-Host');
+      }
+    },
+  })
+);
+
+// Setup status proxy (employee service - for admin setup checklist)
+app.use('/api/v1/setup-status',
+  requireAuth,
+  requireTenantContext,
+  createProxyMiddleware({
+    target: config.employeeServiceUrl,
+    changeOrigin: true,
+    pathRewrite: { '^/api/v1/setup-status': '/api/v1/setup-status' },
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+      fixRequestBody(proxyReq, req);
+    },
+    onProxyRes: (proxyRes, req, res) => {
+      const origin = req.headers.origin;
+      if (origin) {
+        delete proxyRes.headers['access-control-allow-origin'];
+        delete proxyRes.headers['access-control-allow-credentials'];
+        delete proxyRes.headers['access-control-allow-methods'];
+        delete proxyRes.headers['access-control-allow-headers'];
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Vary', 'Origin');
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Request-ID,X-Tenant-ID,X-Tenant-Slug,X-Forwarded-Host');
+      }
+    },
+  })
+);
 
 // User profile proxy (auth service)
 app.use('/api/v1/users',
@@ -914,16 +1119,106 @@ app.use('/api/v1/users',
         res.setHeader('Vary', 'Origin');
         res.setHeader('Access-Control-Allow-Credentials', 'true');
         res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Request-ID,X-Tenant-ID,X-Tenant-Slug');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Request-ID,X-Tenant-ID,X-Tenant-Slug,X-Forwarded-Host');
       }
     },
   })
 );
 
-// Employee service proxy (requires tenant context)
+// Employee self-service proxy routes (personal endpoints accessible with employee-level permissions)
+// These MUST be registered BEFORE the general /api/v1/employees proxy
+const employeeSelfServiceProxy = createProxyMiddleware({
+  target: config.employeeServiceUrl,
+  changeOrigin: true,
+  pathRewrite: { '^/api/v1/employees': '/api/v1/employees' },
+  onProxyReq: (proxyReq, req) => {
+    addTenantHeaders(proxyReq, req as TenantContextRequest);
+  },
+  onProxyRes: (proxyRes, req) => {
+    const origin = req.headers.origin;
+    if (origin) {
+      proxyRes.headers['access-control-allow-origin'] = origin;
+      proxyRes.headers['access-control-allow-credentials'] = 'true';
+    }
+  },
+});
+
+// Personal schedule endpoint - any authenticated tenant user
+app.use('/api/v1/employees/today-schedule',
+  requireAuth,
+  requireTenantContext,
+  employeeSelfServiceProxy
+);
+
+// Personal todo endpoints - any authenticated tenant user
+app.use('/api/v1/employees/todos',
+  requireAuth,
+  requireTenantContext,
+  employeeSelfServiceProxy
+);
+
+// Upcoming events - any authenticated tenant user
+app.use('/api/v1/employees/upcoming-events',
+  requireAuth,
+  requireTenantContext,
+  employeeSelfServiceProxy
+);
+
+// Employee self-service: GET /api/v1/employees/me - returns current user's full employee record
+app.get('/api/v1/employees/me',
+  requireAuth,
+  requireTenantContext,
+  async (req: any, res: any) => {
+    try {
+      const tenantSlug = req.tenantContext?.tenantSlug || req.domainResolution?.tenantSlug || req.user?.tenantSlug;
+      const userId = req.user?.id;
+
+      if (!tenantSlug || !userId) {
+        return res.status(400).json({ success: false, error: { code: 'CONTEXT_REQUIRED', message: 'Tenant and user context required' } });
+      }
+
+      const tenantPrisma = await getTenantPrismaBySlug(tenantSlug);
+
+      const user = await tenantPrisma.user.findUnique({
+        where: { id: userId },
+        select: { employeeId: true },
+      });
+
+      if (!user?.employeeId) {
+        return res.status(404).json({ success: false, error: { code: 'EMPLOYEE_NOT_FOUND', message: 'No employee record linked to this user' } });
+      }
+
+      const employee = await tenantPrisma.employee.findUnique({
+        where: { id: user.employeeId },
+        include: {
+          department: { select: { id: true, name: true, code: true } },
+          designation: { select: { id: true, name: true, level: true } },
+          reportingManager: {
+            select: { id: true, firstName: true, lastName: true, email: true },
+          },
+          emergencyContacts: true,
+          bankDetails: true,
+          educations: true,
+        },
+      });
+
+      if (!employee) {
+        return res.status(404).json({ success: false, error: { code: 'EMPLOYEE_NOT_FOUND', message: 'Employee record not found' } });
+      }
+
+      res.json({ success: true, data: employee });
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Failed to get current employee profile');
+      res.status(500).json({ success: false, error: { code: 'FETCH_FAILED', message: 'Failed to fetch employee profile' } });
+    }
+  }
+);
+
+// Employee service proxy (requires tenant context) - admin/HR operations
 app.use('/api/v1/employees', 
   requireAuth,
   requireTenantContext,
+  requireAnyPermission('employees:read', 'employees:write', 'employees:delete'),
   createProxyMiddleware({
     target: config.employeeServiceUrl,
     changeOrigin: true,
@@ -1004,6 +1299,7 @@ app.use('/api/v1/teams',
 app.use('/api/v1/jobs', 
   requireAuth,
   requireTenantContext,
+  requireAnyPermission('hr_jobs:read', 'hr_jobs:write'),
   createProxyMiddleware({
     target: config.employeeServiceUrl,
     changeOrigin: true,
@@ -1026,6 +1322,7 @@ app.use('/api/v1/jobs',
 app.use('/api/v1/candidates',
   requireAuth,
   requireTenantContext,
+  requireAnyPermission('hr_candidates:read', 'hr_candidates:write'),
   createProxyMiddleware({
     target: config.employeeServiceUrl,
     changeOrigin: true,
@@ -1047,6 +1344,7 @@ app.use('/api/v1/candidates',
 app.use('/api/v1/interviews',
   requireAuth,
   requireTenantContext,
+  requireAnyPermission('hr_interviews:read', 'hr_interviews:write'),
   createProxyMiddleware({
     target: config.employeeServiceUrl,
     changeOrigin: true,
@@ -1165,6 +1463,7 @@ app.use('/api/v1/assessments/results',
 app.use('/api/v1/assessments',
   requireAuth,
   requireTenantContext,
+  requireAnyPermission('hr_assessments:read', 'hr_assessments:write'),
   createProxyMiddleware({
     target: config.employeeServiceUrl,
     changeOrigin: true,
@@ -1193,21 +1492,177 @@ app.use('/api/v1/assessments',
   })
 );
 
+// Performance Reviews proxy (employee-service)
+app.use('/api/v1/performance-reviews',
+  requireAuth,
+  requireTenantContext,
+  requireAnyPermission('performance:read', 'performance:write', 'performance:self'),
+  createProxyMiddleware({
+    target: config.employeeServiceUrl,
+    changeOrigin: true,
+    pathRewrite: { '^/api/v1/performance-reviews': '/api/v1/performance-reviews' },
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+    },
+    onProxyRes: (proxyRes, req) => {
+      const origin = req.headers.origin;
+      if (origin) {
+        proxyRes.headers['access-control-allow-origin'] = origin;
+        proxyRes.headers['access-control-allow-credentials'] = 'true';
+      }
+    },
+  })
+);
+
+// Badges service proxy (employee-service) - Badges & Achievements
+app.use('/api/v1/badges',
+  requireAuth,
+  requireTenantContext,
+  createProxyMiddleware({
+    target: config.employeeServiceUrl,
+    changeOrigin: true,
+    pathRewrite: { '^/api/v1/badges': '/api/v1/badges' },
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+    },
+    onProxyRes: (proxyRes, req) => {
+      const origin = req.headers.origin;
+      if (origin) {
+        proxyRes.headers['access-control-allow-origin'] = origin;
+        proxyRes.headers['access-control-allow-credentials'] = 'true';
+      }
+    },
+  })
+);
+
+// Employee dashboard (personal stats) - accessible to any authenticated tenant user
+app.use('/api/v1/dashboard',
+  requireAuth,
+  requireTenantContext,
+  dashboardRoutes
+);
+
 // Organization settings (current tenant) - handled locally
+// GET /settings is accessible to all authenticated tenant users (needed for locale/timezone)
+// Other operations require organization:view or organization:manage permission
 app.use('/api/v1/organization',
   requireAuth,
   requireTenantContext,
+  (req: Request, res: Response, next: NextFunction) => {
+    // Allow all authenticated tenant users to read org settings (locale, timezone, etc.)
+    if (req.method === 'GET' && (req.path === '/settings' || req.path === '/settings/')) {
+      return next();
+    }
+    // All other organization routes require admin permissions
+    return requireAnyPermission('organization:view', 'organization:manage')(req, res, next);
+  },
   organizationRoutes
 );
 
-// Holidays proxy (attendance service)
-app.use('/api/v1/holidays',
+// Holidays proxy - READ (all authenticated tenant users can view holidays)
+app.get('/api/v1/holidays',
   requireAuth,
   requireTenantContext,
   createProxyMiddleware({
     target: config.attendanceServiceUrl,
     changeOrigin: true,
-    // No pathRewrite - attendance service expects /api/v1/holidays/...
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+    },
+    onProxyRes: (proxyRes, req) => {
+      const origin = req.headers.origin;
+      if (origin) {
+        proxyRes.headers['access-control-allow-origin'] = origin;
+        proxyRes.headers['access-control-allow-credentials'] = 'true';
+      }
+    },
+  })
+);
+
+app.get('/api/v1/holidays/upcoming',
+  requireAuth,
+  requireTenantContext,
+  createProxyMiddleware({
+    target: config.attendanceServiceUrl,
+    changeOrigin: true,
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+    },
+    onProxyRes: (proxyRes, req) => {
+      const origin = req.headers.origin;
+      if (origin) {
+        proxyRes.headers['access-control-allow-origin'] = origin;
+        proxyRes.headers['access-control-allow-credentials'] = 'true';
+      }
+    },
+  })
+);
+
+app.get('/api/v1/holidays/stats',
+  requireAuth,
+  requireTenantContext,
+  createProxyMiddleware({
+    target: config.attendanceServiceUrl,
+    changeOrigin: true,
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+    },
+    onProxyRes: (proxyRes, req) => {
+      const origin = req.headers.origin;
+      if (origin) {
+        proxyRes.headers['access-control-allow-origin'] = origin;
+        proxyRes.headers['access-control-allow-credentials'] = 'true';
+      }
+    },
+  })
+);
+
+app.get('/api/v1/holidays/working-days',
+  requireAuth,
+  requireTenantContext,
+  createProxyMiddleware({
+    target: config.attendanceServiceUrl,
+    changeOrigin: true,
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+    },
+    onProxyRes: (proxyRes, req) => {
+      const origin = req.headers.origin;
+      if (origin) {
+        proxyRes.headers['access-control-allow-origin'] = origin;
+        proxyRes.headers['access-control-allow-credentials'] = 'true';
+      }
+    },
+  })
+);
+
+app.get('/api/v1/holidays/:id',
+  requireAuth,
+  requireTenantContext,
+  createProxyMiddleware({
+    target: config.attendanceServiceUrl,
+    changeOrigin: true,
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+    },
+    onProxyRes: (proxyRes, req) => {
+      const origin = req.headers.origin;
+      if (origin) {
+        proxyRes.headers['access-control-allow-origin'] = origin;
+        proxyRes.headers['access-control-allow-credentials'] = 'true';
+      }
+    },
+  })
+);
+
+// Holidays proxy - WRITE (only users with holidays:write permission can create/update/delete)
+app.use('/api/v1/holidays',
+  requireAuth,
+  requireTenantContext,
+  requireAnyPermission('holidays:write'),
+  createProxyMiddleware({
+    target: config.attendanceServiceUrl,
+    changeOrigin: true,
     onProxyReq: (proxyReq, req) => {
       addTenantHeaders(proxyReq, req as TenantContextRequest);
     },
@@ -1225,6 +1680,7 @@ app.use('/api/v1/holidays',
 app.use('/api/v1/attendance',
   requireAuth,
   requireTenantContext,
+  requireAnyPermission('attendance:read', 'attendance:write', 'attendance:self'),
   createProxyMiddleware({
     target: config.attendanceServiceUrl,
     changeOrigin: true,
@@ -1247,6 +1703,7 @@ app.use('/api/v1/attendance',
 app.use('/api/v1/leaves',
   requireAuth,
   requireTenantContext,
+  requireAnyPermission('leave:read', 'leave:write', 'leave:self'),
   createProxyMiddleware({
     target: config.attendanceServiceUrl,
     changeOrigin: true,
@@ -1265,10 +1722,67 @@ app.use('/api/v1/leaves',
   })
 );
 
+// Public pricing plans endpoint for tenant users
+app.get('/api/v1/pricing-plans',
+  requireAuth,
+  async (req: Request, res: Response) => {
+    try {
+      const prisma = getMasterPrisma();
+      const plans = await prisma.subscriptionPlan.findMany({
+        where: { isActive: true },
+        orderBy: { monthlyPrice: 'asc' },
+      });
+      
+      // Transform to frontend-expected format
+      const formattedPlans = plans.map(plan => ({
+        id: plan.id,
+        name: plan.name,
+        slug: plan.slug,
+        tier: plan.tier,
+        monthlyPrice: plan.monthlyPrice,
+        yearlyPrice: plan.yearlyPrice,
+        currency: plan.currency,
+        maxUsers: plan.maxUsers,
+        // maxStorage in DB is already stored as GB (not bytes), so use directly
+        maxStorageGB: Number(plan.maxStorage),
+        maxProjects: plan.maxProjects,
+        features: plan.features as any || {},
+        description: (plan as any).description,
+        isActive: plan.isActive,
+      }));
+      
+      res.json({ success: true, data: formattedPlans });
+    } catch (error: any) {
+      logger.error({ error }, 'Failed to fetch pricing plans');
+      res.status(500).json({ success: false, error: 'Failed to fetch plans' });
+    }
+  }
+);
+
 // Billing service proxy
+// Stripe webhook - no auth required, raw body
+app.use('/api/v1/billing/webhooks/stripe',
+  express.raw({ type: 'application/json' }),
+  createProxyMiddleware({
+    target: config.billingServiceUrl,
+    changeOrigin: true,
+    pathRewrite: { '^/api/v1/billing': '/api/billing' },
+    onProxyReq: (proxyReq, req) => {
+      // Forward the raw body for webhook signature verification
+      if (req.body) {
+        proxyReq.setHeader('Content-Type', 'application/json');
+        proxyReq.setHeader('Content-Length', Buffer.byteLength(req.body));
+        proxyReq.write(req.body);
+      }
+    },
+  })
+);
+
+// Billing service proxy (authenticated routes)
 app.use('/api/v1/billing',
   requireAuth,
   requireTenantContext,
+  requireAnyPermission('billing:view', 'billing:manage'),
   createProxyMiddleware({
     target: config.billingServiceUrl,
     changeOrigin: true,
@@ -1319,6 +1833,7 @@ app.use('/api/v1/notifications',
 app.use('/api/v1/projects',
   requireAuth,
   requireTenantContext,
+  requireAnyPermission('projects:read', 'projects:write'),
   createProxyMiddleware({
     target: config.projectServiceUrl,
     changeOrigin: true,
@@ -1333,6 +1848,7 @@ app.use('/api/v1/projects',
 app.use('/api/v1/tasks',
   requireAuth,
   requireTenantContext,
+  requireAnyPermission('tasks:read', 'tasks:write'),
   createProxyMiddleware({
     target: config.taskServiceUrl,
     changeOrigin: true,
@@ -1347,6 +1863,7 @@ app.use('/api/v1/tasks',
 app.use('/api/v1/clients',
   requireAuth,
   requireTenantContext,
+  requireAnyPermission('projects:read', 'projects:write'),
   createProxyMiddleware({
     target: config.clientServiceUrl,
     changeOrigin: true,
@@ -1361,10 +1878,54 @@ app.use('/api/v1/clients',
 app.use('/api/documents',
   requireAuth,
   requireTenantContext,
+  requireAnyPermission('documents:read', 'documents:write', 'documents:self'),
   createProxyMiddleware({
     target: config.documentServiceUrl || 'http://localhost:3007',
     changeOrigin: true,
     pathRewrite: { '^/api/documents': '/api/documents' },
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+    },
+  })
+);
+
+// AI service proxy - centralized AI features (holiday generation, JD generation, etc.)
+app.use('/api/v1/ai',
+  requireAuth,
+  requireTenantContext,
+  createProxyMiddleware({
+    target: config.aiServiceUrl,
+    changeOrigin: true,
+    pathRewrite: { '^/api/v1/ai': '/ai' },
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+    },
+    onProxyRes: (proxyRes, req) => {
+      const origin = req.headers.origin;
+      if (origin) {
+        proxyRes.headers['access-control-allow-origin'] = origin;
+        proxyRes.headers['access-control-allow-credentials'] = 'true';
+      }
+    },
+    onError: (err, req, res) => {
+      logger.error({ error: err.message, path: req.url }, 'Error proxying to AI service');
+      (res as any).status(502).json({
+        success: false,
+        error: 'Failed to connect to AI service',
+      });
+    },
+  })
+);
+
+// Report service proxy - tenant analytics and reports
+app.use('/api/v1/reports',
+  requireAuth,
+  requireTenantContext,
+  requireAnyPermission('reports:view'),
+  createProxyMiddleware({
+    target: config.reportServiceUrl,
+    changeOrigin: true,
+    pathRewrite: { '^/api/v1/reports': '/api/reports' },
     onProxyReq: (proxyReq, req) => {
       addTenantHeaders(proxyReq, req as TenantContextRequest);
     },
@@ -1501,6 +2062,27 @@ function addTenantHeaders(proxyReq: any, req: TenantContextRequest): void {
 // ERROR HANDLING
 // ============================================================================
 
+// Sanitize error messages to hide sensitive infrastructure details
+function sanitizeErrorMessage(message: string): string {
+  // Hide database connection details
+  if (message.includes("Can't reach database server")) {
+    return 'Unable to connect to the database. Please try again later or contact support.';
+  }
+  if (message.includes('Connection refused') || message.includes('ECONNREFUSED')) {
+    return 'A required service is temporarily unavailable. Please try again later.';
+  }
+  if (message.includes('Tenant not found')) {
+    return 'Organization not found or inactive. Please check your URL.';
+  }
+  // Hide specific host/port information
+  const sanitized = message
+    .replace(/at `[^`]+:\d+`/g, '')
+    .replace(/localhost:\d+/g, '[database]')
+    .replace(/postgres:\d+/g, '[database]')
+    .replace(/\d+\.\d+\.\d+\.\d+:\d+/g, '[service]');
+  return sanitized;
+}
+
 // 404 handler
 app.use((req: Request, res: Response) => {
   res.status(404).json({
@@ -1521,13 +2103,14 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
     method: req.method,
   }, 'Unhandled error');
   
+  // Always sanitize error messages to hide infrastructure details
+  const userMessage = sanitizeErrorMessage(err.message);
+  
   res.status(500).json({
     success: false,
     error: {
       code: 'INTERNAL_ERROR',
-      message: config.nodeEnv === 'production' 
-        ? 'An unexpected error occurred' 
-        : err.message,
+      message: userMessage,
     },
   });
 });

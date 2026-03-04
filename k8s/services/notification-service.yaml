@@ -20,7 +20,7 @@ spec:
           image: office-management/notification-service:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 3006
+            - containerPort: 3008
           envFrom:
             - configMapRef:
                 name: app-config
@@ -28,7 +28,7 @@ spec:
                 name: app-secrets
           env:
             - name: PORT
-              value: "3006"
+              value: "3008"
             - name: REDIS_URL
               value: "redis://redis:6379"
           resources:
@@ -41,13 +41,13 @@ spec:
           readinessProbe:
             httpGet:
               path: /health
-              port: 3006
+              port: 3008
             initialDelaySeconds: 10
             periodSeconds: 5
           livenessProbe:
             httpGet:
               path: /health
-              port: 3006
+              port: 3008
             initialDelaySeconds: 30
             periodSeconds: 10
 ---
@@ -60,6 +60,6 @@ spec:
   selector:
     app: notification-service
   ports:
-    - port: 3006
-      targetPort: 3006
+    - port: 3008
+      targetPort: 3008
   type: ClusterIP

@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Development Docker Compose - Uses pre-built images or host node_modules
 # Run with: docker compose -f docker-compose.dev.yml up
 

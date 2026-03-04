@@ -18,9 +18,7 @@ export interface GatewayConfig {
   jwtAccessTokenExpiry: string;
   jwtRefreshTokenExpiry: string;
   
-  // Rate Limiting
-  rateLimitWindowMs: number;
-  rateLimitMaxRequests: number;
+
   redisUrl?: string;
   
   // CORS
@@ -42,6 +40,7 @@ export interface GatewayConfig {
   fileServiceUrl: string;
   reportServiceUrl: string;
   billingServiceUrl: string;
+  aiServiceUrl: string;
   
   // Logging
   logLevel: string;
@@ -63,9 +62,7 @@ export const config: GatewayConfig = {
   jwtAccessTokenExpiry: process.env.JWT_ACCESS_TOKEN_EXPIRY || '15m',
   jwtRefreshTokenExpiry: process.env.JWT_REFRESH_TOKEN_EXPIRY || '7d',
   
-  // Rate Limiting (increased for development - 10000 requests per minute)
-  rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000'),
-  rateLimitMaxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '10000'),
+
   redisUrl: process.env.REDIS_URL,
   
   // CORS
@@ -87,6 +84,7 @@ export const config: GatewayConfig = {
   notificationServiceUrl: process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:3008',
   fileServiceUrl: process.env.FILE_SERVICE_URL || 'http://localhost:3007',
   reportServiceUrl: process.env.REPORT_SERVICE_URL || 'http://localhost:3009',
+  aiServiceUrl: process.env.AI_SERVICE_URL || 'http://localhost:3012',
   
   // Logging
   logLevel: process.env.LOG_LEVEL || 'info',

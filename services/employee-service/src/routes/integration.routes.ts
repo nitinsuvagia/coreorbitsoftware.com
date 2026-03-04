@@ -60,11 +60,15 @@ router.post('/openai', async (req: Request, res: Response) => {
     // Get existing settings
     const existing = await getTenantOpenAISettings(tenantId as string);
     
+    // Determine final API key
+    const finalApiKey = apiKey || existing?.apiKey || '';
+    
     // Update OpenAI settings
+    // If an API key exists, always enable the integration
     const openaiSettings: OpenAISettings = {
-      apiKey: apiKey || existing?.apiKey || '',
+      apiKey: finalApiKey,
       model: model || existing?.model || 'gpt-3.5-turbo',
-      enabled: enabled !== undefined ? enabled : (existing?.enabled ?? true),
+      enabled: finalApiKey ? true : (enabled !== undefined ? enabled : (existing?.enabled ?? true)),
       maxTokens: maxTokens || existing?.maxTokens || 2000,
       temperature: temperature !== undefined ? temperature : (existing?.temperature ?? 0.7),
     };
@@ -118,7 +122,7 @@ router.post('/openai/test', async (req: Request, res: Response) => {
         message: 'Connection successful! OpenAI API key is valid.' 
       });
     } else {
-      const errorData = await response.json().catch(() => ({}));
+      const errorData = await response.json().catch(() => ({})) as any;
       res.json({ 
         success: false, 
         message: errorData.error?.message || 'Invalid API key or connection failed' 

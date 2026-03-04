@@ -1,6 +1,6 @@
 'use client';
 
-import { useOrganizationContext } from '../../layout';
+import { useOrganizationContext } from '../../context';
 import { DepartmentsTab } from '../../_components';
 
 export default function DepartmentsPage() {

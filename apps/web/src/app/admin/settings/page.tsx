@@ -1640,6 +1640,7 @@ export default function AdminSettingsPage() {
                 <Select value={planForm.tier || 'STARTER'} onValueChange={(v) => setPlanForm(f => ({ ...f, tier: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="FREE">Free</SelectItem>
                     <SelectItem value="STARTER">Starter</SelectItem>
                     <SelectItem value="PROFESSIONAL">Professional</SelectItem>
                     <SelectItem value="ENTERPRISE">Enterprise</SelectItem>

@@ -3,6 +3,8 @@
 
 export { StatCard } from './StatCard';
 export { StatsGrid } from './StatsGrid';
+export { EmployeeStatsGrid } from './EmployeeStatsGrid';
+export { EmployeeInfoCard } from './EmployeeInfoCard';
 export { TodaySchedule } from './TodaySchedule';
 export { TodoList } from './TodoList';
 export { AlertsCard } from './AlertsCard';

@@ -12,6 +12,7 @@
 import { randomBytes, createHash } from 'crypto';
 import { getTenantPrismaBySlug, getMasterPrisma } from '../utils/database';
 import { logger } from '../utils/logger';
+import { getEventBus, SNS_TOPICS } from '@oms/event-bus';
 
 interface StartOnboardingInput {
   candidateId: string;
@@ -20,37 +21,69 @@ interface StartOnboardingInput {
 
 interface OnboardingDetailsInput {
   address?: {
-    street: string;
-    city: string;
-    state: string;
-    postalCode: string;
-    country: string;
+    street?: string;
+    city?: string;
+    state?: string;
+    postalCode?: string;
+    country?: string;
+    current?: {
+      street: string;
+      city: string;
+      state: string;
+      postalCode: string;
+      country: string;
+    };
+    permanent?: {
+      street: string;
+      city: string;
+      state: string;
+      postalCode: string;
+      country: string;
+    };
+    sameAsCurrent?: boolean;
   };
   emergencyContact?: {
     name: string;
     relationship: string;
     phone: string;
     email?: string;
+    address?: string;
   };
   education?: Array<{
+    id?: string;
     degree: string;
     institution: string;
+    board?: string;
     year: number;
     grade?: string;
+    percentage?: number;
   }>;
   bankDetails?: {
     accountNumber: string;
+    confirmAccountNumber?: string;
     bankName: string;
     ifscCode: string;
+    branchName?: string;
     accountHolderName: string;
+    accountType?: string;
   };
   personal?: {
+    firstName?: string;
+    lastName?: string;
     dateOfBirth?: string;
     bloodGroup?: string;
     nationality?: string;
     maritalStatus?: string;
     gender?: string;
+    fatherName?: string;
+    motherName?: string;
+    spouseName?: string;
+    panNumber?: string;
+    aadharNumber?: string;
+    passportNumber?: string;
+    passportExpiry?: string;
   };
+  documents?: Record<string, any>;
 }
 
 interface MarkAsHiredInput {
@@ -146,8 +179,11 @@ export class OnboardingService {
 
     const companyName = tenant?.legalName || tenant?.name || tenantSlug;
     
-    // Build onboarding portal URL
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    // Build onboarding portal URL with tenant subdomain
+    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    // Insert tenant subdomain into the URL (e.g., http://softqube.localhost:3000/onboarding/...)
+    const urlObj = new URL(baseUrl);
+    const frontendUrl = `${urlObj.protocol}//${tenantSlug}.${urlObj.host}`;
     const onboardingUrl = `${frontendUrl}/onboarding/${onboardingToken}`;
 
     // Send onboarding email with temp credentials
@@ -178,6 +214,107 @@ export class OnboardingService {
     return {
       success: true,
       message: 'Onboarding started. Temporary credentials have been sent to the candidate.',
+      onboardingUrl,
+      expiresAt: onboardingExpiresAt,
+    };
+  }
+
+  /**
+   * Resend onboarding email with new credentials
+   * Called by HR when candidate didn't receive or lost the email
+   */
+  static async resendOnboardingEmail(input: StartOnboardingInput) {
+    const { candidateId, tenantSlug } = input;
+    
+    const db = await getTenantPrismaBySlug(tenantSlug);
+    
+    // Get candidate
+    const candidate = await db.jobCandidate.findUnique({
+      where: { id: candidateId },
+      include: { job: true },
+    });
+
+    if (!candidate) {
+      throw new Error('Candidate not found');
+    }
+
+    // Verify candidate is in onboarding status
+    if (candidate.status !== 'ONBOARDING_IN_PROGRESS') {
+      throw new Error(`Cannot resend onboarding email - candidate status is ${candidate.status}, expected ONBOARDING_IN_PROGRESS`);
+    }
+
+    // Generate new credentials (for security)
+    const onboardingToken = this.generateOnboardingToken();
+    const tempPassword = this.generateTempPassword();
+    const hashedPassword = this.hashPassword(tempPassword);
+    
+    // Token expires in 7 days from now
+    const onboardingExpiresAt = new Date();
+    onboardingExpiresAt.setDate(onboardingExpiresAt.getDate() + 7);
+
+    // Update candidate with new onboarding credentials
+    await db.jobCandidate.update({
+      where: { id: candidateId },
+      data: {
+        onboardingToken,
+        onboardingTempPassword: hashedPassword,
+        onboardingExpiresAt,
+      },
+    });
+
+    // Get company info for email
+    const masterDb = getMasterPrisma();
+    const tenant = await masterDb.tenant.findUnique({
+      where: { slug: tenantSlug },
+      select: {
+        name: true,
+        legalName: true,
+        logo: true,
+        settings: {
+          select: {
+            primaryColor: true,
+          },
+        },
+      },
+    });
+
+    const companyName = tenant?.legalName || tenant?.name || tenantSlug;
+    
+    // Build onboarding portal URL with tenant subdomain
+    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    // Insert tenant subdomain into the URL (e.g., http://softqube.localhost:3000/onboarding/...)
+    const urlObj = new URL(baseUrl);
+    const frontendUrl = `${urlObj.protocol}//${tenantSlug}.${urlObj.host}`;
+    const onboardingUrl = `${frontendUrl}/onboarding/${onboardingToken}`;
+
+    // Send onboarding email with temp credentials
+    await this.sendOnboardingEmail({
+      tenantSlug,
+      candidateEmail: candidate.email,
+      candidateName: `${candidate.firstName} ${candidate.lastName}`,
+      companyName,
+      companyLogo: tenant?.logo,
+      primaryColor: tenant?.settings?.primaryColor || '#667eea',
+      onboardingUrl,
+      tempUsername: candidate.email,
+      tempPassword,
+      expiresAt: onboardingExpiresAt,
+      designation: candidate.offerDesignation || candidate.job.title,
+      joiningDate: candidate.offerJoiningDate,
+    });
+
+    // Log the resend event
+    logger.info({
+      event: 'onboarding.email_resent',
+      tenantSlug,
+      candidateId,
+      candidateName: `${candidate.firstName} ${candidate.lastName}`,
+      email: candidate.email,
+    }, 'Onboarding email resent with new credentials');
+
+    return {
+      success: true,
+      message: 'New onboarding credentials have been sent to the candidate.',
       onboardingUrl,
       expiresAt: onboardingExpiresAt,
     };
@@ -345,6 +482,9 @@ export class OnboardingService {
     if (details.personal) {
       updateData.onboardingPersonal = details.personal;
     }
+    if (details.documents) {
+      updateData.onboardingDocuments = details.documents;
+    }
 
     await db.jobCandidate.update({
       where: { id: candidateId },
@@ -360,9 +500,86 @@ export class OnboardingService {
   }
 
   /**
+   * Upload document for onboarding (called by candidate from public portal)
+   */
+  static async uploadDocument(token: string, req: any) {
+    const onboardingData = await this.getOnboardingByToken(token);
+    
+    if (!onboardingData) {
+      throw new Error('Invalid onboarding link');
+    }
+
+    if ('expired' in onboardingData || 'completed' in onboardingData) {
+      throw new Error('Cannot upload documents - onboarding not active');
+    }
+
+    const { tenantSlug, candidateId, candidateName } = onboardingData;
+    const db = await getTenantPrismaBySlug(tenantSlug);
+
+    // Parse multipart form data
+    // Using req.files if multer middleware is used, or handle raw body
+    const documentType = req.body?.documentType;
+    const file = req.files?.file || req.file;
+
+    if (!file) {
+      throw new Error('No file uploaded');
+    }
+
+    if (!documentType) {
+      throw new Error('Document type is required');
+    }
+
+    // Store document info in the candidate record
+    const candidate = await db.jobCandidate.findUnique({
+      where: { id: candidateId },
+    });
+
+    const currentDocs = (candidate?.onboardingDocuments ?? {}) as Record<string, any>;
+    
+    // Create a file record with path and URL
+    const storedFilename = file.filename || file.originalname || file.name;
+    const fileRecord = {
+      filename: file.originalname || file.name,
+      storedFilename,
+      path: `/uploads/onboarding/${storedFilename}`,
+      url: `/api/v1/public/onboarding/files/${storedFilename}`,
+      mimetype: file.mimetype,
+      size: file.size,
+      uploadedAt: new Date().toISOString(),
+    };
+
+    // Update onboarding documents
+    await db.jobCandidate.update({
+      where: { id: candidateId },
+      data: {
+        onboardingDocuments: {
+          ...currentDocs,
+          [documentType]: fileRecord,
+        },
+      },
+    });
+
+    logger.info({
+      candidateId,
+      documentType,
+      filename: fileRecord.filename,
+    }, 'Onboarding document uploaded');
+
+    return {
+      success: true,
+      documentType,
+      filename: fileRecord.filename,
+      url: fileRecord.url,
+    };
+  }
+
+  /**
    * Complete onboarding (called by candidate when they submit all details)
    */
-  static async completeOnboarding(token: string) {
+  static async completeOnboarding(
+    token: string,
+    options?: { declarations?: Record<string, boolean>; signature?: string }
+  ) {
     const onboardingData = await this.getOnboardingByToken(token);
     
     if (!onboardingData) {
@@ -395,12 +612,14 @@ export class OnboardingService {
       throw new Error(`Please complete the following sections: ${missingFields.join(', ')}`);
     }
 
-    // Update status to ONBOARDING_COMPLETED
+    // Update status to ONBOARDING_COMPLETED and save declarations
     await db.jobCandidate.update({
       where: { id: candidateId },
       data: {
         status: 'ONBOARDING_COMPLETED',
         onboardingCompletedAt: new Date(),
+        onboardingDeclarations: options?.declarations ? JSON.stringify(options.declarations) : undefined,
+        onboardingSignature: options?.signature,
       },
     });
 
@@ -491,6 +710,32 @@ export class OnboardingService {
       email: candidate.email,
     }, 'Candidate marked as hired - employee created');
 
+    // Publish candidate hired event for notifications
+    try {
+      const masterPrisma = getMasterPrisma();
+      const tenant = await masterPrisma.tenant.findFirst({
+        where: { slug: tenantSlug },
+        select: { id: true },
+      });
+      
+      if (tenant) {
+        const eventBus = getEventBus('employee-service');
+        await eventBus.publishToTopic(SNS_TOPICS.EMPLOYEE_EVENTS, 'candidate.hired', {
+          candidateId,
+          candidateName: `${candidate.firstName} ${candidate.lastName}`,
+          jobTitle: candidate.job?.title,
+          department: candidate.offerDepartment || candidate.job?.department,
+          startDate: joiningDate || candidate.offerJoiningDate,
+          employeeId: employee.id,
+          employeeCode: employee.employeeCode,
+          tenantSlug, // Include tenantSlug in payload for document service
+          tenantId: tenant.id,
+        }, { tenantId: tenant.id, tenantSlug });
+      }
+    } catch (eventError) {
+      logger.warn({ error: eventError }, 'Failed to publish candidate hired event');
+    }
+
     return {
       success: true,
       message: 'Employee created successfully. Welcome email has been sent.',
@@ -509,6 +754,23 @@ export class OnboardingService {
   private static async createEmployeeFromCandidate(db: any, candidate: any, tenantSlug: string) {
     // Generate employee code using tenant settings
     const employeeCode = await this.generateEmployeeCode(db, tenantSlug);
+
+    // Fetch tenant settings from master DB for timezone and currency defaults
+    const masterPrisma = getMasterPrisma();
+    const tenant = await masterPrisma.tenant.findFirst({
+      where: { slug: tenantSlug },
+      select: { id: true },
+    });
+    let tenantTimezone = 'UTC';
+    let tenantCurrency = 'USD';
+    if (tenant) {
+      const tenantSettings = await masterPrisma.tenantSettings.findUnique({
+        where: { tenantId: tenant.id },
+        select: { timezone: true, currency: true },
+      });
+      tenantTimezone = tenantSettings?.timezone || 'UTC';
+      tenantCurrency = tenantSettings?.currency || 'USD';
+    }
 
     // Find department by name
     let departmentId = null;
@@ -553,6 +815,35 @@ export class OnboardingService {
     const personal = candidate.onboardingPersonal as any;
     const bankDetails = candidate.onboardingBankDetails as any;
 
+    // Map maritalStatus to enum value
+    const mapMaritalStatus = (value: string | undefined): string | undefined => {
+      if (!value) return undefined;
+      const map: Record<string, string> = {
+        'Single': 'SINGLE',
+        'Married': 'MARRIED',
+        'Divorced': 'DIVORCED',
+        'Widowed': 'WIDOWED',
+        'Other': 'OTHER',
+      };
+      return map[value] || value.toUpperCase();
+    };
+
+    // Map gender to enum value
+    const mapGender = (value: string | undefined): string | undefined => {
+      if (!value) return undefined;
+      const map: Record<string, string> = {
+        'Male': 'MALE',
+        'Female': 'FEMALE',
+        'Other': 'OTHER',
+        'Prefer not to say': 'PREFER_NOT_TO_SAY',
+      };
+      return map[value] || value.toUpperCase();
+    };
+
+    // Extract current address (address may have current/permanent structure)
+    const currentAddress = address?.current || address;
+    const permanentAddress = address?.permanent;
+
     // Create the employee
     const employee = await db.employee.create({
       data: {
@@ -561,25 +852,33 @@ export class OnboardingService {
         lastName: candidate.lastName,
         displayName: `${candidate.firstName} ${candidate.lastName}`,
         email: candidate.email,
+        personalEmail: candidate.email, // Same as candidate email - can be updated later
         phone: candidate.phone,
+        mobile: candidate.phone, // Same as phone initially
         status: 'ACTIVE',
         employmentType: candidate.job.employmentType || 'FULL_TIME',
         joinDate: candidate.offerJoiningDate || new Date(),
-        // Address from onboarding
-        ...(address && {
-          addressLine1: address.street,
-          city: address.city,
-          state: address.state,
-          postalCode: address.postalCode,
-          country: address.country,
+        // Work info from job and tenant settings
+        workLocation: candidate.job?.location || undefined,
+        timezone: tenantTimezone,
+        // Salary from offer
+        baseSalary: candidate.offerSalary || undefined,
+        currency: candidate.offerCurrency || tenantCurrency,
+        // Address from onboarding (current address)
+        ...(currentAddress && {
+          addressLine1: currentAddress.street,
+          city: currentAddress.city,
+          state: currentAddress.state,
+          postalCode: currentAddress.postalCode,
+          country: currentAddress.country,
         }),
         // Personal details from onboarding
         ...(personal && {
           dateOfBirth: personal.dateOfBirth ? new Date(personal.dateOfBirth) : null,
           bloodGroup: personal.bloodGroup,
           nationality: personal.nationality,
-          maritalStatus: personal.maritalStatus,
-          gender: personal.gender,
+          maritalStatus: mapMaritalStatus(personal.maritalStatus),
+          gender: mapGender(personal.gender),
         }),
         // Connect to department if exists
         ...(departmentId && {
@@ -593,11 +892,23 @@ export class OnboardingService {
         probationEndDate: new Date(
           (candidate.offerJoiningDate || new Date()).getTime() + 90 * 24 * 60 * 60 * 1000
         ),
-        // Store hiring source in metadata
+        // Store hiring source and additional onboarding data in metadata
         metadata: {
           source: 'INTERNAL_HIRING',
           candidateId: candidate.id,
           hiredFrom: 'JOB_OFFER',
+          // Additional personal info not in employee schema
+          personalInfo: personal ? {
+            panNumber: personal.panNumber,
+            aadharNumber: personal.aadharNumber,
+            fatherName: personal.fatherName,
+            motherName: personal.motherName,
+            spouseName: personal.spouseName,
+            passportNumber: personal.passportNumber,
+            passportExpiry: personal.passportExpiry,
+          } : undefined,
+          // Permanent address if different from current
+          permanentAddress: permanentAddress && !address?.sameAsCurrent ? permanentAddress : undefined,
           onboardingData: {
             education: candidate.onboardingEducation,
             documents: candidate.onboardingDocuments,
@@ -614,7 +925,8 @@ export class OnboardingService {
           name: emergency.name,
           relationship: emergency.relationship,
           phone: emergency.phone,
-          email: emergency.email,
+          email: emergency.email || undefined,
+          address: emergency.address || undefined,
           isPrimary: true,
         },
       });
@@ -622,13 +934,25 @@ export class OnboardingService {
 
     // Create bank details if provided
     if (bankDetails) {
-      await db.bankDetails.create({
+      // Map account type to enum
+      const mapAccountType = (type: string | undefined): string => {
+        if (!type) return 'SAVINGS';
+        const map: Record<string, string> = {
+          'savings': 'SAVINGS',
+          'checking': 'CHECKING',
+          'current': 'CURRENT',
+        };
+        return map[type.toLowerCase()] || 'SAVINGS';
+      };
+
+      await db.bankDetail.create({
         data: {
           employeeId: employee.id,
           accountNumber: bankDetails.accountNumber,
           bankName: bankDetails.bankName,
+          branchName: bankDetails.branchName,
           ifscCode: bankDetails.ifscCode,
-          accountHolderName: bankDetails.accountHolderName,
+          accountType: mapAccountType(bankDetails.accountType),
           isPrimary: true,
         },
       });
@@ -637,14 +961,58 @@ export class OnboardingService {
     // Create education records if provided
     const education = candidate.onboardingEducation as any[];
     if (education && Array.isArray(education)) {
+      // Map degree string to education type enum (for backward compatibility with old format)
+      const mapEducationType = (edu: any): string => {
+        // If new format with educationType enum, use it directly
+        if (edu.educationType && ['HIGH_SCHOOL', 'INTERMEDIATE', 'DIPLOMA', 'BACHELORS', 'MASTERS', 'DOCTORATE', 'POST_DOCTORATE', 'CERTIFICATION', 'VOCATIONAL', 'OTHER'].includes(edu.educationType)) {
+          return edu.educationType;
+        }
+        // Otherwise, infer from degree string (old format)
+        const degree = edu.degree || '';
+        const degreeLower = degree.toLowerCase();
+        if (degreeLower.includes('ssc') || degreeLower.includes('10th') || degreeLower.includes('high school')) return 'HIGH_SCHOOL';
+        if (degreeLower.includes('hsc') || degreeLower.includes('12th') || degreeLower.includes('intermediate')) return 'INTERMEDIATE';
+        if (degreeLower.includes('diploma')) return 'DIPLOMA';
+        if (degreeLower.includes('bachelor') || degreeLower.includes('b.tech') || degreeLower.includes('b.e') || degreeLower.includes('bca') || degreeLower.includes('bsc')) return 'BACHELORS';
+        if (degreeLower.includes('master') || degreeLower.includes('m.tech') || degreeLower.includes('m.e') || degreeLower.includes('mca') || degreeLower.includes('msc') || degreeLower.includes('mba')) return 'MASTERS';
+        if (degreeLower.includes('phd') || degreeLower.includes('doctorate')) return 'DOCTORATE';
+        if (degreeLower.includes('certificate') || degreeLower.includes('certification')) return 'CERTIFICATION';
+        return 'OTHER';
+      };
+
+      // Map institution type (default to UNIVERSITY)
+      const mapInstitutionType = (edu: any): string => {
+        if (edu.institutionType && ['SCHOOL', 'COLLEGE', 'UNIVERSITY', 'INSTITUTE', 'ONLINE', 'OTHER'].includes(edu.institutionType)) {
+          return edu.institutionType;
+        }
+        return 'UNIVERSITY';
+      };
+
+      // Map grade type (default to PERCENTAGE)
+      const mapGradeType = (edu: any): string => {
+        if (edu.gradeType && ['PERCENTAGE', 'CGPA_10', 'CGPA_4', 'GRADE_LETTER', 'DIVISION', 'PASS_FAIL'].includes(edu.gradeType)) {
+          return edu.gradeType;
+        }
+        return 'PERCENTAGE';
+      };
+
       for (const edu of education) {
         await db.employeeEducation.create({
           data: {
             employeeId: employee.id,
+            educationType: mapEducationType(edu),
+            institutionType: mapInstitutionType(edu),
+            institutionName: edu.institutionName || edu.institution, // Support both new and old field names
             degree: edu.degree,
-            institution: edu.institution,
-            year: edu.year,
-            grade: edu.grade,
+            fieldOfStudy: edu.fieldOfStudy || undefined,
+            specialization: edu.specialization || undefined,
+            enrollmentYear: edu.enrollmentYear || edu.year || new Date().getFullYear(),
+            completionYear: edu.completionYear || undefined,
+            isOngoing: edu.isOngoing || false,
+            gradeType: mapGradeType(edu),
+            grade: edu.grade?.toString() || undefined,
+            percentage: edu.percentage ? parseFloat(edu.percentage) : undefined,
+            boardUniversity: edu.boardUniversity || edu.board || undefined,
           },
         });
       }
@@ -669,9 +1037,10 @@ export class OnboardingService {
     return {
       autoGenerate: settings?.employeeCodeAutoGenerate ?? true,
       prefix: settings?.employeeCodePrefix || 'EMP',
+      includeYear: settings?.employeeCodeIncludeYear ?? false,
       yearSeqDigits: settings?.employeeCodeYearSeqDigits ?? 5,
       totalSeqDigits: settings?.employeeCodeTotalSeqDigits ?? 5,
-      separator: settings?.employeeCodeSeparator || '-',
+      separator: settings?.employeeCodeSeparator ?? '-',
     };
   }
 
@@ -688,27 +1057,29 @@ export class OnboardingService {
       return `EMP${String(count + 1).padStart(4, '0')}`;
     }
     
-    const { prefix, separator, yearSeqDigits, totalSeqDigits } = settings;
+    const { prefix, separator, includeYear, yearSeqDigits, totalSeqDigits } = settings;
     const currentYear = new Date().getFullYear();
     
-    // Count employees created this year (for year sequence)
-    const employeesThisYear = await prisma.employee.count({
-      where: {
-        createdAt: {
-          gte: new Date(`${currentYear}-01-01T00:00:00.000Z`),
-          lt: new Date(`${currentYear + 1}-01-01T00:00:00.000Z`),
-        },
-      },
-    });
-    
-    // Count total employees (for total sequence)
+    // Count total employees (always needed)
     const totalEmployees = await prisma.employee.count();
-    
-    // Generate code: {PREFIX}-{YYYY}-{YEAR_SEQ}-{TOTAL_SEQ}
-    const yearSeq = String(employeesThisYear + 1).padStart(yearSeqDigits, '0');
     const totalSeq = String(totalEmployees + 1).padStart(totalSeqDigits, '0');
     
-    return `${prefix}${separator}${currentYear}${separator}${yearSeq}${separator}${totalSeq}`;
+    if (includeYear) {
+      // Full format: PREFIX-YEAR-YEAR_SEQ-TOTAL_SEQ (e.g., EMP-2026-00001-00001)
+      const employeesThisYear = await prisma.employee.count({
+        where: {
+          createdAt: {
+            gte: new Date(`${currentYear}-01-01T00:00:00.000Z`),
+            lt: new Date(`${currentYear + 1}-01-01T00:00:00.000Z`),
+          },
+        },
+      });
+      const yearSeq = String(employeesThisYear + 1).padStart(yearSeqDigits, '0');
+      return `${prefix}${separator}${currentYear}${separator}${yearSeq}${separator}${totalSeq}`;
+    } else {
+      // Simple format: PREFIX-TOTAL_SEQ (e.g., EMP-00001)
+      return `${prefix}${separator}${totalSeq}`;
+    }
   }
 
   /**
@@ -806,22 +1177,24 @@ export class OnboardingService {
         </div>
       `;
 
-      const response = await fetch(`${notificationServiceUrl}/api/notifications/send`, {
+      const response = await fetch(`${notificationServiceUrl}/api/notifications/tenant/email`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-Tenant-Slug': data.tenantSlug,
         },
         body: JSON.stringify({
-          type: 'EMAIL',
           to: data.candidateEmail,
           subject,
+          message: `Welcome to ${data.companyName}! Please complete your onboarding at ${data.onboardingUrl}`,
           html,
         }),
       });
 
-      if (!response.ok) {
-        logger.error({ status: response.status }, 'Failed to send onboarding email');
+      const responseData = await response.json().catch(() => ({})) as any;
+      
+      if (!response.ok || !responseData.success) {
+        logger.error({ status: response.status, responseData }, 'Failed to send onboarding email');
         return false;
       }
 

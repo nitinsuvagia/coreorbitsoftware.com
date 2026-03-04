@@ -16,6 +16,7 @@ export {
   requirePlatformAdmin,
   requireTenantUser,
   requirePermission,
+  requireAnyPermission,
   AuthenticatedRequest,
   AuthenticatedUser,
   TokenPayload,

@@ -11,17 +11,26 @@ export function useOrganization() {
   const [orgErrors, setOrgErrors] = useState<OrgFormErrors>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   const fetchOrganization = useCallback(async () => {
     try {
       setLoading(true);
+      setFetchError(null);
       const response = await apiClient.get<Organization>('/api/v1/organization');
       if (response.success && response.data) {
         setOrg(response.data);
         setOrgForm(response.data);
+      } else {
+        const errMsg = response.error?.message || response.error?.code || 'Unknown API error';
+        console.error('Organization API returned error:', response.error);
+        setFetchError(errMsg);
+        toast.error(errMsg);
       }
     } catch (error: any) {
+      const errMsg = error?.response?.data?.error?.message || error?.message || 'Network error';
       console.error('Failed to fetch organization:', error);
+      setFetchError(errMsg);
       toast.error('Failed to load organization details');
     } finally {
       setLoading(false);
@@ -127,6 +136,7 @@ export function useOrganization() {
     orgErrors,
     loading,
     saving,
+    fetchError,
     fetchOrganization,
     saveOrganization,
     updateFormField,

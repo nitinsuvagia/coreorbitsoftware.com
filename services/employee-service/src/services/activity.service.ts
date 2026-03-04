@@ -470,7 +470,7 @@ export async function generateSystemAlerts(prisma: PrismaClient): Promise<any[]>
         title: 'Pending Leave Requests',
         description: `${pendingLeaves} leave request(s) awaiting approval`,
         timestamp: 'System Alert',
-        actionUrl: '/leaves/pending',
+        actionUrl: '/hr/leave-management',
         actionLabel: 'Review',
       });
     }

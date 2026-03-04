@@ -449,7 +449,7 @@ export default function TakeAssessmentPage() {
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <Card className="w-full max-w-md text-center p-8">
           <AlertTriangle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold mb-2">No Questions Found</h2>
+          <h2 className="text-xl font-semibold mb-2">No questions found</h2>
           <p className="text-muted-foreground">This assessment has no questions.</p>
         </Card>
       </div>

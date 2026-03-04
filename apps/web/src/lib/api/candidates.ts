@@ -15,7 +15,7 @@ export interface JobCandidate {
   coverLetter?: string;
   linkedinUrl?: string;
   portfolioUrl?: string;
-  status: 'APPLIED' | 'SCREENING' | 'SHORTLISTED' | 'INTERVIEWED' | 'OFFERED' | 'HIRED' | 'REJECTED' | 'WITHDRAWN';
+  status: 'APPLIED' | 'SCREENING' | 'SHORTLISTED' | 'INTERVIEWED' | 'OFFERED' | 'OFFER_ACCEPTED' | 'OFFER_DECLINED' | 'ONBOARDING_IN_PROGRESS' | 'ONBOARDING_COMPLETED' | 'HIRED' | 'REJECTED' | 'WITHDRAWN';
   stage: 'APPLICATION' | 'PHONE_SCREEN' | 'TECHNICAL_INTERVIEW' | 'HR_INTERVIEW' | 'FINAL_INTERVIEW' | 'OFFER' | 'ONBOARDING';
   rating?: number;
   currentCompany?: string;
@@ -178,8 +178,40 @@ export const candidateApi = {
   },
 
   /**
+   * Start onboarding for a candidate - sends email with temp credentials
+   * Should be called when candidate status is OFFER_ACCEPTED
+   */
+  async startOnboarding(candidateId: string): Promise<{
+    success: boolean;
+    message: string;
+    onboardingUrl: string;
+    expiresAt: string;
+  }> {
+    const response = await api.post('/api/v1/onboarding/start', {
+      candidateId,
+    });
+    return response.data.data;
+  },
+
+  /**
+   * Resend onboarding email with new credentials
+   * Should be called when candidate status is ONBOARDING_IN_PROGRESS
+   */
+  async resendOnboardingEmail(candidateId: string): Promise<{
+    success: boolean;
+    message: string;
+    onboardingUrl: string;
+    expiresAt: string;
+  }> {
+    const response = await api.post('/api/v1/onboarding/resend', {
+      candidateId,
+    });
+    return response.data.data;
+  },
+
+  /**
    * Mark candidate as hired - creates employee record
-   * Should only be called after offer is accepted
+   * Should only be called after onboarding is completed
    */
   async markAsHired(candidateId: string, joiningDate?: string): Promise<{
     success: boolean;

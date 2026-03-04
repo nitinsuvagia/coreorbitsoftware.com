@@ -4,6 +4,9 @@
  * Microservice for subscription management, invoicing, and payments.
  */
 
+// Load environment variables from .env file BEFORE any other imports
+import 'dotenv/config';
+
 import { createServer } from 'http';
 import { initializeEventBus, shutdownEventBus, subscribeToEvent } from '@oms/event-bus';
 import app from './app';

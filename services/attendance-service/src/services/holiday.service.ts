@@ -15,6 +15,7 @@ import {
   addDays,
 } from 'date-fns';
 import { logger } from '../utils/logger';
+import { getEventBus, SNS_TOPICS } from '@oms/event-bus';
 
 // ============================================================================
 // TYPES
@@ -23,6 +24,13 @@ import { logger } from '../utils/logger';
 // Helper to convert lowercase type to uppercase for database enum
 const toDbHolidayType = (type: 'public' | 'optional' | 'restricted'): 'PUBLIC' | 'OPTIONAL' | 'RESTRICTED' => {
   return type.toUpperCase() as 'PUBLIC' | 'OPTIONAL' | 'RESTRICTED';
+};
+
+// Helper to parse date string (YYYY-MM-DD) at noon UTC to avoid timezone day-shift issues
+const parseDateAsUTC = (dateStr: string): Date => {
+  // Parse YYYY-MM-DD and create date at noon UTC to avoid day boundary issues
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
 };
 
 // Helper to convert database enum to lowercase for API response
@@ -74,7 +82,7 @@ export async function createHoliday(
   userId: string
 ): Promise<any> {
   const id = uuidv4();
-  const date = parseISO(input.date);
+  const date = parseDateAsUTC(input.date);
   
   // Check for duplicate
   const existing = await prisma.holiday.findFirst({
@@ -115,6 +123,25 @@ export async function createHoliday(
   }
   
   logger.info({ holidayId: id, name: input.name, date: input.date }, 'Holiday created');
+  
+  // Publish event for notifications (requires tenantContext)
+  // Note: tenantContext needs to be passed from route handler
+  // For now, we can publish with minimal context
+  try {
+    const eventBus = getEventBus('attendance-service');
+    await eventBus.publishToTopic(SNS_TOPICS.EMPLOYEE_EVENTS, 'holiday.created', {
+      holidayId: id,
+      name: input.name,
+      date: input.date,
+      type: input.type,
+      description: input.description,
+      appliesToAll: input.appliesToAll ?? true,
+      departmentIds: input.departmentIds,
+      createdBy: userId,
+    }, { tenantId: 'system', tenantSlug: 'system' }); // Admin-triggered, notify all
+  } catch (error) {
+    logger.warn({ error }, 'Failed to publish holiday-created event');
+  }
   
   return holiday;
 }
@@ -164,7 +191,7 @@ export async function updateHoliday(
   };
   
   if (input.name) data.name = input.name;
-  if (input.date) data.date = parseISO(input.date);
+  if (input.date) data.date = parseDateAsUTC(input.date);
   if (input.type) data.type = toDbHolidayType(input.type);
   if (input.description !== undefined) data.description = input.description;
   if (input.isRecurring !== undefined) data.isRecurring = input.isRecurring;
@@ -456,9 +483,9 @@ export async function getHolidayStats(
     },
   });
   
-  const publicHolidays = holidays.filter(h => h.type === 'public').length;
-  const optionalHolidays = holidays.filter(h => h.type === 'optional').length;
-  const restrictedHolidays = holidays.filter(h => h.type === 'restricted').length;
+  const publicHolidays = holidays.filter(h => h.type === 'PUBLIC').length;
+  const optionalHolidays = holidays.filter(h => h.type === 'OPTIONAL').length;
+  const restrictedHolidays = holidays.filter(h => h.type === 'RESTRICTED').length;
   const weekdayHolidays = holidays.filter(h => !isWeekend(h.date)).length;
   const weekendHolidays = holidays.filter(h => isWeekend(h.date)).length;
   
@@ -553,4 +580,194 @@ export async function importStandardHolidays(
   }
   
   return bulkCreateHolidays(prisma, { holidays }, userId);
+}
+
+// ============================================================================
+// EXCEL IMPORT/EXPORT FUNCTIONS
+// ============================================================================
+
+import * as XLSX from 'xlsx';
+
+interface ParsedHolidayRow {
+  name: string;
+  date: string;
+  type: 'public' | 'optional' | 'restricted';
+  description?: string;
+  isRecurring: boolean;
+  rowNumber: number;
+}
+
+interface ParseResult {
+  success: boolean;
+  data: CreateHolidayInput[];
+  errors: { row: number; message: string }[];
+}
+
+interface ValidationResult {
+  valid: CreateHolidayInput[];
+  duplicates: { holiday: CreateHolidayInput; existingHoliday: string }[];
+  invalid: { row: number; data: any; message: string }[];
+}
+
+/**
+ * Parse Excel file buffer and extract holiday data
+ */
+export function parseHolidayExcel(buffer: Buffer): ParseResult {
+  const errors: { row: number; message: string }[] = [];
+  const data: CreateHolidayInput[] = [];
+
+  try {
+    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    
+    // Get first sheet (Holidays sheet)
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    
+    if (!worksheet) {
+      return { success: false, data: [], errors: [{ row: 0, message: 'No worksheet found in Excel file' }] };
+    }
+
+    // Convert to JSON
+    const rows = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: '' });
+
+    if (rows.length === 0) {
+      return { success: false, data: [], errors: [{ row: 0, message: 'No data found in Excel file' }] };
+    }
+
+    // Process each row
+    rows.forEach((row, index) => {
+      const rowNumber = index + 2; // Excel rows start at 1, plus header row
+      
+      // Extract values (handle different possible column names)
+      const name = (row['Holiday Name'] || row['Name'] || row['name'] || '').toString().trim();
+      const dateRaw = row['Date (YYYY-MM-DD)'] || row['Date'] || row['date'] || '';
+      const typeRaw = (row['Type (public/optional/restricted)'] || row['Type'] || row['type'] || '').toString().toLowerCase().trim();
+      const description = (row['Description'] || row['description'] || '').toString().trim();
+      const recurringRaw = (row['Recurring (yes/no)'] || row['Recurring'] || row['recurring'] || 'no').toString().toLowerCase().trim();
+
+      // Validate required fields
+      if (!name) {
+        errors.push({ row: rowNumber, message: 'Holiday name is required' });
+        return;
+      }
+
+      if (name.length < 2 || name.length > 100) {
+        errors.push({ row: rowNumber, message: `Holiday name must be 2-100 characters (got ${name.length})` });
+        return;
+      }
+
+      // Parse and validate date
+      let dateStr: string;
+      if (typeof dateRaw === 'number') {
+        // Excel serial date number
+        const date = XLSX.SSF.parse_date_code(dateRaw);
+        dateStr = `${date.y}-${String(date.m).padStart(2, '0')}-${String(date.d).padStart(2, '0')}`;
+      } else {
+        dateStr = dateRaw.toString().trim();
+      }
+
+      // Validate date format
+      const dateMatch = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!dateMatch) {
+        errors.push({ row: rowNumber, message: `Invalid date format: "${dateStr}". Use YYYY-MM-DD format` });
+        return;
+      }
+
+      // Validate date is real
+      const [, year, month, day] = dateMatch;
+      const parsedDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      if (isNaN(parsedDate.getTime()) || 
+          parsedDate.getFullYear() !== parseInt(year) ||
+          parsedDate.getMonth() !== parseInt(month) - 1 ||
+          parsedDate.getDate() !== parseInt(day)) {
+        errors.push({ row: rowNumber, message: `Invalid date: "${dateStr}"` });
+        return;
+      }
+
+      // Validate type
+      const validTypes = ['public', 'optional', 'restricted'];
+      if (!validTypes.includes(typeRaw)) {
+        errors.push({ row: rowNumber, message: `Invalid type: "${typeRaw}". Must be one of: public, optional, restricted` });
+        return;
+      }
+
+      // Parse recurring
+      const isRecurring = recurringRaw === 'yes' || recurringRaw === 'true' || recurringRaw === '1';
+
+      // Validate description length
+      if (description.length > 500) {
+        errors.push({ row: rowNumber, message: `Description too long (max 500 characters, got ${description.length})` });
+        return;
+      }
+
+      // Add valid holiday
+      data.push({
+        name,
+        date: dateStr,
+        type: typeRaw as 'public' | 'optional' | 'restricted',
+        description: description || undefined,
+        isRecurring,
+        appliesToAll: true,
+      });
+    });
+
+    return { success: true, data, errors };
+  } catch (error) {
+    logger.error({ error: (error as Error).message }, 'Failed to parse Excel file');
+    return { 
+      success: false, 
+      data: [], 
+      errors: [{ row: 0, message: `Failed to parse Excel file: ${(error as Error).message}` }] 
+    };
+  }
+}
+
+/**
+ * Validate import data against existing holidays in database
+ */
+export async function validateHolidayImportData(
+  prisma: PrismaClient,
+  holidays: CreateHolidayInput[]
+): Promise<ValidationResult> {
+  const valid: CreateHolidayInput[] = [];
+  const duplicates: { holiday: CreateHolidayInput; existingHoliday: string }[] = [];
+  const invalid: { row: number; data: any; message: string }[] = [];
+
+  // Get all existing holidays for the years in the import
+  const years = [...new Set(holidays.map(h => parseInt(h.date.substring(0, 4))))];
+  const existingHolidays = await prisma.holiday.findMany({
+    where: {
+      date: {
+        gte: new Date(`${Math.min(...years)}-01-01`),
+        lte: new Date(`${Math.max(...years)}-12-31`),
+      },
+    },
+    select: {
+      name: true,
+      date: true,
+    },
+  });
+
+  // Create lookup map
+  const existingMap = new Map<string, string>();
+  existingHolidays.forEach(h => {
+    const key = `${format(h.date, 'yyyy-MM-dd')}_${h.name.toLowerCase()}`;
+    existingMap.set(key, h.name);
+  });
+
+  // Check each holiday
+  holidays.forEach((holiday, index) => {
+    const key = `${holiday.date}_${holiday.name.toLowerCase()}`;
+    
+    if (existingMap.has(key)) {
+      duplicates.push({
+        holiday,
+        existingHoliday: existingMap.get(key)!,
+      });
+    } else {
+      valid.push(holiday);
+    }
+  });
+
+  return { valid, duplicates, invalid };
 }

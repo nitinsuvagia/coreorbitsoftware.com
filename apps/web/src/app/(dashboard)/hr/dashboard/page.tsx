@@ -17,9 +17,18 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { JobDescriptionForm } from '../jobs/_components/JobDescriptionForm';
 import type { JobFormData } from '../jobs/_components/JobDescriptionForm';
 import { ScheduleInterviewDialog } from '../interviews/_components/ScheduleInterviewDialog';
+import { SelectEmployeeReviewDialog } from '@/components/hr/SelectEmployeeReviewDialog';
 import { jobApi } from '@/lib/api/jobs';
 import { interviewApi, type Interview } from '@/lib/api/interviews';
 import { get } from '@/lib/api/client';
+import { useMyAttendance, useCheckIn, useCheckOut } from '@/hooks/use-attendance';
+import { formatDate, formatTime, formatDuration } from '@/lib/utils';
+import {
+  SessionHistoryDialog,
+  getTotalWorkedSeconds,
+  formatWorkedSeconds,
+  formatElapsedHMS,
+} from '@/components/attendance/session-history-dialog';
 import {
   getHRAlerts,
   getProbationContractStatus,
@@ -31,6 +40,11 @@ import {
   getExitsStats,
   getDiversityStats,
   getComplianceStats,
+  getPerformanceStats,
+  getCompensationStats,
+  getEngagementStats,
+  getSkillsStats,
+  getAssetsStats,
   type HRAlert,
   type ProbationContractStatus,
   type LeaveRequestsSummary,
@@ -41,6 +55,11 @@ import {
   type ExitsStats,
   type DiversityStats,
   type ComplianceStats,
+  type PerformanceStats,
+  type CompensationStats,
+  type EngagementStats,
+  type SkillsStats,
+  type AssetsStats,
 } from '@/lib/api/hr-dashboard';
 import { getInitials, getAvatarColor, cn } from '@/lib/utils';
 import {
@@ -86,6 +105,7 @@ import {
   Key,
   MessageSquareWarning,
   ClipboardCheck,
+  ClipboardList,
   UserCog,
   FileCheck,
   FileClock,
@@ -119,6 +139,9 @@ import {
   Package,
   Globe,
   Scale,
+  LogIn,
+  LogOut,
+  History,
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -922,14 +945,11 @@ const generateMockData = (): HRDashboardData => ({
   ],
 
   recentActivity: [
-    { id: '1', action: 'New hire onboarded', employee: 'Alex Thompson', timestamp: '2 hours ago', type: 'hire', details: 'Engineering Department' },
-    { id: '2', action: 'Exit interview completed', employee: 'Robert Johnson', timestamp: '4 hours ago', type: 'exit' },
-    { id: '3', action: 'Promoted to Senior Engineer', employee: 'Sarah Chen', timestamp: '1 day ago', type: 'promotion' },
-    { id: '4', action: 'Completed Leadership Training', employee: 'Michael Brown', timestamp: '1 day ago', type: 'training' },
-    { id: '5', action: 'Leave request approved', employee: 'Emily Davis', timestamp: '2 days ago', type: 'leave' },
-    { id: '6', action: 'Performance review submitted', employee: 'James Wilson', timestamp: '2 days ago', type: 'performance' },
-    { id: '7', action: 'Document uploaded', employee: 'Lisa Anderson', timestamp: '3 days ago', type: 'document' },
-    { id: '8', action: 'Grievance resolved', employee: 'Anonymous', timestamp: '3 days ago', type: 'grievance' },
+    { id: '1', action: 'New hire onboarded', employee: 'John Smith', timestamp: '2 hours ago', type: 'hire', details: 'Engineering Department' },
+    { id: '2', action: 'Exit interview completed', employee: 'Jane Doe', timestamp: '5 hours ago', type: 'exit', details: 'Marketing Department' },
+    { id: '3', action: 'Promotion approved', employee: 'Mike Johnson', timestamp: '1 day ago', type: 'promotion', details: 'Senior Developer' },
+    { id: '4', action: 'Training completed', employee: 'Sarah Wilson', timestamp: '2 days ago', type: 'training', details: 'Leadership Program' },
+    { id: '5', action: 'Leave approved', employee: 'Tom Brown', timestamp: '3 days ago', type: 'leave', details: 'Annual Leave - 5 days' },
   ],
 
   quickActions: [
@@ -937,8 +957,7 @@ const generateMockData = (): HRDashboardData => ({
     { id: '2', label: 'Post Job', icon: 'Briefcase', url: '/hr/jobs', color: 'bg-green-500' },
     { id: '3', label: 'Approve Leaves', icon: 'Calendar', url: '/hr/leave-management', count: 8, color: 'bg-orange-500' },
     { id: '4', label: 'Schedule Interview', icon: 'CalendarDays', url: '/hr/interviews', color: 'bg-purple-500' },
-    { id: '5', label: 'Manage Billing', icon: 'DollarSign', url: '/billing', color: 'bg-emerald-500' },
-    { id: '6', label: 'Notifications', icon: 'Bell', url: '/notifications', color: 'bg-pink-500' },
+    { id: '5', label: 'Notifications', icon: 'Bell', url: '/notifications', color: 'bg-pink-500' },
   ],
 });
 
@@ -968,6 +987,7 @@ const MetricCard = ({
   prefix = '',
   description,
   compact = false,
+  loading = false,
 }: {
   title: string;
   value: number | string;
@@ -978,31 +998,43 @@ const MetricCard = ({
   prefix?: string;
   description?: string;
   compact?: boolean;
+  loading?: boolean;
 }) => (
   <Card className={compact ? 'shadow-sm' : ''}>
     <CardContent className={compact ? 'p-4' : 'p-6'}>
-      <div className="flex items-center justify-between">
-        <div className="flex-1">
-          <p className={`font-medium text-muted-foreground ${compact ? 'text-xs' : 'text-sm'}`}>{title}</p>
-          <div className="flex items-baseline gap-2 mt-1">
-            <h3 className={`font-bold ${compact ? 'text-2xl' : 'text-3xl'}`}>
-              {prefix}
-              {value}
-              {suffix}
-            </h3>
-            {trend !== undefined && (
-              <span className={`flex items-center text-xs font-medium ${trend >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {trend >= 0 ? <TrendingUp className="h-3 w-3 mr-0.5" /> : <TrendingDown className="h-3 w-3 mr-0.5" />}
-                {Math.abs(trend)}%
-              </span>
-            )}
+      {loading ? (
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <Skeleton className="h-4 w-20 mb-2" />
+            <Skeleton className="h-8 w-16 mb-1" />
+            {description && <Skeleton className="h-3 w-24" />}
           </div>
-          {description && <p className="text-xs text-muted-foreground mt-1">{description}</p>}
+          <Skeleton className={`rounded-full ${compact ? 'h-10 w-10' : 'h-14 w-14'}`} />
         </div>
-        <div className={`rounded-full ${iconColorClasses[iconColor]} ${compact ? 'p-2.5' : 'p-4'}`}>
-          <Icon className={compact ? 'h-5 w-5' : 'h-6 w-6'} />
+      ) : (
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <p className={`font-medium text-muted-foreground ${compact ? 'text-xs' : 'text-sm'}`}>{title}</p>
+            <div className="flex items-baseline gap-2 mt-1">
+              <h3 className={`font-bold ${compact ? 'text-2xl' : 'text-3xl'}`}>
+                {prefix}
+                {value}
+                {suffix}
+              </h3>
+              {trend !== undefined && (
+                <span className={`flex items-center text-xs font-medium ${trend >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {trend >= 0 ? <TrendingUp className="h-3 w-3 mr-0.5" /> : <TrendingDown className="h-3 w-3 mr-0.5" />}
+                  {Math.abs(trend)}%
+                </span>
+              )}
+            </div>
+            {description && <p className="text-xs text-muted-foreground mt-1">{description}</p>}
+          </div>
+          <div className={`rounded-full ${iconColorClasses[iconColor]} ${compact ? 'p-2.5' : 'p-4'}`}>
+            <Icon className={compact ? 'h-5 w-5' : 'h-6 w-6'} />
+          </div>
         </div>
-      </div>
+      )}
     </CardContent>
   </Card>
 );
@@ -1134,6 +1166,7 @@ interface HRDashboardStats {
     totalEmployees: number;
     totalEmployeesTrend: number;
     activeEmployees: number;
+    activeEmployeesTrend?: number;
     newHiresThisMonth: number;
     newHiresTrend: number;
     onProbation: number;
@@ -1182,14 +1215,16 @@ interface DepartmentOverviewItem {
 
 export default function HRDashboardPage() {
   const router = useRouter();
-  const [data, setData] = useState<HRDashboardData | null>(null);
+  const [data] = useState<HRDashboardData>(generateMockData()); // Initial structure for fallbacks
   const [isDownloading, setIsDownloading] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const pageRef = useRef<HTMLDivElement>(null);
+  const [lastUpdatedTime, setLastUpdatedTime] = useState<string>('');
   
   // Dialog states
   const [showJobForm, setShowJobForm] = useState(false);
   const [showInterviewDialog, setShowInterviewDialog] = useState(false);
+  const [showReviewDialog, setShowReviewDialog] = useState(false);
   
   // Real data states
   const [todaysInterviews, setTodaysInterviews] = useState<Interview[]>([]);
@@ -1226,8 +1261,69 @@ export default function HRDashboardPage() {
   const [diversityLoading, setDiversityLoading] = useState(true);
   const [complianceStats, setComplianceStats] = useState<ComplianceStats | null>(null);
   const [complianceLoading, setComplianceLoading] = useState(true);
+  const [performanceStats, setPerformanceStats] = useState<PerformanceStats | null>(null);
+  const [performanceLoading, setPerformanceLoading] = useState(true);
+  const [compensationStats, setCompensationStats] = useState<CompensationStats | null>(null);
+  const [compensationLoading, setCompensationLoading] = useState(true);
+  const [engagementStats, setEngagementStats] = useState<EngagementStats | null>(null);
+  const [engagementLoading, setEngagementLoading] = useState(true);
+  const [skillsStats, setSkillsStats] = useState<SkillsStats | null>(null);
+  const [skillsLoading, setSkillsLoading] = useState(true);
+  const [assetsStats, setAssetsStats] = useState<AssetsStats | null>(null);
+  const [assetsLoading, setAssetsLoading] = useState(true);
 
   // Fetch today's attendance overview from API
+
+  // Personal Check-In/Check-Out
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: myAttendanceData } = useMyAttendance({
+    startDate: today,
+    endDate: today,
+    limit: 10,
+  });
+  const checkInMutation = useCheckIn();
+  const checkOutMutation = useCheckOut();
+
+  // Prefer the open (no checkout) session; fall back to the latest
+  const myTodayItems = myAttendanceData?.items || [];
+  const myTodayRecord = myTodayItems.find((r: any) => r.checkIn && !r.checkOut) || myTodayItems[0] || null;
+  const isCheckedIn = !!(myTodayRecord?.checkIn && !myTodayRecord?.checkOut);
+  const isCheckedOut = !!(myTodayRecord?.checkIn && myTodayRecord?.checkOut);
+  const hasAnySessions = myTodayItems.length > 0;
+
+  // Total worked today (all sessions combined, live-updating)
+  const [totalElapsed, setTotalElapsed] = useState(0);
+  useEffect(() => {
+    function tick() {
+      setTotalElapsed(getTotalWorkedSeconds(myTodayItems));
+    }
+    tick();
+    if (isCheckedIn) {
+      const id = setInterval(tick, 1000);
+      return () => clearInterval(id);
+    }
+  }, [myTodayItems, isCheckedIn]);
+
+  async function handleCheckIn() {
+    try {
+      await checkInMutation.mutateAsync({});
+      toast.success('Checked in successfully!');
+    } catch (error: any) {
+      const msg = error.response?.data?.error?.message || error.response?.data?.error || error.response?.data?.message || 'Failed to check in';
+      toast.error(typeof msg === 'string' ? msg : 'Failed to check in');
+    }
+  }
+
+  async function handleCheckOut() {
+    try {
+      await checkOutMutation.mutateAsync({});
+      toast.success('Checked out successfully!');
+    } catch (error: any) {
+      const msg = error.response?.data?.error?.message || error.response?.data?.error || error.response?.data?.message || 'Failed to check out';
+      toast.error(typeof msg === 'string' ? msg : 'Failed to check out');
+    }
+  }
+
   const loadAttendanceOverview = useCallback(async () => {
     setAttendanceLoading(true);
     try {
@@ -1423,6 +1519,76 @@ export default function HRDashboardPage() {
     }
   }, []);
 
+  // Fetch performance stats from API
+  const loadPerformanceStats = useCallback(async () => {
+    setPerformanceLoading(true);
+    try {
+      const stats = await getPerformanceStats();
+      setPerformanceStats(stats);
+    } catch (error) {
+      console.error('Error fetching performance stats:', error);
+      setPerformanceStats(null);
+    } finally {
+      setPerformanceLoading(false);
+    }
+  }, []);
+
+  // Fetch compensation stats from API
+  const loadCompensationStats = useCallback(async () => {
+    setCompensationLoading(true);
+    try {
+      const stats = await getCompensationStats();
+      setCompensationStats(stats);
+    } catch (error) {
+      console.error('Error fetching compensation stats:', error);
+      setCompensationStats(null);
+    } finally {
+      setCompensationLoading(false);
+    }
+  }, []);
+
+  // Fetch engagement stats from API
+  const loadEngagementStats = useCallback(async () => {
+    setEngagementLoading(true);
+    try {
+      const stats = await getEngagementStats();
+      setEngagementStats(stats);
+    } catch (error) {
+      console.error('Error fetching engagement stats:', error);
+      setEngagementStats(null);
+    } finally {
+      setEngagementLoading(false);
+    }
+  }, []);
+
+  // Fetch skills stats from API
+  const loadSkillsStats = useCallback(async () => {
+    setSkillsLoading(true);
+    try {
+      const stats = await getSkillsStats();
+      setSkillsStats(stats);
+    } catch (error) {
+      console.error('Error fetching skills stats:', error);
+      setSkillsStats(null);
+    } finally {
+      setSkillsLoading(false);
+    }
+  }, []);
+
+  // Fetch assets stats from API
+  const loadAssetsStats = useCallback(async () => {
+    setAssetsLoading(true);
+    try {
+      const stats = await getAssetsStats();
+      setAssetsStats(stats);
+    } catch (error) {
+      console.error('Error fetching assets stats:', error);
+      setAssetsStats(null);
+    } finally {
+      setAssetsLoading(false);
+    }
+  }, []);
+
   // Fetch today's interviews from API
   const loadTodaysInterviews = useCallback(async () => {
     setInterviewsLoading(true);
@@ -1442,7 +1608,9 @@ export default function HRDashboardPage() {
   }, []);
 
   useEffect(() => {
-    loadDashboardData();
+    // Set initial time on client mount to avoid hydration mismatch
+    setLastUpdatedTime(new Date().toLocaleTimeString());
+    // Load real data from APIs
     loadTodaysInterviews();
     loadCelebrations();
     loadAttendanceOverview();
@@ -1460,13 +1628,12 @@ export default function HRDashboardPage() {
     loadExitsStats();
     loadDiversityStats();
     loadComplianceStats();
-  }, [loadTodaysInterviews, loadCelebrations, loadAttendanceOverview, loadHRStats, loadDepartmentOverview, loadHRAlerts, loadProbationStatus, loadLeaveRequestsSummary, loadUpcomingEvents, loadRecentActivities, loadRecruitmentStats, loadOnboardingStats, loadExitsStats, loadDiversityStats, loadComplianceStats]);
-
-  const loadDashboardData = () => {
-    setTimeout(() => {
-      setData(generateMockData());
-    }, 500);
-  };
+    loadPerformanceStats();
+    loadCompensationStats();
+    loadEngagementStats();
+    loadSkillsStats();
+    loadAssetsStats();
+  }, [loadTodaysInterviews, loadCelebrations, loadAttendanceOverview, loadHRStats, loadDepartmentOverview, loadHRAlerts, loadProbationStatus, loadLeaveRequestsSummary, loadUpcomingEvents, loadRecentActivities, loadRecruitmentStats, loadOnboardingStats, loadExitsStats, loadDiversityStats, loadComplianceStats, loadPerformanceStats, loadCompensationStats, loadEngagementStats, loadSkillsStats, loadAssetsStats]);
 
   const handleDownloadPDF = async () => {
     if (!pageRef.current) return;
@@ -1582,7 +1749,7 @@ export default function HRDashboardPage() {
             <div>
               <h1 className="text-3xl font-bold tracking-tight">HR 360°</h1>
               <p className="text-muted-foreground">
-                Comprehensive view of all HR operations • Last updated: {new Date().toLocaleTimeString()}
+                Comprehensive view of all HR operations{lastUpdatedTime ? ` • Last updated: ${lastUpdatedTime}` : ''}
               </p>
             </div>
           </div>
@@ -1590,7 +1757,29 @@ export default function HRDashboardPage() {
         <div className="flex flex-wrap gap-2">
           {!isDownloading && (
             <>
-              <Button variant="outline" size="sm" onClick={loadDashboardData}>
+              <Button variant="outline" size="sm" onClick={() => {
+                setLastUpdatedTime(new Date().toLocaleTimeString());
+                loadTodaysInterviews();
+                loadCelebrations();
+                loadAttendanceOverview();
+                loadHRStats();
+                loadDepartmentOverview();
+                loadHRAlerts();
+                loadProbationStatus();
+                loadLeaveRequestsSummary();
+                loadUpcomingEvents();
+                loadRecentActivities();
+                loadRecruitmentStats();
+                loadOnboardingStats();
+                loadExitsStats();
+                loadDiversityStats();
+                loadComplianceStats();
+                loadPerformanceStats();
+                loadCompensationStats();
+                loadEngagementStats();
+                loadSkillsStats();
+                loadAssetsStats();
+              }}>
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Refresh
               </Button>
@@ -1633,7 +1822,7 @@ export default function HRDashboardPage() {
               label="Approve Leaves"
               icon={Calendar}
               url="/hr/leave-management"
-              count={data.attendance.leaveRequests.pending}
+              count={leaveRequestsSummary?.leaveRequests?.pending || 0}
               color="bg-orange-500"
             />
             <QuickActionButton
@@ -1643,10 +1832,10 @@ export default function HRDashboardPage() {
               onClick={() => setShowInterviewDialog(true)}
             />
             <QuickActionButton
-              label="Manage Billing"
-              icon={DollarSign}
-              url="/billing"
-              color="bg-emerald-500"
+              label="Write Review"
+              icon={ClipboardList}
+              color="bg-indigo-500"
+              onClick={() => setShowReviewDialog(true)}
             />
             <QuickActionButton
               label="Notifications"
@@ -1672,6 +1861,81 @@ export default function HRDashboardPage() {
         onOpenChange={setShowInterviewDialog}
         onSuccess={handleInterviewScheduled}
       />
+
+      {/* Write Performance Review Dialog */}
+      <SelectEmployeeReviewDialog
+        open={showReviewDialog}
+        onOpenChange={setShowReviewDialog}
+      />
+
+      {/* Personal Check-In / Check-Out Card */}
+      <Card className="bg-gradient-to-r from-primary/10 to-primary/5">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                {formatDate(new Date())}
+              </p>
+              {!hasAnySessions && (
+                <h3 className="text-2xl font-bold">You haven&apos;t checked in yet</h3>
+              )}
+              {isCheckedIn && myTodayRecord && (
+                <>
+                  <h3 className="text-2xl font-bold flex items-center gap-2">
+                    <Clock className="h-5 w-5 text-green-600" />
+                    Checked in at {formatTime(myTodayRecord.checkIn!)}
+                  </h3>
+                  <div className="flex items-center gap-2 text-lg font-mono tabular-nums text-primary">
+                    <Timer className="h-4 w-4 animate-pulse" />
+                    {formatElapsedHMS(totalElapsed)}
+                    <span className="text-xs font-sans text-muted-foreground ml-1">total today</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Remember to check out before you leave
+                  </p>
+                </>
+              )}
+              {hasAnySessions && !isCheckedIn && (
+                <>
+                  <h3 className="text-2xl font-bold">
+                    Worked for {formatWorkedSeconds(totalElapsed)}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    {myTodayItems.length} session{myTodayItems.length !== 1 ? 's' : ''} today
+                  </p>
+                </>
+              )}
+              {hasAnySessions && (
+                <SessionHistoryDialog>
+                  <button className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-1">
+                    <History className="h-3 w-3" />
+                    View all sessions
+                  </button>
+                </SessionHistoryDialog>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <Button
+                size="lg"
+                onClick={handleCheckIn}
+                disabled={isCheckedIn || checkInMutation.isPending}
+              >
+                <LogIn className="mr-2 h-5 w-5" />
+                {checkInMutation.isPending ? 'Checking in...' : 'Check In'}
+              </Button>
+              <Button
+                size="lg"
+                variant={isCheckedIn ? 'default' : 'outline'}
+                onClick={handleCheckOut}
+                disabled={!isCheckedIn || checkOutMutation.isPending}
+              >
+                <LogOut className="mr-2 h-5 w-5" />
+                {checkOutMutation.isPending ? 'Checking out...' : 'Check Out'}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Today's Overview Row */}
       <div className="grid gap-4 lg:grid-cols-3">
@@ -1839,7 +2103,7 @@ export default function HRDashboardPage() {
                         <Cake className="h-3 w-3" /> Birthdays
                       </p>
                       {celebrations.birthdaysToday.map((person) => {
-                        const nameParts = person.name.split(' ');
+                        const nameParts = (person.name || '').split(' ');
                         const firstName = nameParts[0] || '';
                         const lastName = nameParts.slice(1).join(' ') || '';
                         const avatarColor = getAvatarColor(person.id);
@@ -1871,7 +2135,7 @@ export default function HRDashboardPage() {
                         <Award className="h-3 w-3" /> Work Anniversaries
                       </p>
                       {celebrations.anniversariesToday.map((person) => {
-                        const nameParts = person.name.split(' ');
+                        const nameParts = (person.name || '').split(' ');
                         const firstName = nameParts[0] || '';
                         const lastName = nameParts.slice(1).join(' ') || '';
                         const avatarColor = getAvatarColor(person.id);
@@ -1913,35 +2177,39 @@ export default function HRDashboardPage() {
       {/* Key Metrics Row */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <MetricCard
-          title="Total Employees"
-          value={hrStats?.overview.totalEmployees ?? data.overview.totalEmployees}
-          trend={hrStats?.overview.totalEmployeesTrend ?? data.overview.totalEmployeesTrend}
+          title="Active Employees"
+          value={hrStats?.overview.activeEmployees ?? 0}
+          trend={hrStats?.overview.activeEmployeesTrend}
           icon={Users}
           iconColor="blue"
-          description={`${hrStats?.overview.activeEmployees ?? data.overview.activeEmployees} active`}
+          description={hrStats ? `${hrStats.overview.totalEmployees} total (incl. ex-employees)` : undefined}
+          loading={hrStatsLoading}
         />
         <MetricCard
           title="Open Positions"
-          value={hrStats?.recruitment.openPositions ?? data.recruitment.openPositions}
+          value={hrStats?.recruitment.openPositions ?? 0}
           icon={Briefcase}
           iconColor="purple"
-          description={`${hrStats?.recruitment.totalCandidates ?? data.recruitment.totalCandidates} candidates`}
+          description={hrStats ? `${hrStats.recruitment.totalCandidates} candidates` : undefined}
+          loading={hrStatsLoading}
         />
         <MetricCard
           title="New Hires (MTD)"
-          value={hrStats?.overview.newHiresThisMonth ?? data.overview.newHiresThisMonth}
-          trend={hrStats?.overview.newHiresTrend ?? data.overview.newHiresTrend}
+          value={hrStats?.overview.newHiresThisMonth ?? 0}
+          trend={hrStats?.overview.newHiresTrend}
           icon={UserPlus}
           iconColor="green"
-          description={`${hrStats?.onboarding.onboardingInProgress ?? data.onboarding.onboardingInProgress} onboarding`}
+          description={hrStats ? `${hrStats.onboarding.onboardingInProgress} onboarding` : undefined}
+          loading={hrStatsLoading}
         />
         <MetricCard
           title="Turnover Rate"
-          value={hrStats?.exits.turnoverRate ?? data.exits.turnoverRate}
+          value={hrStats?.exits.turnoverRate ?? 0}
           suffix="%"
           icon={TrendingDown}
           iconColor="red"
-          description={`${hrStats?.exits.retentionRate ?? data.exits.retentionRate}% retention`}
+          description={hrStats ? `${hrStats.exits.retentionRate}% retention` : undefined}
+          loading={hrStatsLoading}
         />
       </div>
 
@@ -1954,29 +2222,44 @@ export default function HRDashboardPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-between gap-2">
-            {[
-              { label: 'Candidates', value: hrStats?.lifecycle.candidates ?? data.employeeLifecycle.recruitment, color: 'bg-blue-500', icon: Users },
-              { label: 'Offer Accepted', value: hrStats?.lifecycle.offerAccepted ?? 0, color: 'bg-purple-500', icon: CheckCircle },
-              { label: 'Onboarding', value: hrStats?.lifecycle.onboarding ?? data.employeeLifecycle.onboarding, color: 'bg-green-500', icon: UserPlus },
-              { label: 'Active', value: hrStats?.lifecycle.active ?? data.employeeLifecycle.active, color: 'bg-emerald-500', icon: UserCheck },
-              { label: 'Offboarding', value: hrStats?.lifecycle.offboarding ?? data.employeeLifecycle.offboarding, color: 'bg-orange-500', icon: UserMinus },
-              { label: 'Alumni', value: hrStats?.lifecycle.alumni ?? data.employeeLifecycle.alumni, color: 'bg-gray-500', icon: Users },
-            ].map((stage, index) => (
-              <div key={stage.label} className="flex-1 flex items-center">
-                <div className="flex-1 text-center">
-                  <div className={`mx-auto w-14 h-14 rounded-full ${stage.color} flex items-center justify-center text-white mb-2`}>
-                    <stage.icon className="h-5 w-5" />
+          {hrStatsLoading ? (
+            <div className="flex items-center justify-between gap-2">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="flex-1 flex items-center">
+                  <div className="flex-1 text-center">
+                    <Skeleton className="mx-auto w-14 h-14 rounded-full mb-2" />
+                    <Skeleton className="mx-auto w-8 h-5 mb-1" />
+                    <Skeleton className="mx-auto w-16 h-3" />
                   </div>
-                  <p className="text-xl font-bold">{stage.value}</p>
-                  <p className="text-xs text-muted-foreground">{stage.label}</p>
+                  {i < 6 && <Skeleton className="h-4 w-4 mx-0.5" />}
                 </div>
-                {index < 5 && (
-                  <ArrowRight className="h-4 w-4 text-muted-foreground mx-0.5 flex-shrink-0" />
-                )}
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-2">
+              {[
+                { label: 'Candidates', value: hrStats?.lifecycle.candidates ?? 0, color: 'bg-blue-500', icon: Users },
+                { label: 'Offer Accepted', value: hrStats?.lifecycle.offerAccepted ?? 0, color: 'bg-purple-500', icon: CheckCircle },
+                { label: 'Onboarding', value: hrStats?.lifecycle.onboarding ?? 0, color: 'bg-green-500', icon: UserPlus },
+                { label: 'Active', value: hrStats?.lifecycle.active ?? 0, color: 'bg-emerald-500', icon: UserCheck },
+                { label: 'Offboarding', value: hrStats?.lifecycle.offboarding ?? 0, color: 'bg-orange-500', icon: UserMinus },
+                { label: 'Alumni', value: hrStats?.lifecycle.alumni ?? 0, color: 'bg-gray-500', icon: Users },
+              ].map((stage, index) => (
+                <div key={stage.label} className="flex-1 flex items-center">
+                  <div className="flex-1 text-center">
+                    <div className={`mx-auto w-14 h-14 rounded-full ${stage.color} flex items-center justify-center text-white mb-2`}>
+                      <stage.icon className="h-5 w-5" />
+                    </div>
+                    <p className="text-xl font-bold">{stage.value}</p>
+                    <p className="text-xs text-muted-foreground">{stage.label}</p>
+                  </div>
+                  {index < 5 && (
+                    <ArrowRight className="h-4 w-4 text-muted-foreground mx-0.5 flex-shrink-0" />
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -1990,8 +2273,8 @@ export default function HRDashboardPage() {
                 <AlertCircle className="h-4 w-4 text-red-500" />
                 Alerts & Notifications
               </CardTitle>
-              <Badge variant="destructive">
-                {alertsLoading ? '...' : (hrAlerts.length > 0 ? hrAlerts.filter(a => a.type === 'critical').length : data.alerts.filter(a => a.type === 'critical').length)}
+              <Badge variant={hrAlerts.some(a => a.type === 'critical') ? 'destructive' : 'secondary'}>
+                {alertsLoading ? '...' : hrAlerts.length}
               </Badge>
             </div>
           </CardHeader>
@@ -2007,9 +2290,9 @@ export default function HRDashboardPage() {
                     </div>
                   ))}
                 </div>
-              ) : (
+              ) : hrAlerts.length > 0 ? (
                 <div className="space-y-3">
-                  {(hrAlerts.length > 0 ? hrAlerts : data.alerts).map((alert) => (
+                  {hrAlerts.map((alert) => (
                     <div
                       key={alert.id}
                       className={`p-3 rounded-lg border-l-4 ${
@@ -2036,12 +2319,11 @@ export default function HRDashboardPage() {
                       </div>
                     </div>
                   ))}
-                  {hrAlerts.length === 0 && data.alerts.length === 0 && (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <CheckCircle className="h-8 w-8 mx-auto mb-2 text-green-500" />
-                      <p className="text-sm">No alerts or notifications</p>
-                    </div>
-                  )}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <CheckCircle className="h-8 w-8 mx-auto mb-2 text-green-500" />
+                  <p className="text-sm">No alerts or notifications</p>
                 </div>
               )}
             </ScrollArea>
@@ -2074,13 +2356,13 @@ export default function HRDashboardPage() {
                 <div className="grid grid-cols-2 gap-3 mb-4">
                   <MiniStatCard 
                     title="On Probation" 
-                    value={probationStatus?.onProbation ?? data.overview.onProbation} 
+                    value={probationStatus?.onProbation ?? 0} 
                     icon={Timer} 
                     iconColor="orange" 
                   />
                   <MiniStatCard 
                     title="Contract Expiring" 
-                    value={probationStatus?.contractExpiring ?? data.overview.contractExpiring} 
+                    value={probationStatus?.contractExpiring ?? 0} 
                     icon={FileClock} 
                     iconColor="red" 
                   />
@@ -2088,8 +2370,8 @@ export default function HRDashboardPage() {
                 <ScrollArea className="h-[120px]">
                   <div className="space-y-2">
                     <p className="text-xs font-medium text-muted-foreground">Probation Ending Soon</p>
-                    {(probationStatus?.probationEnding ?? data.todayOverview.probationEnding).length > 0 ? (
-                      (probationStatus?.probationEnding ?? data.todayOverview.probationEnding).map((emp) => (
+                    {(probationStatus?.probationEnding ?? []).length > 0 ? (
+                      (probationStatus?.probationEnding ?? []).map((emp) => (
                         <div key={emp.id} className="flex items-center justify-between p-2 rounded-lg border">
                           <div>
                             <p className="text-sm font-medium">{emp.name}</p>
@@ -2139,7 +2421,7 @@ export default function HRDashboardPage() {
               Department Overview
             </CardTitle>
             <Badge variant="secondary">
-              {(departmentOverview.length > 0 ? departmentOverview : data.departments).length} departments
+              {departmentOverview.length} departments
             </Badge>
           </div>
         </CardHeader>
@@ -2155,58 +2437,69 @@ export default function HRDashboardPage() {
                 </div>
               ))}
             </div>
-          ) : (
+          ) : departmentOverview.length > 0 ? (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-              {(departmentOverview.length > 0 ? departmentOverview : data.departments).map((dept, index) => {
+              {departmentOverview.map((dept, index) => {
                 const DeptIcon = getIcon(dept.icon);
                 const iconColors = [
-                  'text-blue-500',
-                  'text-purple-500',
-                  'text-pink-500',
-                  'text-amber-500',
-                  'text-green-500',
-                  'text-cyan-500',
-                  'text-rose-500',
-                  'text-indigo-500',
-                  'text-teal-500',
-                  'text-orange-500',
+                  { bg: 'bg-blue-500/10', text: 'text-blue-600 dark:text-blue-400' },
+                  { bg: 'bg-purple-500/10', text: 'text-purple-600 dark:text-purple-400' },
+                  { bg: 'bg-pink-500/10', text: 'text-pink-600 dark:text-pink-400' },
+                  { bg: 'bg-amber-500/10', text: 'text-amber-600 dark:text-amber-400' },
+                  { bg: 'bg-green-500/10', text: 'text-green-600 dark:text-green-400' },
+                  { bg: 'bg-cyan-500/10', text: 'text-cyan-600 dark:text-cyan-400' },
+                  { bg: 'bg-rose-500/10', text: 'text-rose-600 dark:text-rose-400' },
+                  { bg: 'bg-indigo-500/10', text: 'text-indigo-600 dark:text-indigo-400' },
+                  { bg: 'bg-teal-500/10', text: 'text-teal-600 dark:text-teal-400' },
+                  { bg: 'bg-orange-500/10', text: 'text-orange-600 dark:text-orange-400' },
                 ];
+                const colorSet = iconColors[index % iconColors.length];
                 return (
-                  <div 
+                  <Card 
                     key={dept.name} 
-                    className="group p-4 rounded-lg border bg-card hover:shadow-md hover:border-primary/20 transition-all duration-200 cursor-pointer"
+                    className="hover:shadow-md hover:border-primary/20 transition-all duration-200 cursor-pointer"
                   >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="p-2 rounded-lg bg-muted">
-                        <DeptIcon className={`h-5 w-5 ${iconColors[index % iconColors.length]}`} />
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-muted-foreground truncate">{dept.name}</p>
+                          <div className="flex items-baseline gap-2 mt-1">
+                            <p className="text-2xl font-bold">{dept.headcount}</p>
+                            <span className="text-xs text-muted-foreground">employees</span>
+                          </div>
+                          <div className="flex items-center gap-2 mt-2">
+                            {dept.onLeaveToday > 0 && (
+                              <Badge variant="secondary" className="text-[10px] h-5 px-1.5">
+                                {dept.onLeaveToday} on leave
+                              </Badge>
+                            )}
+                            {dept.openPositions > 0 ? (
+                              <div className="flex items-center gap-1 text-xs">
+                                <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                                <span className="text-green-600 dark:text-green-400 font-medium">{dept.openPositions} open</span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                <CheckCircle className="h-3 w-3" />
+                                <span>Fully staffed</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className={`p-3 rounded-full ${colorSet.bg} ml-3 flex-shrink-0`}>
+                          <DeptIcon className={`h-5 w-5 ${colorSet.text}`} />
+                        </div>
                       </div>
-                      {dept.onLeaveToday > 0 && (
-                        <Badge variant="secondary" className="text-[10px] h-5 px-1.5">
-                          {dept.onLeaveToday} on leave
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-sm font-semibold truncate mb-1">{dept.name}</p>
-                    <div className="flex items-baseline gap-1 mb-2">
-                      <p className="text-2xl font-bold">{dept.headcount}</p>
-                      <span className="text-xs text-muted-foreground">employees</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {dept.openPositions > 0 ? (
-                        <div className="flex items-center gap-1 text-xs">
-                          <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                          <span className="text-green-600 dark:text-green-400 font-medium">{dept.openPositions} open</span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <CheckCircle className="h-3 w-3" />
-                          <span>Fully staffed</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                    </CardContent>
+                  </Card>
                 );
               })}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <Building2 className="h-12 w-12 text-muted-foreground/30 mb-4" />
+              <p className="text-sm font-medium text-muted-foreground">No departments found</p>
+              <p className="text-xs text-muted-foreground mt-1">Department data will appear here once available</p>
             </div>
           )}
         </CardContent>
@@ -2223,7 +2516,6 @@ export default function HRDashboardPage() {
           <TabsTrigger value="compensation" className="text-xs">Compensation</TabsTrigger>
           <TabsTrigger value="diversity" className="text-xs">Diversity</TabsTrigger>
           <TabsTrigger value="engagement" className="text-xs">Engagement</TabsTrigger>
-          <TabsTrigger value="compliance" className="text-xs">Compliance</TabsTrigger>
           <TabsTrigger value="skills" className="text-xs">Skills</TabsTrigger>
           <TabsTrigger value="assets" className="text-xs">Assets</TabsTrigger>
         </TabsList>
@@ -2292,9 +2584,9 @@ export default function HRDashboardPage() {
                         <p className="text-xs font-medium text-muted-foreground">Leave Balance (Company-wide)</p>
                       </div>
                       <ScrollArea className="h-[180px] pr-2">
-                        <div className="space-y-2">
-                          {Object.entries(leaveRequestsSummary?.leaveBalance ?? data.attendance.leaveBalance).map(([type, count]) => {
-                            return (
+                        {leaveRequestsSummary?.leaveBalance && Object.keys(leaveRequestsSummary.leaveBalance).length > 0 ? (
+                          <div className="space-y-2">
+                            {Object.entries(leaveRequestsSummary.leaveBalance).map(([type, count]) => (
                               <div key={type} className="flex items-center gap-3 p-2 rounded-lg border">
                                 <div className="h-7 w-7 rounded-md bg-muted flex items-center justify-center text-xs font-medium">
                                   {String(type).charAt(0).toUpperCase()}
@@ -2306,9 +2598,14 @@ export default function HRDashboardPage() {
                                   {count} days
                                 </span>
                               </div>
-                            );
-                          })}
-                        </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center justify-center py-8 text-center">
+                            <Layers className="h-8 w-8 text-muted-foreground/30 mb-3" />
+                            <p className="text-xs text-muted-foreground">No leave balance data</p>
+                          </div>
+                        )}
                       </ScrollArea>
                     </div>
                   </div>
@@ -2353,12 +2650,13 @@ export default function HRDashboardPage() {
                             {(upcomingEvents?.birthdays ?? data.upcomingEvents.birthdays).slice(0, 3).map((person) => (
                               <div key={person.id} className="flex items-center gap-3 p-2 rounded-lg border hover:bg-muted/50 transition-colors">
                                 <Avatar className="h-8 w-8">
+                                  <AvatarImage src={(person as any).avatar || undefined} alt={person.name || ''} />
                                   <AvatarFallback className="text-xs bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400">
-                                    {person.name.split(' ').map(n => n[0]).join('')}
+                                    {(person.name || '').split(' ').map(n => n[0] || '').join('')}
                                   </AvatarFallback>
                                 </Avatar>
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-medium truncate">{person.name}</p>
+                                  <p className="text-sm font-medium truncate">{person.name || 'Unknown'}</p>
                                   <p className="text-xs text-muted-foreground truncate">{person.department}</p>
                                 </div>
                                 <Badge 
@@ -2391,11 +2689,14 @@ export default function HRDashboardPage() {
                           <div className="space-y-2">
                             {(upcomingEvents?.workAnniversaries ?? data.upcomingEvents.workAnniversaries).slice(0, 3).map((person) => (
                               <div key={person.id} className="flex items-center gap-3 p-2 rounded-lg border hover:bg-muted/50 transition-colors">
-                                <div className="h-8 w-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-amber-700 dark:text-amber-400 font-bold text-sm">
-                                  {person.years}
-                                </div>
+                                <Avatar className="h-8 w-8">
+                                  <AvatarImage src={(person as any).avatar || undefined} alt={person.name || ''} />
+                                  <AvatarFallback className="text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                                    {(person.name || '').split(' ').map(n => n[0] || '').join('')}
+                                  </AvatarFallback>
+                                </Avatar>
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-medium truncate">{person.name}</p>
+                                  <p className="text-sm font-medium truncate">{person.name || 'Unknown'}</p>
                                   <p className="text-xs text-muted-foreground truncate">{person.years} year{person.years > 1 ? 's' : ''} at company</p>
                                 </div>
                                 <Badge 
@@ -2467,7 +2768,7 @@ export default function HRDashboardPage() {
                     Recent Activity
                   </CardTitle>
                   <Badge variant="secondary">
-                    {(recentActivities.length > 0 ? recentActivities : data.recentActivity).length} events
+                    {recentActivities.length} events
                   </Badge>
                 </div>
               </CardHeader>
@@ -2485,9 +2786,9 @@ export default function HRDashboardPage() {
                         </div>
                       ))}
                     </div>
-                  ) : (
+                  ) : recentActivities.length > 0 ? (
                     <div className="space-y-2">
-                      {(recentActivities.length > 0 ? recentActivities : data.recentActivity).map((activity) => {
+                      {recentActivities.map((activity) => {
                         const activityType = 'type' in activity ? activity.type : '';
                         const typeConfig: Record<string, { icon: any; color: string; label: string }> = {
                           'hire': { icon: UserPlus, color: 'text-green-500', label: 'New Hire' },
@@ -2533,14 +2834,12 @@ export default function HRDashboardPage() {
                           </div>
                         );
                       })}
-                      
-                      {recentActivities.length === 0 && data.recentActivity.length === 0 && (
-                        <div className="flex flex-col items-center justify-center py-12 text-center">
-                          <Activity className="h-8 w-8 text-muted-foreground/50 mb-3" />
-                          <p className="text-sm text-muted-foreground">No recent activity</p>
-                          <p className="text-xs text-muted-foreground mt-1">Activities will appear here as they happen</p>
-                        </div>
-                      )}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-12 text-center">
+                      <Activity className="h-8 w-8 text-muted-foreground/50 mb-3" />
+                      <p className="text-sm text-muted-foreground">No recent activity</p>
+                      <p className="text-xs text-muted-foreground mt-1">Activities will appear here as they happen</p>
                     </div>
                   )}
                 </ScrollArea>
@@ -2645,10 +2944,10 @@ export default function HRDashboardPage() {
         {/* Performance Tab */}
         <TabsContent value="performance" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <MetricCard title="Avg Performance Score" value={data.performance.avgPerformanceScore} suffix="/10" icon={Target} compact />
-            <MetricCard title="Reviews Completed" value={data.performance.reviewsCompleted} icon={CheckCircle} iconColor="green" compact />
-            <MetricCard title="Reviews Pending" value={data.performance.reviewsPending} icon={Clock} iconColor="orange" compact />
-            <MetricCard title="Goals Achieved" value={`${data.performance.goalsAchieved}/${data.performance.totalGoals}`} icon={Target} iconColor="blue" compact />
+            <MetricCard title="Avg Performance Score" value={performanceStats?.avgScore ?? data.performance.avgPerformanceScore} suffix="/10" icon={Target} compact />
+            <MetricCard title="Reviews Completed" value={performanceStats?.reviewsCompleted ?? data.performance.reviewsCompleted} icon={CheckCircle} iconColor="green" compact />
+            <MetricCard title="Reviews Pending" value={performanceStats?.reviewsPending ?? data.performance.reviewsPending} icon={Clock} iconColor="orange" compact />
+            <MetricCard title="Needs Improvement" value={performanceStats?.needsImprovement ?? 0} icon={AlertTriangle} iconColor="red" compact />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
@@ -2658,23 +2957,31 @@ export default function HRDashboardPage() {
                 <CardDescription>Highest scoring employees this period</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {data.performance.topPerformers.map((performer, index) => (
-                    <div key={performer.id} className="flex items-center gap-4">
-                      <div className="flex items-center justify-center h-8 w-8 rounded-full bg-primary text-primary-foreground font-bold text-sm">
-                        #{index + 1}
+                {performanceStats?.topPerformers && performanceStats.topPerformers.length > 0 ? (
+                  <div className="space-y-4">
+                    {performanceStats.topPerformers.map((performer, index) => (
+                      <div key={performer.id} className="flex items-center gap-4">
+                        <div className="flex items-center justify-center h-8 w-8 rounded-full bg-primary text-primary-foreground font-bold text-sm">
+                          #{index + 1}
+                        </div>
+                        <Avatar className="h-10 w-10">
+                          <AvatarFallback>{(performer.name || '').split(' ').map(n => n[0] || '').join('')}</AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1">
+                          <p className="font-medium">{performer.name}</p>
+                          <p className="text-sm text-muted-foreground">{performer.department}</p>
+                        </div>
+                        <Badge variant="secondary" className="font-bold">{performer.score}/10</Badge>
                       </div>
-                      <Avatar className="h-10 w-10">
-                        <AvatarFallback>{performer.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1">
-                        <p className="font-medium">{performer.name}</p>
-                        <p className="text-sm text-muted-foreground">{performer.department}</p>
-                      </div>
-                      <Badge variant="secondary" className="font-bold">{performer.score}/10</Badge>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <Award className="h-10 w-10 text-muted-foreground/30 mb-3" />
+                    <p className="text-sm font-medium text-muted-foreground">No top performers data</p>
+                    <p className="text-xs text-muted-foreground mt-1">Performance reviews will populate this list</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -2684,22 +2991,27 @@ export default function HRDashboardPage() {
                 <CardDescription>Average scores by department</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {data.performance.departmentScores.map((dept) => (
-                    <div key={dept.department} className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium">{dept.department}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold">{dept.score}/10</span>
-                          <Badge variant="secondary" className={dept.improvement >= 0 ? 'text-green-600' : 'text-red-600'}>
-                            {dept.improvement >= 0 ? '+' : ''}{dept.improvement}%
-                          </Badge>
+                {performanceStats?.departmentScores && performanceStats.departmentScores.length > 0 ? (
+                  <div className="space-y-4">
+                    {performanceStats.departmentScores.map((dept) => (
+                      <div key={dept.department} className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">{dept.department}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold">{dept.score}/10</span>
+                          </div>
                         </div>
+                        <Progress value={dept.score * 10} className="h-2" />
                       </div>
-                      <Progress value={dept.score * 10} className="h-2" />
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <BarChart3 className="h-10 w-10 text-muted-foreground/30 mb-3" />
+                    <p className="text-sm font-medium text-muted-foreground">No department scores</p>
+                    <p className="text-xs text-muted-foreground mt-1">Performance data will appear here</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -2747,27 +3059,35 @@ export default function HRDashboardPage() {
                 <CardTitle className="text-base">Onboarding Progress</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {(onboardingStats?.pendingTasks ?? data.onboarding.pendingTasks).map((task) => (
-                    <div key={task.id} className="p-3 rounded-lg border space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Avatar className="h-8 w-8">
-                            <AvatarFallback className="text-xs">
-                              {task.employee.split(' ').map(n => n[0]).join('')}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <p className="font-medium text-sm">{task.employee}</p>
-                            <p className="text-xs text-muted-foreground">Day {task.daysElapsed}</p>
+                {onboardingStats?.pendingTasks && onboardingStats.pendingTasks.length > 0 ? (
+                  <div className="space-y-4">
+                    {onboardingStats.pendingTasks.map((task) => (
+                      <div key={task.id} className="p-3 rounded-lg border space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Avatar className="h-8 w-8">
+                              <AvatarFallback className="text-xs">
+                                {(task.employee || '').split(' ').map(n => n[0] || '').join('')}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <p className="font-medium text-sm">{task.employee}</p>
+                              <p className="text-xs text-muted-foreground">Day {task.daysElapsed}</p>
+                            </div>
                           </div>
+                          <Badge variant="outline">{task.tasksCompleted}/{task.totalTasks}</Badge>
                         </div>
-                        <Badge variant="outline">{task.tasksCompleted}/{task.totalTasks}</Badge>
+                        <Progress value={(task.tasksCompleted / task.totalTasks) * 100} className="h-2" />
                       </div>
-                      <Progress value={(task.tasksCompleted / task.totalTasks) * 100} className="h-2" />
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <UserPlus className="h-10 w-10 text-muted-foreground/30 mb-3" />
+                    <p className="text-sm font-medium text-muted-foreground">No onboarding in progress</p>
+                    <p className="text-xs text-muted-foreground mt-1">New hires will appear here</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -2788,17 +3108,25 @@ export default function HRDashboardPage() {
                 <CardTitle className="text-base">Top Exit Reasons</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {(exitsStats?.topExitReasons ?? data.exits.topExitReasons).map((reason) => (
-                    <div key={reason.reason} className="space-y-2">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="font-medium">{reason.reason}</span>
-                        <span className="text-muted-foreground">{reason.count} ({reason.percentage}%)</span>
+                {exitsStats?.topExitReasons && exitsStats.topExitReasons.length > 0 ? (
+                  <div className="space-y-4">
+                    {exitsStats.topExitReasons.map((reason) => (
+                      <div key={reason.reason} className="space-y-2">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="font-medium">{reason.reason}</span>
+                          <span className="text-muted-foreground">{reason.count} ({reason.percentage}%)</span>
+                        </div>
+                        <Progress value={reason.percentage} className="h-2" />
                       </div>
-                      <Progress value={reason.percentage} className="h-2" />
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <UserMinus className="h-10 w-10 text-muted-foreground/30 mb-3" />
+                    <p className="text-sm font-medium text-muted-foreground">No exit data available</p>
+                    <p className="text-xs text-muted-foreground mt-1">Exit interview data will appear here</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -2807,19 +3135,27 @@ export default function HRDashboardPage() {
                 <CardTitle className="text-base">Exits by Department</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {(exitsStats?.exitsByDepartment ?? data.exits.exitsByDepartment).map((dept) => (
-                    <div key={dept.department} className="flex items-center justify-between">
-                      <div className="space-y-1">
-                        <p className="font-medium">{dept.department}</p>
-                        <p className="text-sm text-muted-foreground">{dept.exits} employees</p>
+                {exitsStats?.exitsByDepartment && exitsStats.exitsByDepartment.length > 0 ? (
+                  <div className="space-y-4">
+                    {exitsStats.exitsByDepartment.map((dept) => (
+                      <div key={dept.department} className="flex items-center justify-between">
+                        <div className="space-y-1">
+                          <p className="font-medium">{dept.department}</p>
+                          <p className="text-sm text-muted-foreground">{dept.exits} employees</p>
+                        </div>
+                        <Badge variant={dept.rate > 3 ? 'destructive' : 'secondary'} className="font-bold">
+                          {dept.rate}%
+                        </Badge>
                       </div>
-                      <Badge variant={dept.rate > 3 ? 'destructive' : 'secondary'} className="font-bold">
-                        {dept.rate}%
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <Building2 className="h-10 w-10 text-muted-foreground/30 mb-3" />
+                    <p className="text-sm font-medium text-muted-foreground">No department exits</p>
+                    <p className="text-xs text-muted-foreground mt-1">Exit data by department will appear here</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -2828,63 +3164,111 @@ export default function HRDashboardPage() {
         {/* Compensation Tab */}
         <TabsContent value="compensation" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <MetricCard title="Total Payroll" value={`${(data.compensation.totalPayroll / 1000000).toFixed(1)}M`} prefix="$" icon={DollarSign} compact />
-            <MetricCard title="Avg Salary" value={`${(data.compensation.avgSalary / 1000).toFixed(0)}K`} prefix="$" icon={DollarSign} compact />
-            <MetricCard title="Expense Claims" value={data.compensation.expenseClaimsPending} icon={FileText} iconColor="orange" compact description={`$${(data.compensation.expenseClaimsAmount / 1000).toFixed(0)}K pending`} />
-            <MetricCard title="Benefits Enrollment" value={data.compensation.benefitsEnrollment} suffix="%" icon={Heart} iconColor="red" compact />
+            <MetricCard title="Total Payroll" value={compensationStats ? `${(compensationStats.totalPayroll / 100000).toFixed(1)}L` : `${(data.compensation.totalPayroll / 1000000).toFixed(1)}M`} prefix={compensationStats?.currency ?? '$'} icon={DollarSign} compact />
+            <MetricCard title="Avg Salary" value={compensationStats ? `${(compensationStats.avgSalary / 1000).toFixed(0)}K` : `${(data.compensation.avgSalary / 1000).toFixed(0)}K`} prefix={compensationStats?.currency ?? '$'} icon={DollarSign} compact />
+            <MetricCard title="Employees with Salary" value={compensationStats?.employeesWithSalary ?? data.compensation.expenseClaimsPending} icon={Users} iconColor="green" compact />
+            <MetricCard title="No Salary Data" value={compensationStats?.employeesWithoutSalary ?? 0} icon={AlertCircle} iconColor="orange" compact />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Salary Increase Budget</CardTitle>
+                <CardTitle className="text-base">Salary Distribution</CardTitle>
+                <CardDescription>Number of employees by salary band ({compensationStats?.currency ?? 'INR'})</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Budget Used</span>
-                    <span className="font-medium">
-                      ${(data.compensation.salaryIncreasesUsed / 1000).toFixed(0)}K / ${(data.compensation.salaryIncreasesBudget / 1000).toFixed(0)}K
-                    </span>
-                  </div>
-                  <Progress value={(data.compensation.salaryIncreasesUsed / data.compensation.salaryIncreasesBudget) * 100} className="h-2" />
-                </div>
-                <div className="flex items-center justify-between p-3 rounded-lg bg-muted">
-                  <span className="text-sm font-medium">Pending Increments</span>
-                  <Badge variant="secondary">{data.compensation.pendingIncrements}</Badge>
+              <CardContent>
+                <div className="space-y-3">
+                  {compensationStats?.salaryBands.map((band) => {
+                    const maxCount = Math.max(...(compensationStats?.salaryBands.map(b => b.count) ?? [1]));
+                    return (
+                      <div key={band.range} className="space-y-2">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">{band.range}</span>
+                          <span className="font-medium">{band.count} employees</span>
+                        </div>
+                        <Progress value={(band.count / maxCount) * 100} className="h-2" />
+                      </div>
+                    );
+                  }) ?? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <p>No salary data available</p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Top Benefits</CardTitle>
+                <CardTitle className="text-base">Compensation Summary</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {data.compensation.topBenefits.map((benefit) => {
-                    const BenefitIcon = getIcon(benefit.icon);
-                    return (
-                      <div key={benefit.benefit} className="flex items-center justify-between p-3 rounded-lg border">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 rounded-full bg-primary/10">
-                            <BenefitIcon className="h-4 w-4 text-primary" />
-                          </div>
-                          <div>
-                            <p className="font-medium">{benefit.benefit}</p>
-                            <p className="text-sm text-muted-foreground">{benefit.enrolled} enrolled</p>
-                          </div>
-                        </div>
-                        {benefit.cost > 0 && (
-                          <span className="text-sm font-medium">${(benefit.cost / 1000).toFixed(0)}K/mo</span>
-                        )}
-                      </div>
-                    );
-                  })}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-muted">
+                    <span className="text-sm text-muted-foreground">Total Monthly Payroll</span>
+                    <span className="font-bold text-lg">{compensationStats?.currency ?? '₹'} {((compensationStats?.totalPayroll ?? 0) / 100000).toFixed(2)}L</span>
+                  </div>
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-muted">
+                    <span className="text-sm text-muted-foreground">Average Salary</span>
+                    <span className="font-bold text-lg">{compensationStats?.currency ?? '₹'} {((compensationStats?.avgSalary ?? 0) / 1000).toFixed(0)}K</span>
+                  </div>
+                  <div className="flex items-center justify-between p-3 rounded-lg border">
+                    <span className="text-sm font-medium">Data Coverage</span>
+                    <Badge variant="secondary">
+                      {compensationStats ? Math.round((compensationStats.employeesWithSalary / (compensationStats.employeesWithSalary + compensationStats.employeesWithoutSalary)) * 100) : 0}%
+                    </Badge>
+                  </div>
                 </div>
               </CardContent>
             </Card>
           </div>
+
+          {/* Department-wise Salary Distribution */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Department-wise Salary Distribution</CardTitle>
+              <CardDescription>Total salary distribution across departments ({compensationStats?.currency ?? 'INR'})</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {compensationStats?.departmentSalaries && compensationStats.departmentSalaries.length > 0 ? (
+                <div className="space-y-4">
+                  {compensationStats.departmentSalaries.map((dept) => {
+                    const maxSalary = Math.max(...(compensationStats?.departmentSalaries?.map(d => d.totalSalary) ?? [1]));
+                    const percentage = (dept.totalSalary / (compensationStats?.totalPayroll || 1)) * 100;
+                    return (
+                      <div key={dept.departmentId} className="space-y-2">
+                        <div className="flex items-center justify-between text-sm">
+                          <div className="flex items-center gap-2">
+                            <Building2 className="h-4 w-4 text-muted-foreground" />
+                            <span className="font-medium">{dept.department}</span>
+                            <Badge variant="outline" className="text-xs">
+                              {dept.employeeCount} {dept.employeeCount === 1 ? 'employee' : 'employees'}
+                            </Badge>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-bold">{compensationStats?.currency ?? '₹'} {(dept.totalSalary / 100000).toFixed(2)}L</span>
+                            <span className="text-muted-foreground ml-2">({percentage.toFixed(1)}%)</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Progress value={(dept.totalSalary / maxSalary) * 100} className="h-2 flex-1" />
+                          <span className="text-xs text-muted-foreground w-20 text-right">
+                            Avg: {compensationStats?.currency ?? '₹'}{(dept.avgSalary / 1000).toFixed(0)}K
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Building2 className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                  <p>No department salary data available</p>
+                  <p className="text-xs mt-1">Add salary information to employees to see distribution</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* Diversity Tab */}
@@ -2924,17 +3308,25 @@ export default function HRDashboardPage() {
                 <CardTitle className="text-base">Age Distribution</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {(diversityStats?.ageDistribution ?? data.diversity.ageDistribution).map((age) => (
-                    <div key={age.range} className="flex items-center justify-between">
-                      <span className="text-sm font-medium">{age.range}</span>
-                      <div className="flex items-center gap-2">
-                        <Progress value={age.percentage} className="w-20 h-2" />
-                        <Badge variant="secondary">{age.count}</Badge>
+                {diversityStats?.ageDistribution && diversityStats.ageDistribution.length > 0 ? (
+                  <div className="space-y-3">
+                    {diversityStats.ageDistribution.map((age) => (
+                      <div key={age.range} className="flex items-center justify-between">
+                        <span className="text-sm font-medium">{age.range}</span>
+                        <div className="flex items-center gap-2">
+                          <Progress value={age.percentage} className="w-20 h-2" />
+                          <Badge variant="secondary">{age.count}</Badge>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <Users className="h-10 w-10 text-muted-foreground/30 mb-3" />
+                    <p className="text-sm font-medium text-muted-foreground">No age data available</p>
+                    <p className="text-xs text-muted-foreground mt-1">Employee age distribution will appear here</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -2943,17 +3335,25 @@ export default function HRDashboardPage() {
                 <CardTitle className="text-base">Location Distribution</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {(diversityStats?.locationDistribution ?? data.diversity.locationDistribution).map((loc) => (
-                    <div key={loc.location} className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <MapPin className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm">{loc.location}</span>
+                {diversityStats?.locationDistribution && diversityStats.locationDistribution.length > 0 ? (
+                  <div className="space-y-3">
+                    {diversityStats.locationDistribution.map((loc) => (
+                      <div key={loc.location} className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <MapPin className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-sm">{loc.location}</span>
+                        </div>
+                        <Badge variant="secondary">{loc.count}</Badge>
                       </div>
-                      <Badge variant="secondary">{loc.count}</Badge>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <MapPin className="h-10 w-10 text-muted-foreground/30 mb-3" />
+                    <p className="text-sm font-medium text-muted-foreground">No location data</p>
+                    <p className="text-xs text-muted-foreground mt-1">Employee location distribution will appear here</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -2962,10 +3362,10 @@ export default function HRDashboardPage() {
         {/* Engagement Tab */}
         <TabsContent value="engagement" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <MetricCard title="Satisfaction Score" value={data.engagement.satisfactionScore} suffix="/10" icon={ThumbsUp} iconColor="green" compact />
-            <MetricCard title="Engagement Score" value={data.engagement.engagementScore} suffix="/10" icon={Heart} iconColor="red" compact />
-            <MetricCard title="eNPS" value={data.engagement.eNPS} icon={Target} iconColor="blue" compact />
-            <MetricCard title="Survey Response" value={data.engagement.surveyResponseRate} suffix="%" icon={BarChart3} iconColor="purple" compact />
+            <MetricCard title="Satisfaction Score" value={engagementStats?.satisfactionScore ?? data.engagement.satisfactionScore} suffix="/10" icon={ThumbsUp} iconColor="green" compact />
+            <MetricCard title="Engagement Score" value={engagementStats?.engagementScore ?? data.engagement.engagementScore} suffix="/10" icon={Heart} iconColor="red" compact />
+            <MetricCard title="eNPS" value={engagementStats?.eNPS ?? data.engagement.eNPS} icon={Target} iconColor="blue" compact />
+            <MetricCard title="Recognitions" value={engagementStats?.recognitionsThisMonth ?? data.engagement.recognitionsThisMonth} icon={Award} iconColor="yellow" compact />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
@@ -2975,10 +3375,10 @@ export default function HRDashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 gap-4">
-                  <MiniStatCard title="Recognitions" value={data.engagement.recognitionsThisMonth} icon={Award} iconColor="yellow" />
-                  <MiniStatCard title="Feedback" value={data.engagement.feedbackSubmitted} icon={MessageSquareWarning} iconColor="blue" />
-                  <MiniStatCard title="1-on-1s" value={data.engagement.oneOnOnesMeetings} icon={Users} iconColor="green" />
-                  <MiniStatCard title="Team Events" value={data.engagement.teamEvents} icon={PartyPopper} iconColor="pink" />
+                  <MiniStatCard title="Recognitions" value={engagementStats?.recognitionsThisMonth ?? data.engagement.recognitionsThisMonth} icon={Award} iconColor="yellow" />
+                  <MiniStatCard title="Feedback" value={engagementStats?.feedbackSubmitted ?? data.engagement.feedbackSubmitted} icon={MessageSquareWarning} iconColor="blue" />
+                  <MiniStatCard title="1-on-1s" value={engagementStats?.oneOnOnesMeetings ?? data.engagement.oneOnOnesMeetings} icon={Users} iconColor="green" />
+                  <MiniStatCard title="Team Events" value={engagementStats?.teamEvents ?? data.engagement.teamEvents} icon={PartyPopper} iconColor="pink" />
                 </div>
               </CardContent>
             </Card>
@@ -2988,81 +3388,28 @@ export default function HRDashboardPage() {
                 <CardTitle className="text-base">Recent Recognitions</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {data.engagement.recentRecognitions.map((rec, i) => (
-                    <div key={i} className="p-3 rounded-lg border">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Star className="h-4 w-4 text-yellow-500" />
-                        <span className="text-sm font-medium">{rec.from}</span>
-                        <ArrowRight className="h-3 w-3 text-muted-foreground" />
-                        <span className="text-sm font-medium">{rec.to}</span>
+                {engagementStats?.recentRecognitions && engagementStats.recentRecognitions.length > 0 ? (
+                  <div className="space-y-3">
+                    {engagementStats.recentRecognitions.map((rec, i) => (
+                      <div key={i} className="p-3 rounded-lg border">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Star className="h-4 w-4 text-yellow-500" />
+                          <span className="text-sm font-medium">{rec.from}</span>
+                          <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                          <span className="text-sm font-medium">{rec.to}</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground">{rec.message}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{rec.timestamp}</p>
                       </div>
-                      <p className="text-sm text-muted-foreground">{rec.message}</p>
-                      <p className="text-xs text-muted-foreground mt-1">{rec.timestamp}</p>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        {/* Compliance Tab */}
-        <TabsContent value="compliance" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <MetricCard title="Compliance Rate" value={complianceStats?.complianceRate ?? data.compliance.complianceRate} suffix="%" icon={Shield} iconColor="green" compact />
-            <MetricCard title="Documents Expiring" value={complianceStats?.documentsExpiring ?? data.compliance.documentsExpiring} icon={FileWarning} iconColor="orange" compact />
-            <MetricCard title="Training Overdue" value={complianceStats?.mandatoryTrainingOverdue ?? data.compliance.mandatoryTrainingOverdue} icon={AlertTriangle} iconColor="red" compact />
-            <MetricCard title="BG Verifications" value={`${complianceStats?.bgVerificationsCompleted ?? data.compliance.bgVerificationsCompleted}/${(complianceStats?.bgVerificationsCompleted ?? data.compliance.bgVerificationsCompleted) + (complianceStats?.bgVerificationsPending ?? data.compliance.bgVerificationsPending)}`} icon={ClipboardCheck} compact />
-          </div>
-
-          <div className="grid gap-4 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Expiring Documents</CardTitle>
-                <CardDescription>Documents requiring attention</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {(complianceStats?.expiringDocuments ?? data.compliance.expiringDocuments).map((doc) => (
-                    <div key={doc.id} className="flex items-center justify-between p-3 rounded-lg border">
-                      <div>
-                        <p className="font-medium text-sm">{doc.employeeName}</p>
-                        <p className="text-xs text-muted-foreground">{doc.documentType}</p>
-                      </div>
-                      <Badge variant={
-                        doc.status === 'expired' ? 'destructive' :
-                        doc.status === 'expiring-soon' ? 'default' : 'secondary'
-                      }>
-                        {doc.daysUntil < 0 ? 'Expired' : `${doc.daysUntil} days`}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Pending Verifications</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {(complianceStats?.pendingVerifications ?? data.compliance.pendingVerifications).map((ver) => (
-                    <div key={ver.id} className="flex items-center justify-between p-3 rounded-lg border">
-                      <div>
-                        <p className="font-medium text-sm">{ver.employeeName}</p>
-                        <p className="text-xs text-muted-foreground">{ver.verificationType}</p>
-                      </div>
-                      <Badge variant={
-                        ver.status === 'in-progress' ? 'default' :
-                        ver.status === 'pending' ? 'secondary' : 'outline'
-                      }>
-                        {ver.status}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <Award className="h-10 w-10 text-muted-foreground/30 mb-3" />
+                    <p className="text-sm font-medium text-muted-foreground">No recent recognitions</p>
+                    <p className="text-xs text-muted-foreground mt-1">Employee recognitions will appear here</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -3071,44 +3418,55 @@ export default function HRDashboardPage() {
         {/* Skills Tab */}
         <TabsContent value="skills" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <MetricCard title="Total Skills" value={data.skills.totalSkills} icon={Code} compact />
-            <MetricCard title="Certifications" value={data.skills.totalCertifications} icon={BadgeCheck} iconColor="green" compact />
-            <MetricCard title="Skill Gaps" value={data.skills.skillGaps} icon={AlertCircle} iconColor="orange" compact />
-            <MetricCard title="Certs Expiring" value={data.skills.certificationsDue} icon={FileClock} iconColor="red" compact />
+            <MetricCard title="Unique Skills" value={skillsStats?.totalUniqueSkills ?? data.skills.totalSkills} icon={Code} compact />
+            <MetricCard title="Employees with Skills" value={skillsStats?.employeesWithSkills ?? 0} icon={Users} iconColor="green" compact />
+            <MetricCard title="Avg Skills/Employee" value={skillsStats?.avgSkillsPerEmployee?.toFixed(1) ?? '0'} icon={Target} iconColor="blue" compact />
+            <MetricCard title="Most Common Skills" value={skillsStats?.topSkills.length ?? 0} icon={BadgeCheck} iconColor="purple" compact />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Top Skills</CardTitle>
+                <CardDescription>Most common skills in the organization</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="flex flex-wrap gap-2">
-                  {data.skills.topSkills.map((skill) => (
-                    <Badge key={skill.skill} variant="outline" className="text-sm py-1.5 px-3">
-                      {skill.skill}
-                      <span className="ml-2 text-xs text-muted-foreground">{skill.count}</span>
-                    </Badge>
-                  ))}
+                  {(skillsStats?.topSkills ?? data.skills.topSkills).length > 0 ? (
+                    (skillsStats?.topSkills ?? data.skills.topSkills).map((skill) => (
+                      <Badge key={skill.skill} variant="outline" className="text-sm py-1.5 px-3">
+                        {skill.skill}
+                        <span className="ml-2 text-xs text-muted-foreground">{skill.count}</span>
+                      </Badge>
+                    ))
+                  ) : (
+                    <div className="text-center py-4 text-muted-foreground w-full">
+                      <p>No skills data available</p>
+                      <p className="text-xs mt-1">Add skills to employee profiles to see data here</p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Expiring Certifications</CardTitle>
+                <CardTitle className="text-base">Skills Distribution Summary</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {data.skills.upcomingCertifications.map((cert) => (
-                    <div key={cert.id} className="flex items-center justify-between p-3 rounded-lg border">
-                      <div>
-                        <p className="font-medium text-sm">{cert.employeeName}</p>
-                        <p className="text-xs text-muted-foreground">{cert.certification}</p>
-                      </div>
-                      <Badge variant="secondary">{cert.daysUntil} days</Badge>
-                    </div>
-                  ))}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-muted">
+                    <span className="text-sm text-muted-foreground">Total Unique Skills</span>
+                    <span className="font-bold text-lg">{skillsStats?.totalUniqueSkills ?? 0}</span>
+                  </div>
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-muted">
+                    <span className="text-sm text-muted-foreground">Employees with Skills</span>
+                    <span className="font-bold text-lg">{skillsStats?.employeesWithSkills ?? 0}</span>
+                  </div>
+                  <div className="flex items-center justify-between p-3 rounded-lg border">
+                    <span className="text-sm font-medium">Avg Skills per Employee</span>
+                    <Badge variant="secondary">{skillsStats?.avgSkillsPerEmployee?.toFixed(1) ?? '0'}</Badge>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -3118,10 +3476,10 @@ export default function HRDashboardPage() {
         {/* Assets Tab */}
         <TabsContent value="assets" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <MetricCard title="Total Assigned" value={data.assets.totalAssetsAssigned} icon={Laptop} compact />
-            <MetricCard title="Pending Returns" value={data.assets.pendingReturns} icon={Package} iconColor="orange" compact />
-            <MetricCard title="Pending Issues" value={data.assets.pendingIssues} icon={AlertCircle} iconColor="yellow" compact />
-            <MetricCard title="Categories" value={data.assets.assetsByCategory.length} icon={Layers} compact />
+            <MetricCard title="Total Assigned" value={assetsStats?.totalAssigned ?? 0} icon={Laptop} compact />
+            <MetricCard title="Pending Returns" value={assetsStats?.pendingReturns ?? 0} icon={Package} iconColor="orange" compact />
+            <MetricCard title="Pending Issues" value={assetsStats?.pendingIssues ?? 0} icon={AlertCircle} iconColor="yellow" compact />
+            <MetricCard title="Categories" value={assetsStats?.assetsByCategory?.length ?? 0} icon={Layers} compact />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
@@ -3130,32 +3488,34 @@ export default function HRDashboardPage() {
                 <CardTitle className="text-base">Assets by Category</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {data.assets.assetsByCategory.map((asset) => {
-                    const AssetIcon = getIcon(asset.icon);
-                    return (
-                      <div key={asset.category} className="flex items-center justify-between p-3 rounded-lg border">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 rounded-full bg-primary/10">
-                            <AssetIcon className="h-4 w-4 text-primary" />
+                {(assetsStats?.assetsByCategory ?? []).length > 0 ? (
+                  <div className="space-y-3">
+                    {(assetsStats?.assetsByCategory ?? []).map((asset) => {
+                      const AssetIcon = getIcon(asset.icon);
+                      return (
+                        <div key={asset.category} className="flex items-center justify-between p-3 rounded-lg border">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 rounded-full bg-primary/10">
+                              <AssetIcon className="h-4 w-4 text-primary" />
+                            </div>
+                            <span className="font-medium">{asset.category}</span>
                           </div>
-                          <span className="font-medium">{asset.category}</span>
+                          <div className="flex items-center gap-2 text-sm">
+                            <span className="text-green-600">{asset.assigned} assigned</span>
+                            <span className="text-muted-foreground">•</span>
+                            <span className="text-blue-600">{asset.available} available</span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2 text-sm">
-                          <span className="text-green-600">{asset.assigned} assigned</span>
-                          <span className="text-muted-foreground">•</span>
-                          <span className="text-blue-600">{asset.available} available</span>
-                          {asset.maintenance > 0 && (
-                            <>
-                              <span className="text-muted-foreground">•</span>
-                              <span className="text-orange-600">{asset.maintenance} maintenance</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Laptop className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No asset data available</p>
+                    <p className="text-xs mt-1">Asset tracking module not yet implemented</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -3164,22 +3524,29 @@ export default function HRDashboardPage() {
                 <CardTitle className="text-base">Recent Assignments</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {data.assets.recentAssignments.map((assignment) => (
-                    <div key={assignment.id} className="flex items-center justify-between p-3 rounded-lg border">
-                      <div>
-                        <p className="font-medium text-sm">{assignment.employeeName}</p>
-                        <p className="text-xs text-muted-foreground">{assignment.assetName}</p>
+                {(assetsStats?.recentAssignments ?? []).length > 0 ? (
+                  <div className="space-y-3">
+                    {(assetsStats?.recentAssignments ?? []).map((assignment) => (
+                      <div key={assignment.id} className="flex items-center justify-between p-3 rounded-lg border">
+                        <div>
+                          <p className="font-medium text-sm">{assignment.employeeName}</p>
+                          <p className="text-xs text-muted-foreground">{assignment.assetName}</p>
+                        </div>
+                        <Badge variant={
+                          assignment.status === 'assigned' ? 'default' :
+                          assignment.status === 'pending-return' ? 'secondary' : 'outline'
+                        }>
+                          {assignment.status}
+                        </Badge>
                       </div>
-                      <Badge variant={
-                        assignment.status === 'assigned' ? 'default' :
-                        assignment.status === 'pending-return' ? 'secondary' : 'outline'
-                      }>
-                        {assignment.status}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No recent assignments</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
