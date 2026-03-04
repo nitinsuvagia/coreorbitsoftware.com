@@ -23,24 +23,85 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Create .env.production on server
+      - name: Check EC2 Prerequisites
         run: |
-          ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENVSSH'
-          cat > /tmp/.env.production << 'EOF'
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'PREREQ'
+          set -e
+          echo "🔍 Checking prerequisites..."
+          
+          # Check Docker
+          if ! command -v docker &> /dev/null; then
+            echo "❌ Docker not found. Installing..."
+            sudo apt-get update
+            sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+            sudo apt-get update
+            sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+            sudo usermod -aG docker $USER
+            echo "✅ Docker installed"
+          else
+            echo "✅ Docker: $(docker --version)"
+          fi
+          
+          # Check Docker Compose
+          if ! docker compose version &> /dev/null; then
+            echo "❌ Docker Compose not found. Installing..."
+            sudo apt-get install -y docker-compose-plugin
+            echo "✅ Docker Compose installed"
+          else
+            echo "✅ Docker Compose: $(docker compose version)"
+          fi
+          
+          # Check Git
+          if ! command -v git &> /dev/null; then
+            echo "❌ Git not found. Installing..."
+            sudo apt-get install -y git
+            echo "✅ Git installed"
+          else
+            echo "✅ Git: $(git --version)"
+          fi
+          
+          # Ensure Docker is running
+          if ! sudo systemctl is-active --quiet docker; then
+            echo "🔄 Starting Docker service..."
+            sudo systemctl start docker
+            sudo systemctl enable docker
+          fi
+          
+          # Check disk space
+          echo "💾 Disk space:"
+          df -h / | tail -1
+          
+          # Check memory
+          echo "🧠 Memory:"
+          free -h | head -2
+          
+          echo "✅ All prerequisites satisfied!"
+          PREREQ
+
+      - name: Create .env on server
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENVSSH'
+          mkdir -p /opt/office-management
+          cat > /opt/office-management/.env << 'EOF'
           NODE_ENV=production
           
-          # Database
+          # Database (Docker uses DB_PASSWORD, services use DATABASE_URL)
           DATABASE_URL=${{ secrets.DATABASE_URL }}
           DATABASE_HOST=postgres
           DATABASE_PORT=5432
           DATABASE_USER=postgres
           DATABASE_PASSWORD=${{ secrets.DATABASE_PASSWORD }}
           DATABASE_NAME=oms_master
+          DB_USER=postgres
+          DB_PASSWORD=${{ secrets.DATABASE_PASSWORD }}
+          DB_NAME=oms_master
           
           # Redis
           REDIS_URL=redis://redis:6379
+          REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
           
           # JWT
           JWT_SECRET=${{ secrets.JWT_SECRET }}
@@ -51,6 +112,8 @@ jobs:
           # Domain
           MAIN_DOMAIN=${{ secrets.MAIN_DOMAIN }}
           NEXT_PUBLIC_API_URL=${{ secrets.API_URL }}
+          NEXT_PUBLIC_APP_URL=${{ secrets.APP_URL }}
+          NEXT_PUBLIC_PORTAL_URL=${{ secrets.APP_URL }}
           
           # CORS
           CORS_ORIGINS=*
@@ -66,15 +129,15 @@ jobs:
 
       - name: Deploy to EC2
         run: |
-          ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'DEPLOYSSH'
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'DEPLOYSSH'
           set -e
           
           echo "🚀 Starting deployment..."
           
           # Create app directory if not exists
-          sudo mkdir -p ${{ env.APP_DIR }}
-          sudo chown $USER:$USER ${{ env.APP_DIR }}
-          cd ${{ env.APP_DIR }}
+          sudo mkdir -p /opt/office-management
+          sudo chown $USER:$USER /opt/office-management
+          cd /opt/office-management
           
           # Clone or pull latest code
           if [ -d ".git" ]; then
@@ -83,12 +146,8 @@ jobs:
             git reset --hard origin/main || git reset --hard origin/master
           else
             echo "📦 Cloning repository..."
-            git clone ${{ secrets.GITHUB_REPO_URL }} .
+            git clone ${{ secrets.REPO_URL }} .
           fi
-          
-          # Copy env file
-          cp /tmp/.env.production .env.production
-          cp /tmp/.env.production .env
           
           # Build and deploy with Docker Compose
           echo "🔨 Building Docker images..."
@@ -107,13 +166,15 @@ jobs:
           echo "⏳ Waiting for services to start..."
           sleep 30
           
-          ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'HEALTHSSH'
-          # Check if services are running
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'HEALTHSSH'
+          cd /opt/office-management
+          
           if curl -s http://localhost:4000/health | grep -q "ok"; then
             echo "✅ API Gateway is healthy"
           else
             echo "❌ API Gateway health check failed"
             docker compose logs api-gateway --tail=50
+            exit 1
           fi
           
           if curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 | grep -q "200\|307"; then
@@ -121,6 +182,7 @@ jobs:
           else
             echo "❌ Web App health check failed"
             docker compose logs web --tail=50
+            exit 1
           fi
           HEALTHSSH
 
