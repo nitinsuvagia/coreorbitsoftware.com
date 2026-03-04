@@ -26,7 +26,7 @@ jobs:
 
       - name: Check EC2 Prerequisites
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'PREREQ'
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -o ServerAliveCountMax=30 ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'PREREQ'
           set -e
           echo "🔍 Checking prerequisites..."
           
@@ -105,7 +105,7 @@ jobs:
 
       - name: Create .env on server
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENVSSH'
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -o ServerAliveCountMax=30 ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENVSSH'
           cat > /opt/office-management/.env << 'EOF'
           NODE_ENV=production
           
@@ -149,8 +149,9 @@ jobs:
           ENVSSH
 
       - name: Deploy to EC2
+        timeout-minutes: 45
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'DEPLOYSSH'
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -o TCPKeepAlive=yes ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'DEPLOYSSH'
           set -e
           
           echo "🚀 Starting deployment..."
@@ -173,9 +174,16 @@ jobs:
           fi
           
           # Build and deploy with Docker Compose
-          # Using sudo for docker commands since group membership requires new session
-          echo "🔨 Building Docker images..."
-          sudo docker compose -f docker-compose.prod.yml build --parallel
+          # Build services sequentially to avoid memory issues
+          echo "🔨 Building infrastructure images..."
+          sudo docker compose -f docker-compose.prod.yml build postgres redis nginx
+          
+          echo "🔨 Building backend services..."
+          sudo docker compose -f docker-compose.prod.yml build auth-service employee-service attendance-service document-service task-service project-service report-service notification-service billing-service ai-service api-gateway
+          
+          echo "🔨 Building frontend apps (this may take a few minutes)..."
+          sudo docker compose -f docker-compose.prod.yml build web
+          sudo docker compose -f docker-compose.prod.yml build public-website
           
           echo "🔄 Restarting services..."
           sudo docker compose -f docker-compose.prod.yml down || true
@@ -188,9 +196,9 @@ jobs:
       - name: Health Check
         run: |
           echo "⏳ Waiting for services to start..."
-          sleep 30
+          sleep 60
           
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'HEALTHSSH'
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ServerAliveInterval=60 ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'HEALTHSSH'
           cd /opt/office-management
           
           if curl -s http://localhost:4000/health | grep -q "ok"; then
