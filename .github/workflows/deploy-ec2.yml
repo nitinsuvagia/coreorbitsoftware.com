@@ -78,13 +78,27 @@ jobs:
           echo "🧠 Memory:"
           free -h | head -2
           
+          # Clean up disk space if low
+          DISK_USAGE=$(df / | tail -1 | awk '{print $5}' | sed 's/%//')
+          if [ "$DISK_USAGE" -gt 80 ]; then
+            echo "⚠️ Disk usage high ($DISK_USAGE%). Cleaning up..."
+            sudo apt-get clean
+            sudo apt-get autoremove -y
+            docker system prune -af --volumes || true
+            echo "💾 Disk space after cleanup:"
+            df -h / | tail -1
+          fi
+          
+          # Create app directory with proper permissions
+          sudo mkdir -p /opt/office-management
+          sudo chown $USER:$USER /opt/office-management
+          
           echo "✅ All prerequisites satisfied!"
           PREREQ
 
       - name: Create .env on server
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENVSSH'
-          mkdir -p /opt/office-management
           cat > /opt/office-management/.env << 'EOF'
           NODE_ENV=production
           
