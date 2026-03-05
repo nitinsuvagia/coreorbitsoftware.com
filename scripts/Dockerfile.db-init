@@ -1,0 +1,35 @@
+# Database Initialization Container
+# Used to run migrations and seed data for production deployments
+
+FROM node:20-slim
+
+# Install OpenSSL and PostgreSQL client
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openssl \
+    ca-certificates \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+COPY packages/database/package*.json ./packages/database/
+
+# Install dependencies
+RUN npm ci --workspace=@oms/database
+
+# Copy database package
+COPY packages/database ./packages/database
+COPY tsconfig.base.json ./
+
+# Generate Prisma clients
+RUN cd packages/database && \
+    npx prisma generate --schema=./prisma/master/schema.prisma && \
+    npx prisma generate --schema=./prisma/tenant/schema.prisma
+
+# Copy initialization script
+COPY scripts/init-database.sh /app/init-database.sh
+RUN chmod +x /app/init-database.sh
+
+ENTRYPOINT ["/app/init-database.sh"]

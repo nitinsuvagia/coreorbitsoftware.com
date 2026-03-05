@@ -153,9 +153,16 @@ cmd_deploy() {
     ssh_cmd "cd $APP_DIR && docker compose -f docker-compose.prod.yml build"
     ssh_cmd "cd $APP_DIR && docker compose -f docker-compose.prod.yml up -d"
 
-    # Wait for services to start
-    print_warning "Waiting for services to start..."
-    sleep 30
+    # Wait for postgres to be ready
+    print_warning "Waiting for PostgreSQL to be ready..."
+    sleep 15
+
+    # Run database initialization (migrations + seed)
+    print_warning "Running database initialization..."
+    ssh_cmd "cd $APP_DIR && docker compose -f docker-compose.prod.yml --profile init run --rm db-init" || {
+        print_warning "db-init container not available, running migrations manually..."
+        cmd_db_migrate
+    }
 
     # Check service health
     ssh_cmd "cd $APP_DIR && docker compose -f docker-compose.prod.yml ps"
@@ -306,6 +313,271 @@ start_nginx_without_ssl() {
         nginx:alpine"
     
     print_warning "Nginx started in HTTP-only mode. Run './scripts/ec2-deploy.sh ssl' to setup SSL manually."
+}
+
+# ===========================================
+# DATABASE COMMANDS
+# ===========================================
+
+cmd_db_init() {
+    print_header "Database Initialization (Full Setup)"
+    
+    print_warning "Running schema setup..."
+    ssh_cmd "docker exec oms-postgres psql -U postgres -d oms_master -f /sql/oms_master_schema.sql" 2>/dev/null || true
+    
+    print_warning "Running seed data..."
+    ssh_cmd "docker exec oms-postgres psql -U postgres -d oms_master -f /sql/oms_master_seed.sql"
+    
+    # Update admin password if custom one is set
+    if [ -n "${ADMIN_PASSWORD:-}" ] && [ "$ADMIN_PASSWORD" != "admin123" ]; then
+        cmd_db_update_admin_password
+    fi
+    
+    print_success "Database initialization complete!"
+}
+
+cmd_db_schema() {
+    print_header "Running Database Schema"
+    
+    print_warning "Applying master database schema..."
+    ssh_cmd "docker exec oms-postgres psql -U postgres -d oms_master -f /sql/oms_master_schema.sql"
+    
+    print_success "Schema applied!"
+}
+
+cmd_db_migrate() {
+    print_header "Running Database Migrations (Prisma)"
+    
+    # First try SQL approach
+    print_warning "Checking if schema needs to be applied..."
+    
+    # Check if tables exist
+    TABLE_EXISTS=$(ssh_cmd "docker exec oms-postgres psql -U postgres -d oms_master -tAc \"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'platform_admins')\"")
+    
+    if [ "$TABLE_EXISTS" = "t" ]; then
+        print_info "Schema already exists. Running Prisma migrations for any updates..."
+        ssh_cmd "cd $APP_DIR && docker run --rm --network office-management_oms-network \
+            -v \$(pwd)/packages/database:/app/packages/database \
+            -e MASTER_DATABASE_URL=\$(grep MASTER_DATABASE_URL .env | cut -d= -f2-) \
+            -w /app/packages/database \
+            node:20-slim \
+            sh -c 'apt-get update && apt-get install -y openssl && npm install -g prisma@5.22.0 && prisma migrate deploy --schema=./prisma/master/schema.prisma'" 2>/dev/null || true
+    else
+        print_warning "Schema not found. Running full schema setup..."
+        cmd_db_init
+    fi
+    
+    print_success "Migrations complete!"
+}
+
+cmd_db_seed() {
+    print_header "Seeding Database"
+    
+    print_warning "Running seed data..."
+    ssh_cmd "docker exec oms-postgres psql -U postgres -d oms_master -f /sql/oms_master_seed.sql"
+    
+    # Update admin password if custom one is set
+    if [ -n "${ADMIN_PASSWORD:-}" ] && [ "$ADMIN_PASSWORD" != "admin123" ]; then
+        cmd_db_update_admin_password
+    fi
+    
+    print_success "Database seeded!"
+    echo "  Platform Admin:"
+    echo "    Email:    admin@oms.local"
+    echo "    Password: ${ADMIN_PASSWORD:-admin123}"
+}
+
+cmd_db_update_admin_password() {
+    print_warning "Updating admin password..."
+    
+    ADMIN_PWD="${ADMIN_PASSWORD:-admin123}"
+    
+    # Generate bcrypt hash using auth-service container
+    HASH=$(ssh_cmd "docker exec oms-auth-service node -e \"const bcrypt = require('bcryptjs'); console.log(bcrypt.hashSync('$ADMIN_PWD', 12));\"" 2>/dev/null)
+    
+    if [ -n "$HASH" ]; then
+        ssh_cmd "docker exec oms-postgres psql -U postgres -d oms_master -c \"UPDATE platform_admins SET password_hash = '$HASH', updated_at = NOW() WHERE email = 'admin@oms.local';\""
+        print_success "Admin password updated!"
+    else
+        print_warn "Could not generate password hash. Using default password."
+    fi
+}
+
+cmd_db_reset() {
+    print_header "Resetting Database (DANGEROUS)"
+    
+    echo ""
+    print_error "WARNING: This will DELETE all data and start fresh!"
+    read -p "Are you sure you want to continue? (type 'yes' to confirm): " CONFIRM
+    
+    if [ "$CONFIRM" != "yes" ]; then
+        echo "Aborted."
+        exit 0
+    fi
+    
+    print_warning "Dropping and recreating database..."
+    ssh_cmd "docker exec oms-postgres psql -U postgres -c 'DROP DATABASE IF EXISTS oms_master;'"
+    ssh_cmd "docker exec oms-postgres psql -U postgres -c 'CREATE DATABASE oms_master;'"
+    
+    print_warning "Running schema and seed..."
+    cmd_db_init
+    
+    print_warning "Restarting services to reconnect to database..."
+    ssh_cmd "cd $APP_DIR && docker compose -f docker-compose.prod.yml restart"
+    
+    print_success "Database reset complete!"
+}
+
+# ===========================================
+# TENANT DATABASE COMMANDS
+# ===========================================
+
+cmd_tenant_list() {
+    print_header "Listing Tenant Databases"
+    
+    ssh_cmd "docker exec oms-postgres psql -U postgres -tAc \"SELECT datname FROM pg_database WHERE datname LIKE 'oms_tenant_%' ORDER BY datname;\""
+}
+
+cmd_tenant_create() {
+    TENANT_SLUG="${2:-}"
+    
+    if [ -z "$TENANT_SLUG" ]; then
+        echo "Usage: ./scripts/ec2-deploy.sh tenant-create <tenant_slug>"
+        echo "Example: ./scripts/ec2-deploy.sh tenant-create acme_corp"
+        exit 1
+    fi
+    
+    print_header "Creating Tenant Database: oms_tenant_$TENANT_SLUG"
+    
+    # Create database
+    print_warning "Creating database..."
+    ssh_cmd "docker exec oms-postgres psql -U postgres -c 'CREATE DATABASE oms_tenant_$TENANT_SLUG;'"
+    
+    # Apply schema
+    print_warning "Applying schema..."
+    ssh_cmd "docker exec oms-postgres psql -U postgres -d oms_tenant_$TENANT_SLUG -f /sql/oms_tenant_schema.sql"
+    
+    # Apply seed data
+    print_warning "Seeding default data..."
+    ssh_cmd "docker exec oms-postgres psql -U postgres -d oms_tenant_$TENANT_SLUG -f /sql/oms_tenant_seed.sql"
+    
+    print_success "Tenant database oms_tenant_$TENANT_SLUG created successfully!"
+}
+
+cmd_tenant_reset() {
+    TENANT_SLUG="${2:-}"
+    
+    if [ -z "$TENANT_SLUG" ]; then
+        echo "Usage: ./scripts/ec2-deploy.sh tenant-reset <tenant_slug>"
+        echo "Example: ./scripts/ec2-deploy.sh tenant-reset acme_corp"
+        exit 1
+    fi
+    
+    print_header "Resetting Tenant Database: oms_tenant_$TENANT_SLUG (DANGEROUS)"
+    
+    echo ""
+    print_error "WARNING: This will DELETE all tenant data!"
+    read -p "Are you sure you want to continue? (type 'yes' to confirm): " CONFIRM
+    
+    if [ "$CONFIRM" != "yes" ]; then
+        echo "Aborted."
+        exit 0
+    fi
+    
+    # Drop and recreate
+    print_warning "Dropping database..."
+    ssh_cmd "docker exec oms-postgres psql -U postgres -c 'DROP DATABASE IF EXISTS oms_tenant_$TENANT_SLUG;'"
+    
+    print_warning "Creating database..."
+    ssh_cmd "docker exec oms-postgres psql -U postgres -c 'CREATE DATABASE oms_tenant_$TENANT_SLUG;'"
+    
+    # Apply schema
+    print_warning "Applying schema..."
+    ssh_cmd "docker exec oms-postgres psql -U postgres -d oms_tenant_$TENANT_SLUG -f /sql/oms_tenant_schema.sql"
+    
+    # Apply seed data
+    print_warning "Seeding default data..."
+    ssh_cmd "docker exec oms-postgres psql -U postgres -d oms_tenant_$TENANT_SLUG -f /sql/oms_tenant_seed.sql"
+    
+    print_success "Tenant database oms_tenant_$TENANT_SLUG reset successfully!"
+}
+
+cmd_tenant_reset_all() {
+    print_header "Resetting ALL Tenant Databases (VERY DANGEROUS)"
+    
+    echo ""
+    print_error "WARNING: This will DELETE ALL TENANT DATA!"
+    read -p "Are you sure you want to continue? (type 'yes' to confirm): " CONFIRM
+    
+    if [ "$CONFIRM" != "yes" ]; then
+        echo "Aborted."
+        exit 0
+    fi
+    
+    # Get list of tenant databases
+    TENANT_DBS=$(ssh_cmd "docker exec oms-postgres psql -U postgres -tAc \"SELECT datname FROM pg_database WHERE datname LIKE 'oms_tenant_%';\"")
+    
+    for DB in $TENANT_DBS; do
+        SLUG=$(echo "$DB" | sed 's/oms_tenant_//')
+        
+        print_warning "Resetting $DB..."
+        
+        # Drop and recreate
+        ssh_cmd "docker exec oms-postgres psql -U postgres -c 'DROP DATABASE IF EXISTS $DB;'"
+        ssh_cmd "docker exec oms-postgres psql -U postgres -c 'CREATE DATABASE $DB;'"
+        ssh_cmd "docker exec oms-postgres psql -U postgres -d $DB -f /sql/oms_tenant_schema.sql"
+        ssh_cmd "docker exec oms-postgres psql -U postgres -d $DB -f /sql/oms_tenant_seed.sql"
+        
+        print_success "  $DB reset!"
+    done
+    
+    print_success "All tenant databases reset!"
+}
+
+cmd_reset_all() {
+    print_header "Complete Database Reset (NUCLEAR OPTION)"
+    
+    echo ""
+    print_error "WARNING: This will DELETE:"
+    echo "  - oms_master database (platform data)"
+    echo "  - ALL oms_tenant_* databases (tenant data)"
+    echo ""
+    read -p "Are you absolutely sure? (type 'RESET ALL' to confirm): " CONFIRM
+    
+    if [ "$CONFIRM" != "RESET ALL" ]; then
+        echo "Aborted."
+        exit 0
+    fi
+    
+    # Reset master
+    print_warning "Resetting master database..."
+    ssh_cmd "docker exec oms-postgres psql -U postgres -c 'DROP DATABASE IF EXISTS oms_master;'"
+    ssh_cmd "docker exec oms-postgres psql -U postgres -c 'CREATE DATABASE oms_master;'"
+    ssh_cmd "docker exec oms-postgres psql -U postgres -d oms_master -f /sql/oms_master_schema.sql"
+    ssh_cmd "docker exec oms-postgres psql -U postgres -d oms_master -f /sql/oms_master_seed.sql"
+    
+    # Reset all tenants
+    TENANT_DBS=$(ssh_cmd "docker exec oms-postgres psql -U postgres -tAc \"SELECT datname FROM pg_database WHERE datname LIKE 'oms_tenant_%';\"")
+    
+    for DB in $TENANT_DBS; do
+        print_warning "Dropping $DB..."
+        ssh_cmd "docker exec oms-postgres psql -U postgres -c 'DROP DATABASE IF EXISTS $DB;'"
+    done
+    
+    # Update admin password if set
+    if [ -n "${ADMIN_PASSWORD:-}" ] && [ "$ADMIN_PASSWORD" != "admin123" ]; then
+        cmd_db_update_admin_password
+    fi
+    
+    # Restart services
+    print_warning "Restarting services..."
+    ssh_cmd "cd $APP_DIR && docker compose -f docker-compose.prod.yml restart"
+    
+    print_success "Complete database reset done!"
+    echo ""
+    echo "Platform Admin:"
+    echo "  Email:    admin@oms.local"
+    echo "  Password: ${ADMIN_PASSWORD:-admin123}"
 }
 
 cmd_logs() {
@@ -649,7 +921,20 @@ show_help() {
     echo "  ssl-godaddy - Setup wildcard SSL via GoDaddy DNS API"
     echo "  shell     - SSH into the server"
     echo "  db-shell  - Access database shell"
-    echo "  migrate   - Run database migrations"
+    echo ""
+    echo "Database Commands:"
+    echo "  db-init   - Initialize database (full schema + seed)"
+    echo "  db-schema - Apply schema SQL only (no seed data)"
+    echo "  db-migrate - Run Prisma migrations (auto-detects if init needed)"
+    echo "  db-seed   - Seed platform admin and initial data"
+    echo "  db-reset  - Reset database (DANGEROUS - deletes all data)"
+    echo ""
+    echo "Tenant Database Commands:"
+    echo "  tenant-list        - List all tenant databases"
+    echo "  tenant-create <slug> - Create a new tenant database"
+    echo "  tenant-reset <slug>  - Reset a specific tenant database"
+    echo "  tenant-reset-all   - Reset ALL tenant databases"
+    echo "  reset-all          - Reset EVERYTHING (master + all tenants)"
     echo ""
     echo "Configuration (edit script or use env vars):"
     echo "  EC2_HOST  - EC2 instance IP or hostname"
@@ -657,10 +942,12 @@ show_help() {
     echo "  SSH_KEY   - Path to SSH key"
     echo "  GODADDY_API_KEY / GODADDY_API_SECRET - Required for ssl-godaddy/bootstrap"
     echo "  SSL_EMAIL - Optional SSL registration email"
+    echo "  ADMIN_PASSWORD - Password for seeded admin user (default: admin123)"
     echo ""
     echo "Example:"
     echo "  EC2_HOST=54.123.45.67 SSH_KEY=~/.ssh/my-key.pem ./scripts/ec2-deploy.sh deploy"
     echo "  ./scripts/ec2-deploy.sh ssl-certbot  # Simple SSL setup"
+    echo "  ./scripts/ec2-deploy.sh db-init      # Initialize database"
 }
 
 COMMAND="${1:-help}"
@@ -708,8 +995,38 @@ case "$COMMAND" in
     db-shell)
         cmd_db_shell
         ;;
+    db-init)
+        cmd_db_init
+        ;;
+    db-schema)
+        cmd_db_schema
+        ;;
+    db-migrate)
+        cmd_db_migrate
+        ;;
+    db-seed)
+        cmd_db_seed
+        ;;
+    db-reset)
+        cmd_db_reset
+        ;;
+    tenant-list)
+        cmd_tenant_list
+        ;;
+    tenant-create)
+        cmd_tenant_create "$@"
+        ;;
+    tenant-reset)
+        cmd_tenant_reset "$@"
+        ;;
+    tenant-reset-all)
+        cmd_tenant_reset_all
+        ;;
+    reset-all)
+        cmd_reset_all
+        ;;
     migrate)
-        cmd_migrate
+        cmd_db_migrate
         ;;
     help|--help|-h)
         show_help

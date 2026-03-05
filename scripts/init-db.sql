@@ -1,17 +1,24 @@
+-- ============================================================================
 -- Initial Database Setup Script
--- Creates master database and tenant database template
+-- ============================================================================
+-- This script runs automatically when PostgreSQL container starts for the first time.
+-- It only creates extensions. The actual schema is in scripts/sql/oms_master_schema.sql
+--
+-- For full schema setup, run:
+--   docker exec oms-postgres psql -U postgres -d oms_master -f /sql/oms_master_schema.sql
+--   docker exec oms-postgres psql -U postgres -d oms_master -f /sql/oms_master_seed.sql
+--
+-- ============================================================================
 
--- Create extensions
+-- Create extensions (used by all databases)
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- Create tenant database function
-CREATE OR REPLACE FUNCTION create_tenant_database(tenant_slug VARCHAR)
-RETURNS VOID AS $$
+-- Log startup
+DO $$
 BEGIN
-    EXECUTE format('CREATE DATABASE office_tenant_%s', tenant_slug);
-END;
-$$ LANGUAGE plpgsql;
-
--- Insert initial platform admin (password: admin123)
--- This will be run after Prisma migrations
+    RAISE NOTICE '========================================';
+    RAISE NOTICE 'PostgreSQL initialized with extensions';
+    RAISE NOTICE 'uuid-ossp and pgcrypto enabled';
+    RAISE NOTICE '========================================';
+END $$;

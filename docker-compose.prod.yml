@@ -57,6 +57,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./scripts/sql:/sql:ro
       - ./backups:/backups
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
@@ -66,6 +67,31 @@ services:
     networks:
       - oms-network
     # Security: No port exposed to host - only internal network access
+
+  # ===========================================
+  # DATABASE INITIALIZATION (runs once)
+  # ===========================================
+  
+  db-init:
+    build:
+      context: .
+      dockerfile: scripts/Dockerfile.db-init
+    container_name: oms-db-init
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME:-oms_master}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - oms-network
+    restart: "no"
+    profiles:
+      - init
 
   redis:
     image: redis:7-alpine
