@@ -273,7 +273,7 @@ This will:
 - Issue wildcard SSL for `coreorbitsoftware.com` and `*.coreorbitsoftware.com`
 - Configure automatic renewal and nginx reload
 
-### Step 6: Deploy Application (If not using bootstrap)
+### Step 6: Deploy Application (Recommended)
 
 ```bash
 # Deploy the application
@@ -285,17 +285,26 @@ This will:
 - Copy production environment
 - Build Docker images
 - Start all services
+- **Automatically setup SSL** if not already configured
+- Configure auto-renewal for certificates
 
-### Step 7: Setup SSL Certificates (If not using bootstrap)
+> **Note:** SSL is automatically configured during deployment. The script detects if certificates are missing or expired and sets them up using Let's Encrypt Certbot. No manual SSL setup needed!
+
+### Manual SSL Setup (Only if automatic setup fails)
+
+If DNS is not yet propagated or automatic SSL fails:
 
 ```bash
-# Ensure DNS is propagated first!
-./scripts/ec2-deploy.sh ssl
+# Manual SSL setup
+./scripts/ec2-deploy.sh ssl-certbot
 ```
 
 ---
 
 ## 🔐 SSL Certificate Setup
+
+> **Note:** SSL is now **automatically configured** during `./scripts/ec2-deploy.sh deploy`. 
+> The sections below are for manual setup or troubleshooting only.
 
 ### Option A: Certbot Standalone (Recommended for Quick Setup)
 
