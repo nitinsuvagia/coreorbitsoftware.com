@@ -225,29 +225,41 @@ app.get('/api/maintenance-status', getMaintenanceStatusHandler);
 app.get('/api/v1/public/pricing-plans', async (req: Request, res: Response) => {
   try {
     const prisma = getMasterPrisma();
-    const plans = await prisma.subscriptionPlan.findMany({
-      where: { 
-        isActive: true,
-        isPublic: true,  // Only show public plans
-      },
-      orderBy: { monthlyPrice: 'asc' },
-    });
+    let plans: any[] = [];
+
+    try {
+      plans = await prisma.subscriptionPlan.findMany({
+        where: {
+          isActive: true,
+          isPublic: true,
+        },
+        orderBy: { monthlyPrice: 'asc' },
+      });
+    } catch (queryError: any) {
+      logger.warn({ queryError }, 'isPublic filter unavailable, falling back to active plans only');
+      plans = await prisma.subscriptionPlan.findMany({
+        where: {
+          isActive: true,
+        },
+        orderBy: { monthlyPrice: 'asc' },
+      });
+    }
     
     // Transform to frontend-expected format
-    const formattedPlans = plans.map(plan => ({
+    const formattedPlans = plans.map((plan: any) => ({
       id: plan.id,
       name: plan.name,
       slug: plan.slug,
       tier: plan.tier,
-      description: (plan as any).description || '',
+      description: plan.description || '',
       monthlyPrice: Number(plan.monthlyPrice),
       yearlyPrice: Number(plan.yearlyPrice),
       currency: plan.currency || 'USD',
       maxUsers: plan.maxUsers,
       maxStorageGB: Number(plan.maxStorage),
       maxProjects: plan.maxProjects,
-      maxClients: (plan as any).maxClients,
-      features: plan.features as any || {},
+      maxClients: plan.maxClients,
+      features: (plan.features && typeof plan.features === 'object') ? plan.features : {},
     }));
     
     res.json({ success: true, data: formattedPlans });

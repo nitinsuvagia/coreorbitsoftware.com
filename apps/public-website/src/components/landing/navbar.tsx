@@ -5,8 +5,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Menu, X, Sparkles } from 'lucide-react';
 
-// Portal URL for login/register - defaults to localhost:3000 for development
-const PORTAL_URL = process.env.NEXT_PUBLIC_PORTAL_URL || 'http://localhost:3000';
+const SIGNUP_URL = 'http://portal.coreorbitsoftware.com/signup';
 
 export function LandingNavbar() {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -71,14 +70,14 @@ export function LandingNavbar() {
 
           {/* CTA Buttons */}
           <div className="hidden md:flex items-center space-x-3">
-            <a href={`${PORTAL_URL}/signup`}>
+            <a href={SIGNUP_URL}>
               <Button variant="ghost" className="text-slate-600 dark:text-slate-300 hover:text-blue-600">
-                Sign Up
+                Signup
               </Button>
             </a>
-            <a href={`${PORTAL_URL}/login`}>
+            <a href={SIGNUP_URL}>
               <Button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transition-all">
-                Get Started Free
+                Start Free
               </Button>
             </a>
           </div>
@@ -111,12 +110,12 @@ export function LandingNavbar() {
                 </Link>
               ))}
               <div className="pt-4 flex flex-col space-y-2 px-4">
-                <a href={`${PORTAL_URL}/signup`}>
-                  <Button variant="outline" className="w-full">Sign Up</Button>
+                <a href={SIGNUP_URL}>
+                  <Button variant="outline" className="w-full">Signup</Button>
                 </a>
-                <a href={`${PORTAL_URL}/login`}>
+                <a href={SIGNUP_URL}>
                   <Button className="w-full bg-gradient-to-r from-blue-600 to-purple-600">
-                    Get Started Free
+                    Start Free
                   </Button>
                 </a>
               </div>

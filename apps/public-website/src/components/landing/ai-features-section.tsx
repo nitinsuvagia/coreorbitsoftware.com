@@ -14,10 +14,8 @@ import {
   Bot,
   ArrowRight
 } from 'lucide-react';
-import Link from 'next/link';
 
-// Portal URL for login/register - defaults to localhost:3000 for development
-const PORTAL_URL = process.env.NEXT_PUBLIC_PORTAL_URL || 'http://localhost:3000';
+const SIGNUP_URL = 'http://portal.coreorbitsoftware.com/signup';
 
 const aiFeatures = [
   {
@@ -251,13 +249,13 @@ export function AIFeaturesSection() {
 
         {/* CTA */}
         <div className="text-center">
-          <a href={`${PORTAL_URL}/login`}>
+          <a href={SIGNUP_URL}>
             <Button 
               size="lg" 
               className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-xl hover:shadow-2xl transition-all group"
             >
               <Sparkles className="mr-2 w-5 h-5" />
-              Experience AI Power
+              Signup
               <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
             </Button>
           </a>

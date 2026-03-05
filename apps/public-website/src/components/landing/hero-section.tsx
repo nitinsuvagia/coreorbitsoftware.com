@@ -1,13 +1,11 @@
 'use client';
 
-import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ProductDemo } from './product-demo';
 import { ArrowRight, Play, Sparkles, Star, Users, Building2 } from 'lucide-react';
 
-// Portal URL for login/register - defaults to localhost:3000 for development
-const PORTAL_URL = process.env.NEXT_PUBLIC_PORTAL_URL || 'http://localhost:3000';
+const SIGNUP_URL = 'http://portal.coreorbitsoftware.com/signup';
 
 export function HeroSection() {
   return (
@@ -56,12 +54,12 @@ export function HeroSection() {
 
             {/* CTA Buttons */}
             <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4 mb-12">
-              <a href={`${PORTAL_URL}/login`}>
+              <a href={SIGNUP_URL}>
                 <Button 
                   size="lg" 
                   className="w-full sm:w-auto bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-xl hover:shadow-2xl transition-all group px-8"
                 >
-                  Start Free Trial
+                  Start Free
                   <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </Button>
               </a>

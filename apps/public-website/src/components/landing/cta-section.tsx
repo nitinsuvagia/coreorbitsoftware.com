@@ -4,8 +4,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { ArrowRight, Sparkles, CheckCircle2 } from 'lucide-react';
 
-// Portal URL for login/register - defaults to localhost:3000 for development
-const PORTAL_URL = process.env.NEXT_PUBLIC_PORTAL_URL || 'http://localhost:3000';
+const SIGNUP_URL = 'http://portal.coreorbitsoftware.com/signup';
 
 export function CTASection() {
   return (
@@ -52,12 +51,12 @@ export function CTASection() {
 
             {/* CTA Buttons */}
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <a href={`${PORTAL_URL}/login`}>
+              <a href={SIGNUP_URL}>
                 <Button 
                   size="lg" 
                   className="bg-white text-purple-600 hover:bg-white/90 shadow-xl hover:shadow-2xl transition-all group px-8"
                 >
-                  Get Started Free
+                  Start Free
                   <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </Button>
               </a>

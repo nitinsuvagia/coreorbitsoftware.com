@@ -90,9 +90,9 @@ export default function DigitalOnboardingPage() {
                   <ArrowRight className="ml-2 w-5 h-5" />
                 </Button>
               </Link>
-              <Link href="/login">
+              <Link href="http://portal.coreorbitsoftware.com/signup">
                 <Button size="lg" variant="outline">
-                  Start Free Trial
+                  Start Trail
                 </Button>
               </Link>
             </div>

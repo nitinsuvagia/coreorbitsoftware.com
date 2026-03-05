@@ -3,13 +3,10 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Check, Sparkles, Zap, Loader2, Users, HardDrive, FolderKanban, Building2 } from 'lucide-react';
-import Link from 'next/link';
 
-// API base URL - use environment variable or default
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://api.coreorbitsoftware.com';
 
-// Portal URL for login/register - defaults to localhost:3000 for development
-const PORTAL_URL = process.env.NEXT_PUBLIC_PORTAL_URL || 'http://localhost:3000';
+const SIGNUP_URL = 'http://portal.coreorbitsoftware.com/signup';
 
 interface PlanFeatures {
   customDomain: boolean;
@@ -169,17 +166,46 @@ export function PricingSection() {
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
 
   useEffect(() => {
+    const extractPlans = (payload: any): SubscriptionPlan[] => {
+      if (Array.isArray(payload)) return payload;
+      if (payload?.success && Array.isArray(payload?.data)) return payload.data;
+      if (Array.isArray(payload?.data)) return payload.data;
+      if (Array.isArray(payload?.plans)) return payload.plans;
+      if (Array.isArray(payload?.data?.plans)) return payload.data.plans;
+      return [];
+    };
+
     const fetchPlans = async () => {
+      const endpoints = [
+        `${API_BASE_URL}/api/v1/public/pricing-plans`,
+        'http://api.coreorbitsoftware.com/api/v1/public/pricing-plans',
+        'https://api.coreorbitsoftware.com/api/v1/public/pricing-plans',
+      ];
+
       try {
-        const response = await fetch(`${API_BASE_URL}/api/v1/public/pricing-plans`);
-        const data = await response.json();
-        
-        if (data.success && data.data && data.data.length > 0) {
-          setPlans(data.data);
+        for (const endpoint of endpoints) {
+          try {
+            const response = await fetch(endpoint, {
+              method: 'GET',
+              headers: { Accept: 'application/json' },
+              cache: 'no-store',
+            });
+
+            if (!response.ok) continue;
+
+            const data = await response.json();
+            const livePlans = extractPlans(data);
+
+            if (livePlans.length > 0) {
+              setPlans(livePlans as SubscriptionPlan[]);
+              return;
+            }
+          } catch {
+            continue;
+          }
         }
       } catch (error) {
         console.error('Failed to fetch pricing plans:', error);
-        // Keep fallback plans
       } finally {
         setLoading(false);
       }
@@ -359,7 +385,7 @@ export function PricingSection() {
                     ))}
                   </ul>
 
-                  <a href={`${PORTAL_URL}/login`} className="block">
+                  <a href={SIGNUP_URL} className="block">
                     <Button 
                       className={`w-full ${
                         isPopular 
@@ -373,7 +399,7 @@ export function PricingSection() {
                       {isPopular && <Sparkles className="mr-2 w-4 h-4" />}
                       {plan.tier === 'STARTER' ? 'Start Free' : 
                        plan.tier === 'ENTERPRISE' || plan.tier === 'CUSTOM' ? 'Contact Sales' : 
-                       'Start Trial'}
+                       'Start Trail'}
                     </Button>
                   </a>
                 </div>
