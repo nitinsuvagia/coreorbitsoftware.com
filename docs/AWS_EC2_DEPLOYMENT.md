@@ -297,12 +297,87 @@ This will:
 
 ## 🔐 SSL Certificate Setup
 
-### Option A: GoDaddy API + Wildcard (Recommended)
+### Option A: Certbot Standalone (Recommended for Quick Setup)
+
+This is the simplest method using Let's Encrypt with Certbot standalone mode.
+
+**Prerequisites:**
+- DNS A records pointing to your EC2 IP for all domains
+- Ports 80 and 443 open in AWS Security Group
+
+**Automated Setup:**
+```bash
+./scripts/ec2-deploy.sh ssl-certbot
+```
+
+**Manual Setup (if needed):**
+
+```bash
+# 1. SSH into the server
+./scripts/ec2-deploy.sh shell
+
+# 2. Install certbot
+sudo apt update && sudo apt install certbot -y
+
+# 3. Stop nginx to free port 80
+docker stop oms-nginx
+
+# 4. Obtain certificates for all domains
+sudo certbot certonly --standalone \
+  -d coreorbitsoftware.com \
+  -d www.coreorbitsoftware.com \
+  -d api.coreorbitsoftware.com \
+  -d portal.coreorbitsoftware.com \
+  --email admin@coreorbitsoftware.com \
+  --agree-tos \
+  --non-interactive
+
+# 5. Copy certificates to nginx directory
+sudo mkdir -p /home/ubuntu/app/nginx/ssl
+sudo cp /etc/letsencrypt/live/coreorbitsoftware.com/fullchain.pem /home/ubuntu/app/nginx/ssl/
+sudo cp /etc/letsencrypt/live/coreorbitsoftware.com/privkey.pem /home/ubuntu/app/nginx/ssl/
+sudo chmod 644 /home/ubuntu/app/nginx/ssl/*.pem
+
+# 6. Copy SSL-enabled nginx config (from local machine)
+# The default.conf in deployment/nginx/conf.d/ already has SSL configured
+
+# 7. Find the Docker network name
+docker inspect oms-api-gateway --format='{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}'
+# Usually: office-management_oms-network
+
+# 8. Start nginx with SSL volumes mounted
+docker rm -f oms-nginx
+docker run -d \
+  --name oms-nginx \
+  --network office-management_oms-network \
+  -p 80:80 \
+  -p 443:443 \
+  -v /home/ubuntu/app/nginx/conf.d:/etc/nginx/conf.d:ro \
+  -v /home/ubuntu/app/nginx/ssl:/etc/nginx/ssl:ro \
+  -v /var/www/certbot:/var/www/certbot:ro \
+  --health-cmd="curl -f http://localhost/health || exit 1" \
+  --health-interval=30s \
+  --restart unless-stopped \
+  nginx:alpine
+
+# 9. Verify SSL is working
+curl -sI https://coreorbitsoftware.com | head -5
+```
+
+**Auto-Renewal Setup:**
+```bash
+# Add cron job for auto-renewal
+echo '0 3 * * * root certbot renew --quiet --pre-hook "docker stop oms-nginx" --post-hook "docker start oms-nginx" && cp /etc/letsencrypt/live/coreorbitsoftware.com/*.pem /home/ubuntu/app/nginx/ssl/' | sudo tee /etc/cron.d/certbot-renew
+```
+
+### Option B: GoDaddy API + Wildcard
+
+Use this method if you need wildcard certificates for tenant subdomains (`*.coreorbitsoftware.com`).
 
 ```bash
 export GODADDY_API_KEY="your-godaddy-api-key"
 export GODADDY_API_SECRET="your-godaddy-api-secret"
-./scripts/ec2-deploy.sh ssl
+./scripts/ec2-deploy.sh ssl-godaddy
 ```
 
 The script uses `acme.sh` + GoDaddy DNS API to issue:
@@ -313,34 +388,25 @@ Certificates are installed to:
 - `/opt/office-management/deployment/nginx/ssl/fullchain.pem`
 - `/opt/office-management/deployment/nginx/ssl/privkey.pem`
 
-### Option B: Manual Setup
+### SSL Certificate Locations
+
+| File | Location |
+|------|----------|
+| Certificate | `/home/ubuntu/app/nginx/ssl/fullchain.pem` |
+| Private Key | `/home/ubuntu/app/nginx/ssl/privkey.pem` |
+| Let's Encrypt originals | `/etc/letsencrypt/live/coreorbitsoftware.com/` |
+
+### Verify SSL
 
 ```bash
-# SSH into server
-./scripts/ec2-deploy.sh shell
+# Check certificate details
+echo | openssl s_client -connect coreorbitsoftware.com:443 -servername coreorbitsoftware.com 2>/dev/null | openssl x509 -noout -dates -subject -issuer
 
-# Install acme.sh
-curl https://get.acme.sh | sh -s email=admin@coreorbitsoftware.com
-
-# Set GoDaddy API credentials
-export GD_Key="your-godaddy-api-key"
-export GD_Secret="your-godaddy-api-secret"
-
-# Issue wildcard certificate
-~/.acme.sh/acme.sh --issue --dns dns_gd \
-   -d coreorbitsoftware.com \
-   -d '*.coreorbitsoftware.com'
-
-# Install certs where nginx expects them
-~/.acme.sh/acme.sh --install-cert -d coreorbitsoftware.com \
-   --fullchain-file /opt/office-management/deployment/nginx/ssl/fullchain.pem \
-   --key-file /opt/office-management/deployment/nginx/ssl/privkey.pem \
-   --reloadcmd "cd /opt/office-management && docker compose -f docker-compose.prod.yml restart nginx"
+# Test HTTPS endpoints
+curl -sI https://coreorbitsoftware.com | head -5
+curl -sI https://api.coreorbitsoftware.com | head -5
+curl -sI https://portal.coreorbitsoftware.com | head -5
 ```
-
-### Option C: Certbot DNS Challenge (Manual fallback)
-
-Use only if GoDaddy API automation is not possible.
 
 ---
 

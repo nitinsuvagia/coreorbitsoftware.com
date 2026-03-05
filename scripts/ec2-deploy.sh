@@ -251,20 +251,123 @@ cmd_backup() {
 cmd_ssl() {
     print_header "SSL Certificate Setup"
     
-    echo "This will obtain SSL certificates from Let's Encrypt."
-    echo "Make sure your DNS is configured correctly:"
-    echo "  - www.$DOMAIN → EC2 IP"
-    echo "  - portal.$DOMAIN → EC2 IP"
-    echo "  - api.$DOMAIN → EC2 IP"
-    echo "  - *.$DOMAIN → EC2 IP (for tenant subdomains)"
+    echo "Choose SSL setup method:"
+    echo ""
+    echo "  1. certbot  - Simple multi-domain certs (recommended for single domains)"
+    echo "  2. godaddy  - Wildcard certs via GoDaddy DNS (requires API keys)"
+    echo ""
+    echo "For most deployments, 'certbot' is recommended."
+    echo ""
+    read -p "Select method (certbot/godaddy): " METHOD
+    
+    case "$METHOD" in
+        certbot|1)
+            cmd_ssl_certbot
+            ;;
+        godaddy|2)
+            cmd_ssl_godaddy
+            ;;
+        *)
+            print_error "Invalid selection. Choose 'certbot' or 'godaddy'."
+            exit 1
+            ;;
+    esac
+}
+
+cmd_ssl_certbot() {
+    print_header "SSL Setup via Let's Encrypt Certbot"
+    
+    echo "This will obtain SSL certificates using Certbot standalone mode."
+    echo ""
+    echo "Prerequisites:"
+    echo "  - DNS A records pointing to EC2 IP for all domains"
+    echo "  - Ports 80 and 443 open in security group"
+    echo ""
+    echo "Domains to be certified:"
+    echo "  - $DOMAIN"
+    echo "  - www.$DOMAIN"
+    echo "  - api.$DOMAIN"
+    echo "  - portal.$DOMAIN"
     echo ""
     read -p "Continue? (y/n) " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         exit 1
     fi
-
-    cmd_ssl_godaddy
+    
+    SSL_EMAIL_VALUE="${SSL_EMAIL:-admin@$DOMAIN}"
+    SSL_DIR="/home/$EC2_USER/app/nginx/ssl"
+    
+    # Step 1: Install certbot
+    print_warning "Installing certbot..."
+    ssh_cmd "sudo apt update && sudo apt install certbot -y"
+    
+    # Step 2: Stop nginx to free port 80
+    print_warning "Stopping nginx container..."
+    ssh_cmd "docker stop oms-nginx 2>/dev/null || true"
+    
+    # Step 3: Obtain certificates
+    print_warning "Obtaining SSL certificates..."
+    ssh_cmd "sudo certbot certonly --standalone \
+        -d $DOMAIN \
+        -d www.$DOMAIN \
+        -d api.$DOMAIN \
+        -d portal.$DOMAIN \
+        --email $SSL_EMAIL_VALUE \
+        --agree-tos \
+        --non-interactive"
+    
+    # Step 4: Copy certificates to nginx ssl directory
+    print_warning "Copying certificates to nginx directory..."
+    ssh_cmd "sudo mkdir -p $SSL_DIR && \
+        sudo cp /etc/letsencrypt/live/$DOMAIN/fullchain.pem $SSL_DIR/ && \
+        sudo cp /etc/letsencrypt/live/$DOMAIN/privkey.pem $SSL_DIR/ && \
+        sudo chmod 644 $SSL_DIR/*.pem && \
+        sudo chown $EC2_USER:$EC2_USER $SSL_DIR/*.pem"
+    
+    # Step 5: Copy SSL-enabled nginx config
+    print_warning "Deploying SSL-enabled nginx configuration..."
+    ssh_cmd "sudo mkdir -p /home/$EC2_USER/app/nginx/conf.d"
+    scp_to "$APP_DIR/deployment/nginx/conf.d/default.conf" "/home/$EC2_USER/app/nginx/conf.d/default.conf"
+    
+    # Step 6: Get Docker network name
+    print_warning "Detecting Docker network..."
+    NETWORK_NAME=$(ssh_cmd "docker inspect oms-api-gateway --format='{{range \$k, \$v := .NetworkSettings.Networks}}{{\$k}}{{end}}' 2>/dev/null || echo 'office-management_oms-network'")
+    
+    # Step 7: Start nginx with SSL
+    print_warning "Starting nginx with SSL..."
+    ssh_cmd "docker rm -f oms-nginx 2>/dev/null || true"
+    ssh_cmd "docker run -d \
+        --name oms-nginx \
+        --network $NETWORK_NAME \
+        -p 80:80 \
+        -p 443:443 \
+        -v /home/$EC2_USER/app/nginx/conf.d:/etc/nginx/conf.d:ro \
+        -v /home/$EC2_USER/app/nginx/ssl:/etc/nginx/ssl:ro \
+        -v /var/www/certbot:/var/www/certbot:ro \
+        --health-cmd='curl -f http://localhost/health || exit 1' \
+        --health-interval=30s \
+        --restart unless-stopped \
+        nginx:alpine"
+    
+    # Step 8: Setup auto-renewal cron
+    print_warning "Setting up auto-renewal..."
+    ssh_cmd "echo '0 3 * * * root certbot renew --quiet --pre-hook \"docker stop oms-nginx\" --post-hook \"docker start oms-nginx\" && cp /etc/letsencrypt/live/$DOMAIN/*.pem $SSL_DIR/' | sudo tee /etc/cron.d/certbot-renew > /dev/null"
+    
+    # Step 9: Verify
+    sleep 5
+    print_warning "Verifying SSL setup..."
+    ssh_cmd "curl -sI --max-time 10 https://$DOMAIN 2>&1 | head -5"
+    
+    print_success "SSL certificates installed successfully!"
+    echo ""
+    echo "Your sites are now available at:"
+    echo "  - https://$DOMAIN"
+    echo "  - https://www.$DOMAIN"
+    echo "  - https://portal.$DOMAIN"
+    echo "  - https://api.$DOMAIN"
+    echo ""
+    echo "Certificates will auto-renew before expiration."
 }
 
 cmd_ssl_godaddy() {
@@ -406,7 +509,9 @@ show_help() {
     echo "  restart   - Restart all services"
     echo "  stop      - Stop all services"
     echo "  backup    - Backup database"
-    echo "  ssl       - Setup/renew SSL certificates"
+    echo "  ssl       - Setup/renew SSL certificates (interactive)"
+    echo "  ssl-certbot - Setup SSL via Certbot standalone (recommended)"
+    echo "  ssl-godaddy - Setup wildcard SSL via GoDaddy DNS API"
     echo "  shell     - SSH into the server"
     echo "  db-shell  - Access database shell"
     echo "  migrate   - Run database migrations"
@@ -415,11 +520,12 @@ show_help() {
     echo "  EC2_HOST  - EC2 instance IP or hostname"
     echo "  EC2_USER  - SSH user (default: ubuntu)"
     echo "  SSH_KEY   - Path to SSH key"
-    echo "  GODADDY_API_KEY / GODADDY_API_SECRET - Required for ssl/bootstrap"
+    echo "  GODADDY_API_KEY / GODADDY_API_SECRET - Required for ssl-godaddy/bootstrap"
     echo "  SSL_EMAIL - Optional SSL registration email"
     echo ""
     echo "Example:"
     echo "  EC2_HOST=54.123.45.67 SSH_KEY=~/.ssh/my-key.pem ./scripts/ec2-deploy.sh deploy"
+    echo "  ./scripts/ec2-deploy.sh ssl-certbot  # Simple SSL setup"
 }
 
 COMMAND="${1:-help}"
@@ -454,6 +560,12 @@ case "$COMMAND" in
         ;;
     ssl)
         cmd_ssl
+        ;;
+    ssl-certbot)
+        cmd_ssl_certbot
+        ;;
+    ssl-godaddy)
+        cmd_ssl_godaddy
         ;;
     shell)
         cmd_shell
