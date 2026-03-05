@@ -1,15 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { get, post, put, patch, del } from '@/lib/api/client';
+import { getTenantSlugFromHostname } from '@/lib/domain-context';
 
 // Helper to get tenant slug from hostname
 function getTenantSlugFromHost(): string | null {
   if (typeof window === 'undefined') return null;
-  const hostname = window.location.hostname.toLowerCase();
-  const localhostMatch = hostname.match(/^([a-z0-9-]+)\.localhost$/);
-  if (localhostMatch) return localhostMatch[1];
-  const parts = hostname.split('.');
-  if (parts.length >= 3) return parts[0];
-  return null;
+  return getTenantSlugFromHostname(window.location.hostname);
 }
 
 // Helper to get cookie value by name

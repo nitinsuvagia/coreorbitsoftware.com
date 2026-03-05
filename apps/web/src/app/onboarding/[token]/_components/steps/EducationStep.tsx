@@ -235,7 +235,7 @@ export default function EducationStep({ data, onChange }: EducationStepProps) {
                     <Input
                       value={entry.institutionName}
                       onChange={(e) => updateEducation(entry.id, 'institutionName', e.target.value)}
-                      placeholder="e.g., Gujarat Technological University"
+                      placeholder="e.g., University of California, Berkeley"
                     />
                   </div>
 
@@ -245,7 +245,7 @@ export default function EducationStep({ data, onChange }: EducationStepProps) {
                     <Input
                       value={entry.boardUniversity || ''}
                       onChange={(e) => updateEducation(entry.id, 'boardUniversity', e.target.value)}
-                      placeholder="e.g., CBSE, GTU, Mumbai University"
+                      placeholder="e.g., California State Board, UCLA"
                     />
                   </div>
 

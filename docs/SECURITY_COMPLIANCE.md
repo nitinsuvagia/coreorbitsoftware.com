@@ -151,7 +151,7 @@ Supported SSO providers:
     "sub": "user-uuid",
     "email": "user@company.com",
     "tenantId": "tenant-uuid",
-    "tenantSlug": "acme",
+    "tenantSlug": "innovatelab",
     "roles": ["ADMIN"],
     "permissions": ["employees:read", "employees:write"],
     "iat": 1709568000,
@@ -290,7 +290,7 @@ const encryptedFields = [
 │   Tenant A                    Tenant B                      │
 │   ┌────────────────┐          ┌────────────────┐            │
 │   │ oms_tenant_    │          │ oms_tenant_    │            │
-│   │    acme        │          │    techcorp    │            │
+│   │ innovatelab    │          │    techcorp    │            │
 │   │ ┌────────────┐ │          │ ┌────────────┐ │            │
 │   │ │ employees  │ │    ✗     │ │ employees  │ │            │
 │   │ │ projects   │◄┼──────────┼─│ projects   │ │            │

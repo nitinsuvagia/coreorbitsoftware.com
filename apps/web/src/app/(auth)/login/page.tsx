@@ -4,25 +4,12 @@ import { useState, useEffect } from 'react';
 import { LoginForm } from '@/components/auth/login-form';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Shield, Building2 } from 'lucide-react';
+import { getTenantSlugFromHostname } from '@/lib/domain-context';
 
 function getTenantSlugFromHost(): string | null {
   if (typeof window === 'undefined') return null;
-  
-  const hostname = window.location.hostname.toLowerCase();
-  
-  // Check for subdomain.localhost pattern (development)
-  const localhostMatch = hostname.match(/^([a-z0-9-]+)\.localhost$/);
-  if (localhostMatch) {
-    return localhostMatch[1];
-  }
-  
-  // Check for subdomain.domain.com pattern (production)
-  const parts = hostname.split('.');
-  if (parts.length >= 3) {
-    return parts[0];
-  }
-  
-  return null;
+
+  return getTenantSlugFromHostname(window.location.hostname);
 }
 
 export default function LoginPage() {

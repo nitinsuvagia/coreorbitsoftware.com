@@ -399,7 +399,7 @@ Each service exposes:
 │  │            (One database per tenant for complete isolation)            │ │
 │  │                                                                       │ │
 │  │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐    │ │
-│  │  │ oms_tenant_acme  │  │ oms_tenant_globex│  │ oms_tenant_xxx   │    │ │
+│  │  │ oms_tenant_innovatelab │  │ oms_tenant_globex│  │ oms_tenant_xxx   │    │ │
 │  │  │                  │  │                  │  │                  │    │ │
 │  │  │ • Users          │  │ • Users          │  │ • Users          │    │ │
 │  │  │ • Employees      │  │ • Employees      │  │ • Employees      │    │ │
@@ -761,7 +761,7 @@ Each service exposes:
 | **Tenant** | An organization using the SaaS platform |
 | **Platform Admin** | CoreOrbit staff managing the platform |
 | **Tenant Admin** | Customer admin managing their organization |
-| **Subdomain** | Unique URL prefix for each tenant (e.g., acme.coreorbitsoftware.com) |
+| **Subdomain** | Unique URL prefix for each tenant (e.g., innovatelab.coreorbitsoftware.com) |
 
 ### B. References
 

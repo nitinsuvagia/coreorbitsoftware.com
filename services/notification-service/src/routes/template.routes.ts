@@ -171,7 +171,7 @@ router.get('/categories', requireTenant, async (req: Request, res: Response, nex
 router.get('/variables', (req: Request, res: Response) => {
   const variables = {
     common: [
-      { name: 'companyName', description: 'Organization name', example: 'Acme Corp' },
+      { name: 'companyName', description: 'Organization name', example: 'Innovatelab Inc' },
       { name: 'companyLogo', description: 'Organization logo URL', example: 'https://...' },
       { name: 'portalUrl', description: 'Portal login URL', example: 'https://portal...' },
       { name: 'supportEmail', description: 'Support email address', example: 'support@...' },
@@ -487,7 +487,7 @@ router.post('/preview', requireTenant, async (req: Request, res: Response, next:
     
     // Sample data for preview
     const sampleData = {
-      companyName: 'Acme Corporation',
+      companyName: 'Innovatelab Inc',
       companyLogo: 'https://via.placeholder.com/200x50?text=Logo',
       portalUrl: 'https://portal.example.com',
       supportEmail: 'support@example.com',
@@ -551,7 +551,7 @@ router.post('/:id/test', requireTenant, requirePermission, async (req: Request, 
     
     // Sample data for test
     const sampleData = {
-      companyName: 'Acme Corporation',
+      companyName: 'Innovatelab Inc',
       companyLogo: 'https://via.placeholder.com/200x50?text=Logo',
       portalUrl: 'https://portal.example.com',
       supportEmail: 'support@example.com',

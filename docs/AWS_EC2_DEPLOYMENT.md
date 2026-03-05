@@ -255,7 +255,25 @@ This will:
 - Configure log rotation
 - Setup backup cron jobs
 
-### Step 5: Deploy Application
+### Step 5 (Recommended): First-Time Bootstrap (Setup + Deploy + SSL)
+
+If you use GoDaddy DNS, run this single command from your local machine:
+
+```bash
+export GODADDY_API_KEY="your-godaddy-api-key"
+export GODADDY_API_SECRET="your-godaddy-api-secret"
+export SSL_EMAIL="admin@coreorbitsoftware.com"   # optional
+
+./scripts/ec2-deploy.sh bootstrap
+```
+
+This will:
+- Setup the EC2 server
+- Deploy the application
+- Issue wildcard SSL for `coreorbitsoftware.com` and `*.coreorbitsoftware.com`
+- Configure automatic renewal and nginx reload
+
+### Step 6: Deploy Application (If not using bootstrap)
 
 ```bash
 # Deploy the application
@@ -268,7 +286,7 @@ This will:
 - Build Docker images
 - Start all services
 
-### Step 6: Setup SSL Certificates
+### Step 7: Setup SSL Certificates (If not using bootstrap)
 
 ```bash
 # Ensure DNS is propagated first!
@@ -279,9 +297,21 @@ This will:
 
 ## 🔐 SSL Certificate Setup
 
-### Option A: Let's Encrypt (Free)
+### Option A: GoDaddy API + Wildcard (Recommended)
 
-The `./scripts/ec2-deploy.sh ssl` command handles this automatically.
+```bash
+export GODADDY_API_KEY="your-godaddy-api-key"
+export GODADDY_API_SECRET="your-godaddy-api-secret"
+./scripts/ec2-deploy.sh ssl
+```
+
+The script uses `acme.sh` + GoDaddy DNS API to issue:
+- `coreorbitsoftware.com`
+- `*.coreorbitsoftware.com`
+
+Certificates are installed to:
+- `/opt/office-management/deployment/nginx/ssl/fullchain.pem`
+- `/opt/office-management/deployment/nginx/ssl/privkey.pem`
 
 ### Option B: Manual Setup
 
@@ -289,45 +319,28 @@ The `./scripts/ec2-deploy.sh ssl` command handles this automatically.
 # SSH into server
 ./scripts/ec2-deploy.sh shell
 
-# Install certbot
-sudo apt-get update
-sudo apt-get install -y certbot
+# Install acme.sh
+curl https://get.acme.sh | sh -s email=admin@coreorbitsoftware.com
 
-# Stop nginx
-cd /opt/office-management
-docker compose -f docker-compose.prod.yml stop nginx
+# Set GoDaddy API credentials
+export GD_Key="your-godaddy-api-key"
+export GD_Secret="your-godaddy-api-secret"
 
-# Get certificates
-sudo certbot certonly --standalone \
-    -d www.coreorbitsoftware.com \
-    -d coreorbitsoftware.com \
-    -d portal.coreorbitsoftware.com \
-    -d api.coreorbitsoftware.com \
-    --agree-tos \
-    --email admin@coreorbitsoftware.com
+# Issue wildcard certificate
+~/.acme.sh/acme.sh --issue --dns dns_gd \
+   -d coreorbitsoftware.com \
+   -d '*.coreorbitsoftware.com'
 
-# Copy certificates
-sudo cp /etc/letsencrypt/live/www.coreorbitsoftware.com/fullchain.pem nginx/ssl/
-sudo cp /etc/letsencrypt/live/www.coreorbitsoftware.com/privkey.pem nginx/ssl/
-sudo chown ubuntu:ubuntu nginx/ssl/*
-
-# Start nginx
-docker compose -f docker-compose.prod.yml up -d nginx
+# Install certs where nginx expects them
+~/.acme.sh/acme.sh --install-cert -d coreorbitsoftware.com \
+   --fullchain-file /opt/office-management/deployment/nginx/ssl/fullchain.pem \
+   --key-file /opt/office-management/deployment/nginx/ssl/privkey.pem \
+   --reloadcmd "cd /opt/office-management && docker compose -f docker-compose.prod.yml restart nginx"
 ```
 
-### Option C: Wildcard Certificate (for tenant subdomains)
+### Option C: Certbot DNS Challenge (Manual fallback)
 
-Requires DNS challenge:
-
-```bash
-sudo certbot certonly --manual --preferred-challenges dns \
-    -d '*.coreorbitsoftware.com' \
-    -d coreorbitsoftware.com \
-    --agree-tos \
-    --email admin@coreorbitsoftware.com
-```
-
-Follow the prompts to add DNS TXT records.
+Use only if GoDaddy API automation is not possible.
 
 ---
 
@@ -474,13 +487,17 @@ docker compose -f docker-compose.prod.yml exec postgres psql -U postgres -c '\l'
 ```bash
 # Check certificate expiry
 ./scripts/ec2-deploy.sh shell
-sudo certbot certificates
+
+# acme.sh certificates
+~/.acme.sh/acme.sh --list
 
 # Manual renewal
-sudo certbot renew
+~/.acme.sh/acme.sh --renew -d coreorbitsoftware.com
 
 # Copy renewed certificates
-sudo cp /etc/letsencrypt/live/www.coreorbitsoftware.com/*.pem /opt/office-management/nginx/ssl/
+~/.acme.sh/acme.sh --install-cert -d coreorbitsoftware.com \
+   --fullchain-file /opt/office-management/deployment/nginx/ssl/fullchain.pem \
+   --key-file /opt/office-management/deployment/nginx/ssl/privkey.pem
 docker compose -f docker-compose.prod.yml restart nginx
 ```
 

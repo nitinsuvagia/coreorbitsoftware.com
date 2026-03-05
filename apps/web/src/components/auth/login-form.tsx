@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
 import { useSSOStatus, useGetOAuthLoginUrl } from '@/hooks/use-sso';
+import { getTenantSlugFromHostname } from '@/lib/domain-context';
 
 const loginSchema = z.object({
   email: z.string().email('Please enter a valid email'),
@@ -32,22 +33,8 @@ type MfaFormData = z.infer<typeof mfaSchema>;
  */
 function getTenantSlugFromHost(): string | null {
   if (typeof window === 'undefined') return null;
-  
-  const hostname = window.location.hostname.toLowerCase();
-  
-  // Check for subdomain.localhost pattern (development)
-  const localhostMatch = hostname.match(/^([a-z0-9-]+)\.localhost$/);
-  if (localhostMatch) {
-    return localhostMatch[1];
-  }
-  
-  // Check for subdomain.domain.com pattern (production)
-  const parts = hostname.split('.');
-  if (parts.length >= 3) {
-    return parts[0];
-  }
-  
-  return null;
+
+  return getTenantSlugFromHostname(window.location.hostname);
 }
 
 export function LoginForm() {

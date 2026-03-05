@@ -1,7 +1,7 @@
 # API Documentation
 
 ## Office Management SaaS Platform
-
+  "tenantSlug": "innovatelab",
 **Version:** 2.0  
 **Base URL:** `https://api.coreorbitsoftware.com`  
 **Last Updated:** March 4, 2026
@@ -72,8 +72,8 @@ https://api.coreorbitsoftware.com/api/v1/employees
 ### 1.3 Multi-Tenant Access
 
 Tenant identification is based on:
-1. **Subdomain**: `acme.coreorbitsoftware.com` → Tenant: `acme`
-2. **Header**: `X-Tenant-ID: acme` (for API clients)
+1. **Subdomain**: `innovatelab.coreorbitsoftware.com` → Tenant: `innovatelab`
+2. **Header**: `X-Tenant-ID: innovatelab` (for API clients)
 
 ---
 
@@ -146,7 +146,7 @@ Content-Type: application/json
   "sub": "user-uuid",
   "email": "user@company.com",
   "tenantId": "tenant-uuid",
-  "tenantSlug": "acme",
+  "tenantSlug": "innovatelab",
   "roles": ["ADMIN"],
   "permissions": ["employees:read", "employees:write"],
   "iat": 1709568000,
@@ -344,12 +344,12 @@ Create a new tenant account.
 **Request:**
 ```json
 {
-  "companyName": "Acme Corp",
+  "companyName": "Innovatelab Inc",
   "firstName": "John",
   "lastName": "Doe",
-  "email": "john@acmecorp.com",
+  "email": "john@innovatelab.com",
   "password": "SecurePassword123!",
-  "subdomain": "acme"
+  "subdomain": "innovatelab"
 }
 ```
 
@@ -360,12 +360,12 @@ Create a new tenant account.
   "data": {
     "tenant": {
       "id": "tenant-uuid",
-      "name": "Acme Corp",
-      "slug": "acme"
+      "name": "Innovatelab Inc",
+      "slug": "innovatelab"
     },
     "user": {
       "id": "user-uuid",
-      "email": "john@acmecorp.com"
+      "email": "john@innovatelab.com"
     }
   }
 }
@@ -431,10 +431,10 @@ Get current organization details.
   "success": true,
   "data": {
     "id": "tenant-uuid",
-    "name": "Acme Corp",
-    "slug": "acme",
+    "name": "Innovatelab Inc",
+    "slug": "innovatelab",
     "logo": "https://...",
-    "email": "admin@acme.com",
+    "email": "admin@innovatelab.com",
     "settings": {
       "timezone": "America/New_York",
       "dateFormat": "MM/DD/YYYY",
@@ -452,10 +452,10 @@ Update organization details.
 **Request:**
 ```json
 {
-  "name": "Acme Corporation",
-  "email": "contact@acme.com",
+  "name": "Innovatelab Inc",
+  "email": "contact@innovatelab.com",
   "phone": "+1234567890",
-  "website": "https://acme.com"
+  "website": "https://innovatelab.com"
 }
 ```
 
@@ -981,7 +981,7 @@ import { OmsClient } from '@coreorbit/oms-sdk';
 const client = new OmsClient({
   baseUrl: 'https://api.coreorbitsoftware.com',
   apiKey: 'your-api-key',
-  tenantId: 'acme'
+  tenantId: 'innovatelab'
 });
 
 // List employees

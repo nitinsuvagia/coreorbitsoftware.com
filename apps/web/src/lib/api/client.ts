@@ -1,4 +1,5 @@
 import axios, { AxiosError, AxiosInstance } from 'axios';
+import { getTenantSlugFromHostname } from '@/lib/domain-context';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
@@ -19,25 +20,8 @@ function getCookie(name: string): string | null {
  */
 function getTenantSlugFromHost(): string | null {
   if (typeof window === 'undefined') return null;
-  
-  const hostname = window.location.hostname.toLowerCase();
-  
-  // Check for subdomain.localhost pattern (development)
-  const localhostMatch = hostname.match(/^([a-z0-9-]+)\.localhost$/);
-  if (localhostMatch) {
-    return localhostMatch[1];
-  }
-  
-  // Check for subdomain.domain.com pattern (production)
-  // Assumes main domain doesn't have www prefix in this check
-  const parts = hostname.split('.');
-  if (parts.length >= 3) {
-    // e.g., ["acme", "youroms", "com"] -> "acme"
-    return parts[0];
-  }
-  
-  // No tenant subdomain detected - return null (DO NOT default to any tenant for security)
-  return null;
+
+  return getTenantSlugFromHostname(window.location.hostname);
 }
 
 export const api: AxiosInstance = axios.create({

@@ -16,6 +16,32 @@ import Link from 'next/link';
 import axios from 'axios';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || '';
+const CONFIGURED_MAIN_DOMAIN = process.env.NEXT_PUBLIC_MAIN_DOMAIN || '';
+
+const getMainDomain = () => {
+  if (CONFIGURED_MAIN_DOMAIN) {
+    return CONFIGURED_MAIN_DOMAIN;
+  }
+
+  if (APP_URL) {
+    try {
+      const hostname = new URL(APP_URL).hostname;
+      const parts = hostname.split('.');
+      if (parts.length >= 2) {
+        return parts.slice(-2).join('.');
+      }
+      return hostname;
+    } catch {
+      return 'coreorbitsoftware.com';
+    }
+  }
+
+  return 'coreorbitsoftware.com';
+};
+
+const MAIN_DOMAIN = getMainDomain();
+const getTenantUrl = (slug: string) => `https://${slug}.${MAIN_DOMAIN}`;
 
 // Step 1: Organization Details
 const organizationSchema = z.object({
@@ -172,8 +198,8 @@ export default function SignupPage() {
             <div className="bg-muted p-4 rounded-lg space-y-2">
               <p className="text-sm"><strong>Organization:</strong> {tenantData.name}</p>
               <p className="text-sm"><strong>Your URL:</strong> 
-                <a href={`http://${tenantData.slug}.localhost:3000`} className="text-primary ml-1">
-                  {tenantData.slug}.localhost:3000
+                <a href={getTenantUrl(tenantData.slug)} className="text-primary ml-1">
+                  {tenantData.slug}.{MAIN_DOMAIN}
                 </a>
               </p>
               <p className="text-sm"><strong>Trial ends:</strong> {new Date(tenantData.trialEndsAt).toLocaleDateString()}</p>
@@ -185,7 +211,7 @@ export default function SignupPage() {
             
             <Button 
               className="w-full" 
-              onClick={() => window.location.href = `http://${tenantData.slug}.localhost:3000/login`}
+              onClick={() => window.location.href = `${getTenantUrl(tenantData.slug)}/login`}
             >
               Go to Login
               <ArrowRight className="ml-2 h-4 w-4" />
@@ -243,7 +269,7 @@ export default function SignupPage() {
                 <Label htmlFor="name">Company Name *</Label>
                 <Input
                   id="name"
-                  placeholder="Acme Corporation"
+                  placeholder="Innovatelab Inc"
                   {...orgForm.register('name', {
                     onChange: (e) => handleNameChange(e.target.value),
                   })}
@@ -258,12 +284,12 @@ export default function SignupPage() {
                 <div className="flex items-center">
                   <Input
                     id="slug"
-                    placeholder="acme"
+                    placeholder="innovatelab"
                     {...orgForm.register('slug')}
                     className="rounded-r-none"
                   />
                   <span className="inline-flex items-center px-3 h-10 border border-l-0 rounded-r-md bg-muted text-muted-foreground text-sm">
-                    .localhost:3000
+                    .{MAIN_DOMAIN}
                   </span>
                 </div>
                 {orgForm.formState.errors.slug && (
@@ -276,7 +302,7 @@ export default function SignupPage() {
                 <Input
                   id="email"
                   type="email"
-                  placeholder="contact@acme.com"
+                  placeholder="contact@innovatelab.com"
                   {...orgForm.register('email')}
                 />
                 {orgForm.formState.errors.email && (
@@ -297,7 +323,7 @@ export default function SignupPage() {
                   <Label htmlFor="legalName">Legal Name</Label>
                   <Input
                     id="legalName"
-                    placeholder="Acme Corp LLC"
+                    placeholder="Innovatelab Inc"
                     {...orgForm.register('legalName')}
                   />
                 </div>
@@ -348,7 +374,7 @@ export default function SignupPage() {
                 <Input
                   id="adminEmail"
                   type="email"
-                  placeholder="john@acme.com"
+                  placeholder="admin@innovatelab.com"
                   {...adminForm.register('adminEmail')}
                 />
                 {adminForm.formState.errors.adminEmail && (

@@ -347,7 +347,7 @@ export default function NewTenantPage() {
                 <Label htmlFor="name">Organization Name *</Label>
                 <Input
                   id="name"
-                  placeholder="Acme Corporation"
+                  placeholder="Innovatelab Inc"
                   value={formData.name}
                   onChange={(e) => handleNameChange(e.target.value)}
                 />
@@ -360,7 +360,7 @@ export default function NewTenantPage() {
                 <div className="flex items-center">
                   <Input
                     id="slug"
-                    placeholder="acme"
+                    placeholder="innovatelab"
                     value={formData.slug}
                     onChange={(e) => updateField('slug', e.target.value.toLowerCase())}
                   />
@@ -376,7 +376,7 @@ export default function NewTenantPage() {
               <Label htmlFor="legalName">Legal Name</Label>
               <Input
                 id="legalName"
-                placeholder="Acme Corporation Inc."
+                placeholder="Innovatelab Inc"
                 value={formData.legalName}
                 onChange={(e) => updateField('legalName', e.target.value)}
               />
@@ -388,7 +388,7 @@ export default function NewTenantPage() {
                 <Input
                   id="email"
                   type="email"
-                  placeholder="contact@acme.com"
+                  placeholder="contact@innovatelab.com"
                   value={formData.email}
                   onChange={(e) => updateField('email', e.target.value)}
                 />
@@ -528,7 +528,7 @@ export default function NewTenantPage() {
               <Input
                 id="adminEmail"
                 type="email"
-                placeholder="admin@acme.com"
+                placeholder="admin@innovatelab.com"
                 value={formData.adminEmail}
                 onChange={(e) => updateField('adminEmail', e.target.value)}
               />

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api/client';
 import { setCookie, deleteCookie, getCookie } from 'cookies-next';
 import { toast } from 'sonner';
+import { getTenantSlugFromHostname } from '@/lib/domain-context';
 
 export interface User {
   id: string;
@@ -39,23 +40,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Get current domain context - returns tenant slug or 'platform' for main domain
   function getCurrentDomainContext(): string {
     if (typeof window === 'undefined') return 'platform';
-    
-    const hostname = window.location.hostname.toLowerCase();
-    
-    // Check for subdomain.localhost pattern (development)
-    const localhostMatch = hostname.match(/^([a-z0-9-]+)\.localhost$/);
-    if (localhostMatch) {
-      return localhostMatch[1]; // tenant slug
-    }
-    
-    // Check for subdomain.domain.com pattern (production)
-    const parts = hostname.split('.');
-    if (parts.length >= 3) {
-      return parts[0]; // tenant slug
-    }
-    
-    // Main domain = platform admin
-    return 'platform';
+
+    const tenantSlug = getTenantSlugFromHostname(window.location.hostname);
+    return tenantSlug || 'platform';
   }
 
   // Security check: verify user's login context matches current domain
@@ -146,23 +133,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   function getTenantSlugFromHost(): string | null {
     if (typeof window === 'undefined') return null;
-    
-    const hostname = window.location.hostname.toLowerCase();
-    
-    // Check for subdomain.localhost pattern (development)
-    const localhostMatch = hostname.match(/^([a-z0-9-]+)\.localhost$/);
-    if (localhostMatch) {
-      return localhostMatch[1];
-    }
-    
-    // Check for subdomain.domain.com pattern (production)
-    const parts = hostname.split('.');
-    if (parts.length >= 3) {
-      return parts[0];
-    }
-    
-    // No tenant subdomain detected - return null (DO NOT default to any tenant for security)
-    return null;
+
+    return getTenantSlugFromHostname(window.location.hostname);
   }
 
   async function login(email: string, password: string) {

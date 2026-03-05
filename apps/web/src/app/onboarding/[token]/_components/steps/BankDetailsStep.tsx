@@ -242,7 +242,7 @@ export default function BankDetailsStep({ data, onChange }: BankDetailsStepProps
               id="branchName"
               value={data.branchName}
               onChange={(e) => handleChange('branchName', e.target.value)}
-              placeholder="e.g., Ahmedabad Main Branch"
+              placeholder="e.g., New York Main Branch"
               required
             />
           </div>

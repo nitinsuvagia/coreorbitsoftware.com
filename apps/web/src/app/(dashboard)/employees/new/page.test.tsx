@@ -250,7 +250,7 @@ describe('NewEmployeePage', () => {
 
     await user.type(screen.getByLabelText(/first name/i), 'Jane');
     await user.type(screen.getByLabelText(/last name/i), 'Doe');
-    await user.type(screen.getByLabelText(/work email/i), 'jane.doe@acme.com');
+    await user.type(screen.getByLabelText(/work email/i), 'jane.doe@innovatelab.com');
 
     await user.click(screen.getByRole('tab', { name: /employment/i }));
 
@@ -270,7 +270,7 @@ describe('NewEmployeePage', () => {
       expect.objectContaining({
         firstName: 'Jane',
         lastName: 'Doe',
-        email: 'jane.doe@acme.com',
+        email: 'jane.doe@innovatelab.com',
         departmentId: 'dept-1',
         designationId: 'des-1',
         joinDate: '2024-01-15',

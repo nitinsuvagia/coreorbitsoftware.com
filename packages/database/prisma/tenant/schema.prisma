@@ -2,7 +2,7 @@
 // TENANT DATABASE SCHEMA - Part 1: Core
 // ============================================================================
 // Each tenant gets their own database with this schema
-// Database Name: oms_tenant_{slug} (e.g., oms_tenant_acme)
+// Database Name: oms_tenant_{slug} (e.g., oms_tenant_innovatelab)
 //
 // This file contains:
 // - Users (tenant employees who login)

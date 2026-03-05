@@ -45,12 +45,12 @@ const DEFAULT_CONFIG: DomainConfig = {
  * Extract subdomain from hostname
  * 
  * Examples:
- * - "acme.youroms.com" → "acme"
+ * - "innovatelab.youroms.com" → "innovatelab"
  * - "youroms.com" → null (main domain)
  * - "www.youroms.com" → null (www treated as main)
- * - "hr.acmecorp.com" → null (custom domain, handled separately)
+ * - "hr.innovatelab.com" → null (custom domain, handled separately)
  * - "localhost:3000" → null (development)
- * - "acme.localhost:3000" → "acme" (development)
+ * - "innovatelab.localhost:3000" → "innovatelab" (development)
  */
 export function extractSubdomain(
   hostname: string, 

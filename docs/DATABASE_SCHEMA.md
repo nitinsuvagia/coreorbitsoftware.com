@@ -33,7 +33,7 @@ The Office Management platform uses a **database-per-tenant** architecture:
 │                                                             │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
 │  │ oms_master  │  │oms_tenant_  │  │oms_tenant_  │  ...    │
-│  │             │  │   acme      │  │  techcorp   │         │
+│  │             │  │ innovatelab │  │  techcorp   │         │
 │  │ - Admins    │  │ - Users     │  │ - Users     │         │
 │  │ - Tenants   │  │ - Employees │  │ - Employees │         │
 │  │ - Plans     │  │ - Projects  │  │ - Projects  │         │
@@ -48,7 +48,7 @@ The Office Management platform uses a **database-per-tenant** architecture:
 | Database | Naming Pattern | Example |
 |----------|---------------|---------|
 | Master | `oms_master` | `oms_master` |
-| Tenant | `oms_tenant_{slug}` | `oms_tenant_acme` |
+| Tenant | `oms_tenant_{slug}` | `oms_tenant_innovatelab` |
 
 ### 1.3 ORM Technology
 

@@ -248,7 +248,7 @@ export default function EmailTemplatesPage() {
             firstName: 'John',
             lastName: 'Doe',
             email: 'john@example.com',
-            companyName: 'Acme Corporation',
+            companyName: 'Innovatelab Inc',
           },
         }
       );

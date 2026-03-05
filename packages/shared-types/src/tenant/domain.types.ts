@@ -3,8 +3,8 @@
  * 
  * Architecture:
  * - Main Domain (youroms.com) → Platform Admin Portal (SuperAdmin/SubAdmin/AdminUser ONLY)
- * - Tenant Subdomain (acme.youroms.com) → Tenant Portal (Tenant users ONLY)
- * - Custom Domain (hr.acmecorp.com) → Mapped to Tenant (optional premium feature)
+ * - Tenant Subdomain (innovatelab.youroms.com) → Tenant Portal (Tenant users ONLY)
+ * - Custom Domain (hr.innovatelab.com) → Mapped to Tenant (optional premium feature)
  */
 
 import { BaseEntity } from '../common';
@@ -18,8 +18,8 @@ import { BaseEntity } from '../common';
  */
 export type DomainType = 
   | 'main'        // Main platform domain (youroms.com) - Platform Admins only
-  | 'subdomain'   // Tenant subdomain (acme.youroms.com) - Tenant users only
-  | 'custom';     // Custom domain mapped to tenant (hr.acmecorp.com)
+  | 'subdomain'   // Tenant subdomain (innovatelab.youroms.com) - Tenant users only
+  | 'custom';     // Custom domain mapped to tenant (hr.innovatelab.com)
 
 /**
  * Domain resolution result
@@ -97,7 +97,7 @@ export type ReservedSubdomain = (typeof RESERVED_SUBDOMAINS)[number];
  */
 export interface TenantSubdomain extends BaseEntity {
   tenantId: string;
-  subdomain: string;           // e.g., "acme" for acme.youroms.com
+  subdomain: string;           // e.g., "innovatelab" for innovatelab.youroms.com
   status: SubdomainStatus;
   isPrimary: boolean;          // Main subdomain for tenant
   sslCertificateId?: string;   // SSL certificate reference
@@ -127,11 +127,11 @@ export type CustomDomainStatus =
 export type DnsVerificationType = 'cname' | 'txt';
 
 /**
- * Custom domain mapping (e.g., hr.acmecorp.com → acme tenant)
+ * Custom domain mapping (e.g., hr.innovatelab.com → innovatelab tenant)
  */
 export interface CustomDomainMapping extends BaseEntity {
   tenantId: string;
-  domain: string;              // e.g., "hr.acmecorp.com"
+  domain: string;              // e.g., "hr.innovatelab.com"
   status: CustomDomainStatus;
   verificationType: DnsVerificationType;
   verificationToken: string;   // Token to add in DNS record

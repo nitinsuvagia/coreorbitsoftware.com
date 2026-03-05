@@ -18,6 +18,7 @@
 # Commands:
 #   setup     - Initial server setup (run once)
 #   deploy    - Deploy/update the application
+#   bootstrap - First-time setup + deploy + SSL
 #   logs      - View application logs
 #   status    - Check service status
 #   restart   - Restart all services
@@ -36,6 +37,7 @@ EC2_USER="${EC2_USER:-ubuntu}"
 SSH_KEY="${SSH_KEY:-~/.ssh/your-key.pem}"
 APP_DIR="/opt/office-management"
 DOMAIN="coreorbitsoftware.com"
+SSL_DIR="$APP_DIR/deployment/nginx/ssl"
 
 # Colors
 RED='\033[0;31m'
@@ -164,6 +166,11 @@ cmd_deploy() {
     echo "  - https://www.$DOMAIN (Public Website)"
     echo "  - https://portal.$DOMAIN (Web Portal)"
     echo "  - https://api.$DOMAIN (API Gateway)"
+
+    if [[ "${FIRST_DEPLOY:-false}" == "true" ]]; then
+        print_warning "FIRST_DEPLOY=true detected. Running GoDaddy wildcard SSL setup..."
+        cmd_ssl_godaddy "auto"
+    fi
 }
 
 cmd_logs() {
@@ -257,48 +264,82 @@ cmd_ssl() {
         exit 1
     fi
 
-    # Install certbot
-    print_warning "Installing certbot..."
-    ssh_cmd "sudo apt-get update && sudo apt-get install -y certbot"
-    
-    # Stop nginx temporarily
-    print_warning "Stopping nginx for certificate generation..."
-    ssh_cmd "cd $APP_DIR && docker compose -f docker-compose.prod.yml stop nginx || true"
-    
-    # Obtain certificates
-    print_warning "Obtaining SSL certificates..."
-    ssh_cmd "sudo certbot certonly --standalone \
-        -d www.$DOMAIN \
-        -d $DOMAIN \
-        -d portal.$DOMAIN \
-        -d api.$DOMAIN \
-        --agree-tos \
-        --email admin@$DOMAIN \
-        --non-interactive"
-    
-    # For wildcard certificate (requires DNS challenge)
-    # ssh_cmd "sudo certbot certonly --manual --preferred-challenges dns \
-    #     -d '*.$DOMAIN' \
-    #     --agree-tos \
-    #     --email admin@$DOMAIN"
-    
-    # Copy certificates to nginx ssl directory
-    print_warning "Copying certificates..."
-    ssh_cmd "sudo cp /etc/letsencrypt/live/www.$DOMAIN/fullchain.pem $APP_DIR/nginx/ssl/"
-    ssh_cmd "sudo cp /etc/letsencrypt/live/www.$DOMAIN/privkey.pem $APP_DIR/nginx/ssl/"
-    ssh_cmd "sudo chown $EC2_USER:$EC2_USER $APP_DIR/nginx/ssl/*"
-    
-    # Start nginx
-    print_warning "Starting nginx..."
-    ssh_cmd "cd $APP_DIR && docker compose -f docker-compose.prod.yml up -d nginx"
-    
-    # Setup auto-renewal cron job
-    print_warning "Setting up auto-renewal..."
-    ssh_cmd "echo '0 0 1 * * root certbot renew --quiet && cp /etc/letsencrypt/live/www.$DOMAIN/*.pem $APP_DIR/nginx/ssl/ && docker compose -f $APP_DIR/docker-compose.prod.yml restart nginx' | sudo tee /etc/cron.d/certbot-renew"
-    
-    print_success "SSL certificates installed!"
-    echo ""
-    echo "Certificates will auto-renew monthly."
+    cmd_ssl_godaddy
+}
+
+cmd_ssl_godaddy() {
+    MODE="${1:-interactive}"
+
+    if [ -z "${GODADDY_API_KEY:-}" ] || [ -z "${GODADDY_API_SECRET:-}" ]; then
+        print_error "Missing GoDaddy API credentials."
+        echo "Set these environment variables before running:"
+        echo "  GODADDY_API_KEY=..."
+        echo "  GODADDY_API_SECRET=..."
+        echo "Optional:"
+        echo "  SSL_EMAIL=you@$DOMAIN"
+        return 1
+    fi
+
+    if [[ "$MODE" != "auto" ]]; then
+        print_header "GoDaddy Wildcard SSL Setup"
+        echo "This will issue and auto-renew wildcard certificates via GoDaddy DNS API:"
+        echo "  - $DOMAIN"
+        echo "  - *.$DOMAIN"
+        echo ""
+        read -p "Continue? (y/n) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    fi
+
+    SSL_EMAIL_VALUE="${SSL_EMAIL:-admin@$DOMAIN}"
+
+    print_warning "Preparing nginx config files (*.conf)..."
+    ssh_cmd "cd $APP_DIR/deployment/nginx/conf.d && \
+        [ -f default.conf ] && mv default.conf default.conf.disabled || true && \
+        [ -f portal.conf.ssl ] && mv portal.conf.ssl portal.conf || true && \
+        [ -f public-website.conf.ssl ] && mv public-website.conf.ssl public-website.conf || true && \
+        [ -f api.conf.ssl ] && mv api.conf.ssl api.conf || true"
+
+    print_warning "Installing acme.sh and issuing wildcard certificate via GoDaddy..."
+    ssh_cmd "set -e; \
+        export GD_Key='$GODADDY_API_KEY'; \
+        export GD_Secret='$GODADDY_API_SECRET'; \
+        export LE_WORKING_DIR='/home/$EC2_USER/.acme.sh'; \
+        if [ ! -d \"/home/$EC2_USER/.acme.sh\" ]; then \
+            curl -s https://get.acme.sh | sh -s email='$SSL_EMAIL_VALUE'; \
+        fi; \
+        mkdir -p '$SSL_DIR'; \
+        /home/$EC2_USER/.acme.sh/acme.sh --set-default-ca --server letsencrypt; \
+        /home/$EC2_USER/.acme.sh/acme.sh --issue --dns dns_gd -d '$DOMAIN' -d '*.$DOMAIN' --keylength ec-256; \
+        /home/$EC2_USER/.acme.sh/acme.sh --install-cert -d '$DOMAIN' --ecc \
+            --fullchain-file '$SSL_DIR/fullchain.pem' \
+            --key-file '$SSL_DIR/privkey.pem' \
+            --reloadcmd 'cd $APP_DIR && docker compose -f docker-compose.prod.yml restart nginx'; \
+        chmod 600 '$SSL_DIR/privkey.pem'; \
+        chmod 644 '$SSL_DIR/fullchain.pem'"
+
+    print_warning "Reloading nginx with SSL certificates..."
+    ssh_cmd "cd $APP_DIR && docker compose -f docker-compose.prod.yml up -d nginx && docker compose -f docker-compose.prod.yml exec -T nginx nginx -t"
+
+    print_success "GoDaddy wildcard SSL installed and auto-renew configured via acme.sh!"
+}
+
+cmd_bootstrap() {
+    print_header "First-Time Bootstrap (Setup + Deploy + SSL)"
+
+    if [ -z "${GODADDY_API_KEY:-}" ] || [ -z "${GODADDY_API_SECRET:-}" ]; then
+        print_error "Bootstrap requires GoDaddy API credentials in local environment."
+        echo "Export before running:"
+        echo "  export GODADDY_API_KEY=..."
+        echo "  export GODADDY_API_SECRET=..."
+        echo "Optional: export SSL_EMAIL=you@$DOMAIN"
+        exit 1
+    fi
+
+    cmd_setup
+    FIRST_DEPLOY=true cmd_deploy
 }
 
 cmd_update() {
@@ -358,6 +399,7 @@ show_help() {
     echo "Commands:"
     echo "  setup     - Initial server setup (run once)"
     echo "  deploy    - Deploy/update the application"
+    echo "  bootstrap - First-time setup + deploy + GoDaddy wildcard SSL"
     echo "  update    - Update application (sync & rebuild)"
     echo "  logs      - View application logs"
     echo "  status    - Check service status"
@@ -373,6 +415,8 @@ show_help() {
     echo "  EC2_HOST  - EC2 instance IP or hostname"
     echo "  EC2_USER  - SSH user (default: ubuntu)"
     echo "  SSH_KEY   - Path to SSH key"
+    echo "  GODADDY_API_KEY / GODADDY_API_SECRET - Required for ssl/bootstrap"
+    echo "  SSL_EMAIL - Optional SSL registration email"
     echo ""
     echo "Example:"
     echo "  EC2_HOST=54.123.45.67 SSH_KEY=~/.ssh/my-key.pem ./scripts/ec2-deploy.sh deploy"
@@ -383,6 +427,9 @@ COMMAND="${1:-help}"
 case "$COMMAND" in
     setup)
         cmd_setup
+        ;;
+    bootstrap)
+        cmd_bootstrap
         ;;
     deploy)
         cmd_deploy

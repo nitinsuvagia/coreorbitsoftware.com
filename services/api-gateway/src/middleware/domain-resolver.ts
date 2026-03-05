@@ -9,7 +9,7 @@
  * 
  * Security:
  * - Main domain (youroms.com) → Platform admins ONLY
- * - Tenant subdomain (acme.youroms.com) → Tenant users ONLY
+ * - Tenant subdomain (innovatelab.youroms.com) → Tenant users ONLY
  */
 
 import { Request, Response, NextFunction } from 'express';
