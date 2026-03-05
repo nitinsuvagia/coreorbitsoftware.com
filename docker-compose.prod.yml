@@ -452,8 +452,9 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
       args:
-        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
-        - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
+        - NEXT_PUBLIC_API_URL=https://api.coreorbitsoftware.com
+        - NEXT_PUBLIC_APP_URL=https://portal.coreorbitsoftware.com
+        - NEXT_PUBLIC_MAIN_DOMAIN=coreorbitsoftware.com
     container_name: oms-web
     restart: always
     expose:
@@ -463,8 +464,6 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - NEXT_PUBLIC_API_URL=https://api.coreorbitsoftware.com
-      - NEXT_PUBLIC_APP_URL=https://portal.coreorbitsoftware.com
     depends_on:
       - api-gateway
     networks:
@@ -486,8 +485,8 @@ services:
       context: .
       dockerfile: apps/public-website/Dockerfile
       args:
-        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
-        - NEXT_PUBLIC_PORTAL_URL=${NEXT_PUBLIC_PORTAL_URL}
+        - NEXT_PUBLIC_API_URL=https://api.coreorbitsoftware.com
+        - NEXT_PUBLIC_MAIN_DOMAIN=coreorbitsoftware.com
     container_name: oms-public-website
     restart: always
     expose:
@@ -497,8 +496,6 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3100
-      - NEXT_PUBLIC_API_URL=https://api.coreorbitsoftware.com
-      - NEXT_PUBLIC_PORTAL_URL=https://portal.coreorbitsoftware.com
     networks:
       - oms-network
     healthcheck:

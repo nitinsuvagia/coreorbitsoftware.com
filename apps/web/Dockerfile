@@ -23,8 +23,16 @@ COPY apps/web ./apps/web
 WORKDIR /app/apps/web
 
 ENV NEXT_TELEMETRY_DISABLED=1
+
 # NEXT_PUBLIC_* variables must be set at build time for client-side code
-ENV NEXT_PUBLIC_API_URL=http://localhost:4000
+# Use ARG to pass from docker-compose or build command
+ARG NEXT_PUBLIC_API_URL=http://localhost:4000
+ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
+ARG NEXT_PUBLIC_MAIN_DOMAIN=localhost
+
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
+ENV NEXT_PUBLIC_MAIN_DOMAIN=${NEXT_PUBLIC_MAIN_DOMAIN}
 
 RUN npm run build
 

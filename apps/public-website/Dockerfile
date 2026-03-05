@@ -23,6 +23,13 @@ WORKDIR /app/apps/public-website
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# NEXT_PUBLIC_* variables must be set at build time for client-side code
+ARG NEXT_PUBLIC_API_URL=http://localhost:4000
+ARG NEXT_PUBLIC_MAIN_DOMAIN=localhost
+
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ENV NEXT_PUBLIC_MAIN_DOMAIN=${NEXT_PUBLIC_MAIN_DOMAIN}
+
 RUN npm run build
 
 FROM base AS runner

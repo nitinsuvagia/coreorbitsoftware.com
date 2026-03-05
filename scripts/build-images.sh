@@ -39,16 +39,32 @@ SERVICES=(
     "document-service:services/document-service"
     "billing-service:services/billing-service"
     "report-service:services/report-service"
+    "ai-service:services/ai-service"
     "web:apps/web"
+    "public-website:apps/public-website"
 )
+
+# Production URLs for frontend builds
+NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL:-https://api.coreorbitsoftware.com}"
+NEXT_PUBLIC_APP_URL="${NEXT_PUBLIC_APP_URL:-https://portal.coreorbitsoftware.com}"
+NEXT_PUBLIC_MAIN_DOMAIN="${NEXT_PUBLIC_MAIN_DOMAIN:-coreorbitsoftware.com}"
 
 for service in "${SERVICES[@]}"; do
     IFS=':' read -r name path <<< "$service"
     echo -e "${YELLOW}🔨 Building ${name}...${NC}"
     
+    # Add build args for frontend apps
+    BUILD_ARGS=""
+    if [[ "$name" == "web" ]]; then
+        BUILD_ARGS="--build-arg NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} --build-arg NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL} --build-arg NEXT_PUBLIC_MAIN_DOMAIN=${NEXT_PUBLIC_MAIN_DOMAIN}"
+    elif [[ "$name" == "public-website" ]]; then
+        BUILD_ARGS="--build-arg NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} --build-arg NEXT_PUBLIC_MAIN_DOMAIN=${NEXT_PUBLIC_MAIN_DOMAIN}"
+    fi
+    
     docker build \
         -t ${PREFIX}/${name}:${TAG} \
         -f ${path}/Dockerfile \
+        ${BUILD_ARGS} \
         .
     
     echo -e "${GREEN}✓ ${name} built${NC}"
