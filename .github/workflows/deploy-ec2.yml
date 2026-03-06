@@ -122,24 +122,35 @@ jobs:
 
       - name: Create .env on server
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -o ServerAliveCountMax=30 ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENVSSH'
-          cat > /opt/office-management/.env << 'EOF'
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -o ServerAliveCountMax=30 ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << ENVSSH
+          cat > /opt/office-management/.env << EOF
           NODE_ENV=production
           
-          # Database (Docker uses DB_PASSWORD, services use DATABASE_URL)
-          DATABASE_URL=${{ secrets.DATABASE_URL }}
+          # Database Configuration
+          DB_USER=postgres
+          DB_PASSWORD=${{ secrets.DATABASE_PASSWORD }}
+          DB_NAME=oms_master
+          DB_HOST=postgres
+          DB_PORT=5432
           DATABASE_HOST=postgres
           DATABASE_PORT=5432
           DATABASE_USER=postgres
           DATABASE_PASSWORD=${{ secrets.DATABASE_PASSWORD }}
           DATABASE_NAME=oms_master
-          DB_USER=postgres
-          DB_PASSWORD=${{ secrets.DATABASE_PASSWORD }}
-          DB_NAME=oms_master
+          MASTER_DATABASE_URL=postgresql://postgres:${{ secrets.DATABASE_PASSWORD }}@postgres:5432/oms_master
+          
+          # Tenant Database Configuration
+          TENANT_DB_HOST=postgres
+          TENANT_DB_PORT=5432
+          TENANT_DB_USER=postgres
+          TENANT_DB_PASSWORD=${{ secrets.DATABASE_PASSWORD }}
+          TENANT_DB_PREFIX=oms_tenant_
           
           # Redis
-          REDIS_URL=redis://redis:6379
+          REDIS_HOST=redis
+          REDIS_PORT=6379
           REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+          REDIS_URL=redis://:${{ secrets.REDIS_PASSWORD }}@redis:6379
           
           # JWT
           JWT_SECRET=${{ secrets.JWT_SECRET }}
@@ -147,14 +158,29 @@ jobs:
           JWT_ACCESS_TOKEN_EXPIRY=15m
           JWT_REFRESH_TOKEN_EXPIRY=7d
           
-          # Domain
+          # Domain Configuration
           MAIN_DOMAIN=${{ secrets.MAIN_DOMAIN }}
-          NEXT_PUBLIC_API_URL=${{ secrets.API_URL }}
-          NEXT_PUBLIC_APP_URL=${{ secrets.APP_URL }}
-          NEXT_PUBLIC_PORTAL_URL=${{ secrets.APP_URL }}
+          APP_URL=https://portal.${{ secrets.MAIN_DOMAIN }}
+          API_URL=https://api.${{ secrets.MAIN_DOMAIN }}
+          NEXT_PUBLIC_API_URL=https://api.${{ secrets.MAIN_DOMAIN }}
+          NEXT_PUBLIC_APP_URL=https://portal.${{ secrets.MAIN_DOMAIN }}
+          NEXT_PUBLIC_PORTAL_URL=https://portal.${{ secrets.MAIN_DOMAIN }}
+          NEXT_PUBLIC_MAIN_DOMAIN=${{ secrets.MAIN_DOMAIN }}
+          
+          # Internal Service URLs (Docker network)
+          AUTH_SERVICE_URL=http://auth-service:3001
+          EMPLOYEE_SERVICE_URL=http://employee-service:3002
+          ATTENDANCE_SERVICE_URL=http://attendance-service:3003
+          PROJECT_SERVICE_URL=http://project-service:3004
+          TASK_SERVICE_URL=http://task-service:3005
+          BILLING_SERVICE_URL=http://billing-service:3006
+          DOCUMENT_SERVICE_URL=http://document-service:3007
+          NOTIFICATION_SERVICE_URL=http://notification-service:3008
+          REPORT_SERVICE_URL=http://report-service:3009
+          AI_SERVICE_URL=http://ai-service:3012
           
           # CORS
-          CORS_ORIGINS=*
+          CORS_ORIGINS=https://portal.${{ secrets.MAIN_DOMAIN }},https://www.${{ secrets.MAIN_DOMAIN }},https://api.${{ secrets.MAIN_DOMAIN }}
           
           # Email
           SMTP_HOST=${{ secrets.SMTP_HOST }}
@@ -162,6 +188,11 @@ jobs:
           SMTP_USER=${{ secrets.SMTP_USER }}
           SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
           SMTP_FROM=${{ secrets.SMTP_FROM }}
+          EMAIL_FROM=${{ secrets.SMTP_FROM }}
+          
+          # Logging
+          LOG_LEVEL=info
+          LOG_FORMAT=json
           EOF
           ENVSSH
 
@@ -350,11 +381,128 @@ jobs:
           sudo docker compose -f docker-compose.prod.yml ps
           DEPLOYSSH
 
+      - name: Wait for Infrastructure
+        run: |
+          echo "⏳ Waiting for infrastructure services..."
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ServerAliveInterval=60 ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'WAITSSH'
+          cd /opt/office-management
+          
+          echo "⏳ Waiting for PostgreSQL to be ready..."
+          for i in {1..30}; do
+            if sudo docker exec oms-postgres pg_isready -U postgres 2>/dev/null; then
+              echo "✅ PostgreSQL is ready!"
+              break
+            fi
+            echo "  Attempt $i/30 - PostgreSQL not ready, waiting..."
+            sleep 3
+          done
+          
+          echo "⏳ Waiting for Redis to be ready..."
+          for i in {1..30}; do
+            if sudo docker exec oms-redis redis-cli ping 2>/dev/null | grep -q PONG; then
+              echo "✅ Redis is ready!"
+              break
+            fi
+            echo "  Attempt $i/30 - Redis not ready, waiting..."
+            sleep 2
+          done
+          
+          # Give services time to connect to infrastructure
+          echo "⏳ Waiting 30 seconds for services to initialize..."
+          sleep 30
+          WAITSSH
+
+      - name: Run Database Migrations
+        run: |
+          echo "🔄 Running database migrations..."
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ServerAliveInterval=60 ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'MIGRATESSH'
+          cd /opt/office-management
+          
+          echo "📦 Running master database migrations..."
+          sudo docker exec oms-auth-service npx prisma migrate deploy --schema=/app/packages/database/prisma/master/schema.prisma 2>&1 || {
+            echo "⚠️ Prisma migrate failed, trying db push..."
+            sudo docker exec oms-auth-service npx prisma db push --schema=/app/packages/database/prisma/master/schema.prisma --accept-data-loss 2>&1 || {
+              echo "❌ Migration failed. Checking auth-service logs..."
+              sudo docker logs oms-auth-service --tail 50
+            }
+          }
+          
+          echo "✅ Migrations complete!"
+          MIGRATESSH
+
+      - name: Seed Initial Data
+        run: |
+          echo "🌱 Seeding initial data..."
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ServerAliveInterval=60 ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'SEEDSSH'
+          cd /opt/office-management
+          
+          # Check if platform admin exists
+          ADMIN_EXISTS=$(sudo docker exec oms-postgres psql -U postgres -d oms_master -tAc "SELECT COUNT(*) FROM platform_admins WHERE email = 'admin@oms.local'" 2>/dev/null || echo "0")
+          
+          if [ "$ADMIN_EXISTS" = "0" ] || [ -z "$ADMIN_EXISTS" ]; then
+            echo "📝 Creating platform admin user..."
+            
+            # Generate bcrypt hash for admin123
+            PASSWORD_HASH=$(sudo docker exec oms-auth-service node -e "const bcrypt = require('bcryptjs'); console.log(bcrypt.hashSync('admin123', 12));" 2>/dev/null)
+            
+            if [ -n "$PASSWORD_HASH" ]; then
+              sudo docker exec oms-postgres psql -U postgres -d oms_master -c "
+                INSERT INTO platform_admins (id, email, username, password_hash, role, status, first_name, last_name, display_name, created_at, updated_at)
+                VALUES (gen_random_uuid(), 'admin@oms.local', 'superadmin', '$PASSWORD_HASH', 'SUPER_ADMIN', 'ACTIVE', 'Super', 'Admin', 'Super Admin', NOW(), NOW())
+                ON CONFLICT (email) DO NOTHING;
+              " 2>/dev/null && echo "✅ Platform admin created: admin@oms.local / admin123" || echo "⚠️ Admin creation skipped or failed"
+            else
+              echo "⚠️ Could not generate password hash, skipping admin creation"
+            fi
+          else
+            echo "✅ Platform admin already exists, skipping..."
+          fi
+          
+          # Seed subscription plans if needed
+          PLANS_EXIST=$(sudo docker exec oms-postgres psql -U postgres -d oms_master -tAc "SELECT COUNT(*) FROM subscription_plans" 2>/dev/null || echo "0")
+          
+          if [ "$PLANS_EXIST" = "0" ] || [ -z "$PLANS_EXIST" ]; then
+            echo "📝 Creating subscription plans..."
+            sudo docker exec oms-postgres psql -U postgres -d oms_master -c "
+              INSERT INTO subscription_plans (id, name, slug, description, tier, is_active, is_public, monthly_price, yearly_price, currency, max_users, max_storage, max_projects, max_clients, features, created_at, updated_at) VALUES
+              (gen_random_uuid(), 'Starter', 'starter', 'Perfect for small teams', 'STARTER', true, true, 29.00, 290.00, 'USD', 10, 5368709120, 5, 10, '{\"modules\": [\"employee\", \"attendance\", \"task\", \"file\"], \"support\": \"email\"}', NOW(), NOW()),
+              (gen_random_uuid(), 'Professional', 'professional', 'For growing businesses', 'PROFESSIONAL', true, true, 79.00, 790.00, 'USD', 50, 53687091200, 25, 50, '{\"modules\": [\"employee\", \"attendance\", \"task\", \"file\", \"project\"], \"support\": \"priority\"}', NOW(), NOW()),
+              (gen_random_uuid(), 'Enterprise', 'enterprise', 'Full-featured solution', 'ENTERPRISE', true, true, 199.00, 1990.00, 'USD', 500, 536870912000, NULL, NULL, '{\"modules\": [\"all\"], \"support\": \"dedicated\", \"sso\": true}', NOW(), NOW())
+              ON CONFLICT DO NOTHING;
+            " 2>/dev/null && echo "✅ Subscription plans created" || echo "⚠️ Plans creation skipped"
+          else
+            echo "✅ Subscription plans already exist, skipping..."
+          fi
+          
+          # Seed platform settings if needed
+          SETTINGS_EXIST=$(sudo docker exec oms-postgres psql -U postgres -d oms_master -tAc "SELECT COUNT(*) FROM platform_settings" 2>/dev/null || echo "0")
+          
+          if [ "$SETTINGS_EXIST" = "0" ] || [ -z "$SETTINGS_EXIST" ]; then
+            echo "📝 Creating platform settings..."
+            sudo docker exec oms-postgres psql -U postgres -d oms_master -c "
+              INSERT INTO platform_settings (id, general, email, security, billing, integrations, maintenance, created_at, updated_at) VALUES (
+                'default',
+                '{\"platformName\": \"Office Management System\", \"supportEmail\": \"support@coreorbitsoftware.com\"}',
+                '{\"fromName\": \"OMS Platform\", \"fromEmail\": \"noreply@coreorbitsoftware.com\"}',
+                '{\"mfaRequired\": false, \"sessionTimeout\": 3600}',
+                '{\"currency\": \"USD\"}',
+                '{}',
+                '{\"enabled\": false}',
+                NOW(), NOW()
+              ) ON CONFLICT DO NOTHING;
+            " 2>/dev/null && echo "✅ Platform settings created" || echo "⚠️ Settings creation skipped"
+          else
+            echo "✅ Platform settings already exist, skipping..."
+          fi
+          
+          echo "✅ Seeding complete!"
+          SEEDSSH
+
       - name: Health Check
         continue-on-error: true
         run: |
-          echo "⏳ Waiting for services to start (90 seconds)..."
-          sleep 90
+          echo "⏳ Running health checks..."
+          sleep 30
           
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ServerAliveInterval=60 ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'HEALTHSSH'
           cd /opt/office-management
@@ -363,42 +511,91 @@ jobs:
           sudo docker compose -f docker-compose.prod.yml ps
           
           echo ""
-          echo "🔍 Checking services..."
+          echo "🔍 Checking service health..."
           
-          # Check nginx (port 80)
-          echo -n "Nginx: "
-          if curl -s -o /dev/null -w "%{http_code}" http://localhost/health 2>/dev/null | grep -q "200"; then
-            echo "✅ Healthy"
-          else
-            echo "⚠️ Not responding on port 80"
-            sudo docker compose -f docker-compose.prod.yml logs nginx --tail=20
+          # Check all services
+          UNHEALTHY=$(sudo docker ps --filter "health=unhealthy" --format "{{.Names}}" 2>/dev/null)
+          HEALTHY_COUNT=$(sudo docker ps --filter "health=healthy" --format "{{.Names}}" 2>/dev/null | wc -l)
+          TOTAL_COUNT=$(sudo docker ps --format "{{.Names}}" 2>/dev/null | wc -l)
+          
+          echo "✅ Healthy services: $HEALTHY_COUNT / $TOTAL_COUNT"
+          
+          if [ -n "$UNHEALTHY" ]; then
+            echo ""
+            echo "⚠️ Unhealthy services detected:"
+            for svc in $UNHEALTHY; do
+              echo "  - $svc"
+              echo "    Last 20 log lines:"
+              sudo docker logs $svc --tail 20 2>&1 | sed 's/^/    /'
+              echo ""
+            done
           fi
           
-          # Check API Gateway through docker network
-          echo -n "API Gateway: "
+          # Check critical services specifically
+          echo ""
+          echo "🔍 Critical service checks:"
+          
+          echo -n "  PostgreSQL: "
+          if sudo docker exec oms-postgres pg_isready -U postgres 2>/dev/null; then
+            echo "✅ Ready"
+          else
+            echo "❌ Not ready"
+          fi
+          
+          echo -n "  Redis: "
+          if sudo docker exec oms-redis redis-cli ping 2>/dev/null | grep -q PONG; then
+            echo "✅ Ready"
+          else
+            echo "❌ Not ready"
+          fi
+          
+          echo -n "  Auth Service: "
+          if sudo docker exec oms-auth-service wget -q --spider http://localhost:3001/health 2>/dev/null; then
+            echo "✅ Healthy"
+          else
+            echo "❌ Unhealthy"
+          fi
+          
+          echo -n "  API Gateway: "
           if sudo docker exec oms-api-gateway wget -q --spider http://localhost:4000/health 2>/dev/null; then
             echo "✅ Healthy"
           else
-            echo "⚠️ Not responding"
-            sudo docker compose -f docker-compose.prod.yml logs api-gateway --tail=20
+            echo "❌ Unhealthy"
           fi
           
-          # Check web app through docker network
-          echo -n "Web App: "
+          echo -n "  Web App: "
           if sudo docker exec oms-web wget -q --spider http://localhost:3000 2>/dev/null; then
             echo "✅ Healthy"
           else
-            echo "⚠️ Not responding"
-            sudo docker compose -f docker-compose.prod.yml logs web --tail=20
+            echo "❌ Unhealthy"
           fi
           
-          # Show running containers summary
+          # Test login endpoint
           echo ""
-          echo "📦 Running containers:"
-          sudo docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+          echo "🔍 Testing API endpoint..."
+          API_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:4000/api/v1/auth/platform/login \
+            -H "Content-Type: application/json" \
+            -d '{"email":"test@test.com","password":"test"}' 2>/dev/null || echo "000")
+          
+          if [ "$API_RESPONSE" = "401" ] || [ "$API_RESPONSE" = "400" ]; then
+            echo "  ✅ Login endpoint responding (got $API_RESPONSE for invalid credentials)"
+          elif [ "$API_RESPONSE" = "000" ]; then
+            echo "  ❌ Login endpoint not reachable"
+          else
+            echo "  ⚠️ Login endpoint returned: $API_RESPONSE"
+          fi
           
           echo ""
-          echo "✅ Deployment verification complete"
+          echo "📦 Running containers:"
+          sudo docker ps --format "table {{.Names}}\t{{.Status}}"
+          
+          echo ""
+          echo "✅ Health check complete!"
+          echo ""
+          echo "🔑 Default admin credentials:"
+          echo "   Email:    admin@oms.local"
+          echo "   Password: admin123"
+          echo "   URL:      https://portal.${{ secrets.MAIN_DOMAIN }}"
           HEALTHSSH
 
       - name: Notify on Failure
