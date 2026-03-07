@@ -5,7 +5,7 @@
 import { AuditableEntity } from '../common';
 
 export type TenantStatus = 'pending' | 'active' | 'suspended' | 'inactive' | 'terminated';
-export type SubscriptionTier = 'starter' | 'professional' | 'enterprise' | 'custom';
+export type SubscriptionTier = 'free' | 'starter' | 'professional' | 'enterprise' | 'custom';
 export type BillingCycle = 'monthly' | 'quarterly' | 'yearly';
 export type PaymentStatus = 'pending' | 'paid' | 'overdue' | 'failed' | 'refunded';
 

@@ -215,7 +215,7 @@ export interface SubscriptionPlan {
   name: string;
   slug: string;
   description?: string;
-  tier: 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE' | 'CUSTOM';
+  tier: 'FREE' | 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE' | 'CUSTOM';
   monthlyPrice: number;
   yearlyPrice: number;
   currency: string;

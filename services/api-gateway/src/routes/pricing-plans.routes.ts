@@ -46,7 +46,7 @@ const createPlanSchema = z.object({
   name: z.string().min(1).max(100),
   slug: z.string().min(1).max(50).transform(s => s.toLowerCase().replace(/\s+/g, '-')).refine(s => /^[a-z0-9-]+$/.test(s), { message: 'Slug can only contain lowercase letters, numbers, and hyphens' }),
   description: z.string().max(500).optional(),
-  tier: z.enum(['STARTER', 'PROFESSIONAL', 'ENTERPRISE', 'CUSTOM']),
+  tier: z.enum(['FREE', 'STARTER', 'PROFESSIONAL', 'ENTERPRISE', 'CUSTOM']),
   monthlyPrice: z.number().min(0),
   yearlyPrice: z.number().min(0),
   currency: z.string().length(3).default('USD'),

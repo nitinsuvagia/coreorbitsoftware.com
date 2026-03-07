@@ -21,7 +21,7 @@ interface SubscriptionPlan {
   id: string;
   name: string;
   slug: string;
-  tier: 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE' | 'CUSTOM';
+  tier: 'FREE' | 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE' | 'CUSTOM';
   description?: string;
   monthlyPrice: number;
   yearlyPrice: number;
