@@ -6,7 +6,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { getTenantPrisma } from '@oms/database';
 import { renderTemplate, renderTemplateFromDb, clearTemplateCache } from '../services/template.service';
-import { sendEmail } from '../services/email.service';
+import { sendEmail, sendTenantEmail } from '../services/email.service';
 import { logger } from '../utils/logger';
 
 const router = Router();
@@ -1126,14 +1126,20 @@ router.post('/:id/test', requireTenant, requirePermission, async (req: Request, 
       sampleData
     );
     
-    // Send test email
-    await sendEmail({
-      to: { email: to },
+    // Send test email using tenant's SMTP settings
+    const result = await sendTenantEmail(tenantSlug, {
+      to,
       subject: `[TEST] ${rendered.subject}`,
       html: rendered.html,
       text: rendered.text,
-      emailType: 'tenant',
     });
+
+    if (!result.success) {
+      return res.status(500).json({
+        success: false,
+        error: result.error || 'Failed to send test email. Check your SMTP settings.',
+      });
+    }
     
     logger.info({ templateId: id, to, tenantSlug }, 'Test email sent');
     

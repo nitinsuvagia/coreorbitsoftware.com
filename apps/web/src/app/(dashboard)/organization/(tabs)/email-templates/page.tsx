@@ -256,11 +256,25 @@ export default function EmailTemplatesPage() {
   // Preview template
   const handlePreview = async (template: EmailTemplate) => {
     try {
+      // Fetch full template content if htmlContent is missing (list view doesn't include it)
+      let subject = template.subject;
+      let htmlContent = template.htmlContent;
+      if (!htmlContent) {
+        const fullTemplate = await apiClient.get<EmailTemplate>(`/api/v1/email-templates/${template.id}`);
+        if (fullTemplate.success && fullTemplate.data) {
+          subject = fullTemplate.data.subject;
+          htmlContent = fullTemplate.data.htmlContent;
+        }
+      }
+      if (!htmlContent) {
+        toast.error('Template has no content to preview');
+        return;
+      }
       const response = await apiClient.post<{ subject: string; html: string }>(
         '/api/v1/email-templates/preview',
         {
-          subject: template.subject,
-          htmlContent: template.htmlContent,
+          subject,
+          htmlContent,
           data: {
             title: 'Sample Title',
             recipientName: 'John Doe',

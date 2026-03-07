@@ -454,6 +454,19 @@ app.post('/api/v1/tenants/register', async (req: Request, res: Response, next: N
       logger.warn({ tenantId, slug: data.slug, error: emailError }, 'Failed to send welcome email');
     }
 
+    // Seed default email templates for the new tenant (non-blocking)
+    try {
+      const http = await import('http');
+      const seedReq = http.request(
+        `${config.notificationServiceUrl}/api/email-templates/seed`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Tenant-Slug': data.slug, 'X-User-ID': 'system' } },
+      );
+      seedReq.end();
+      logger.info({ tenantSlug: data.slug }, 'Email template seed triggered');
+    } catch (seedErr) {
+      logger.warn({ tenantSlug: data.slug, error: seedErr }, 'Failed to trigger email template seed');
+    }
+
     res.status(201).json({
       success: true,
       data: {
@@ -2088,6 +2101,16 @@ app.post('/api/v1/platform/migrate-tenants',
           await dbManager.migrateTenantDatabase(tenant.slug);
           results.push({ slug: tenant.slug, success: true });
           logger.info({ tenantSlug: tenant.slug }, 'Tenant database migrated');
+
+          // Also seed email templates (non-blocking, best-effort)
+          try {
+            const http = await import('http');
+            const seedReq = http.request(
+              `${config.notificationServiceUrl}/api/email-templates/seed`,
+              { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Tenant-Slug': tenant.slug, 'X-User-ID': 'system' } },
+            );
+            seedReq.end();
+          } catch {}
         } catch (err: any) {
           results.push({ slug: tenant.slug, success: false, error: err.message });
           logger.error({ tenantSlug: tenant.slug, error: err.message }, 'Tenant migration failed');

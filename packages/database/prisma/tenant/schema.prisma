@@ -1992,6 +1992,61 @@ enum EmailTemplateCategory {
   CUSTOM        // Custom templates created by admin
 }
 
+// ============================================================================
+// BADGES
+// ============================================================================
+
+enum BadgeCategory {
+  PERFORMANCE
+  ATTENDANCE
+  TEAMWORK
+  LEADERSHIP
+  INNOVATION
+  LEARNING
+  MILESTONE
+  SPECIAL
+}
+
+model Badge {
+  id          String        @id @default(uuid())
+  name        String        @db.VarChar(100)
+  description String?       @db.Text
+  icon        String        @default("Award") @db.VarChar(50)
+  color       String        @default("bg-blue-500") @db.VarChar(50)
+  category    BadgeCategory @default(SPECIAL)
+  points      Int           @default(10)
+  isActive    Boolean       @default(true) @map("is_active")
+  createdBy   String?       @map("created_by")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @default(now()) @updatedAt @map("updated_at")
+
+  employeeBadges EmployeeBadge[]
+
+  @@index([category])
+  @@index([isActive], map: "idx_badges_is_active")
+  @@map("badges")
+}
+
+model EmployeeBadge {
+  id          String   @id @default(uuid())
+  employeeId  String   @map("employee_id")
+  badgeId     String   @map("badge_id")
+  givenBy     String   @map("given_by")
+  givenByName String?  @db.VarChar(200) @map("given_by_name")
+  reason      String?  @db.Text
+  givenAt     DateTime @default(now()) @map("given_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  badge       Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, badgeId, givenBy, givenAt])
+  @@index([employeeId])
+  @@index([badgeId])
+  @@index([givenBy])
+  @@index([givenAt])
+  @@map("employee_badges")
+}
+
 // Assessment Enums
 
 enum AssessmentDifficulty {
