@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth/auth-context';
 import { apiClient } from '@/lib/api/client';
@@ -27,25 +27,30 @@ export function useProfile(): UseProfileReturn {
   const [saving, setSaving] = useState(false);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const userRef = useRef(user);
+  userRef.current = user;
+  const hasFetchedRef = useRef(false);
 
   const fetchProfile = useCallback(async () => {
     try {
-      setLoading(true);
+      // Only show loading skeleton on initial fetch, not re-fetches
+      if (!hasFetchedRef.current) setLoading(true);
       const response = await apiClient.get<UserProfile>('/api/v1/users/profile');
       if (response.success && response.data) {
         setProfile(response.data);
         setProfileForm(response.data);
+        hasFetchedRef.current = true;
       }
     } catch (error: any) {
       console.error('Failed to fetch profile:', error);
-      // Use auth user as fallback
-      if (user) {
+      // Use auth user as fallback only on initial load
+      if (!hasFetchedRef.current && userRef.current) {
         const fallbackProfile = {
-          id: user.id,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          avatar: user.avatar,
+          id: userRef.current.id,
+          firstName: userRef.current.firstName,
+          lastName: userRef.current.lastName,
+          email: userRef.current.email,
+          avatar: userRef.current.avatar,
         };
         setProfile(fallbackProfile);
         setProfileForm(fallbackProfile);
@@ -53,7 +58,7 @@ export function useProfile(): UseProfileReturn {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, []); // No user dependency - prevents re-fetch after save
 
   // Populate profile from auth user when user becomes available
   useEffect(() => {

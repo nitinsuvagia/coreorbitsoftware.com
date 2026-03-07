@@ -701,32 +701,31 @@ export default function TenantAdmin360Page() {
         <MetricCard
           title="Active Employees"
           value={org.activeEmployees}
-          change={org.growthRate}
+          change={org.growthRate !== 0 ? org.growthRate : undefined}
           icon={Users}
           color="blue"
           subtitle={`${org.totalEmployees} total (incl. ex) • ${org.onLeave} on leave`}
         />
         <MetricCard
           title="Active Projects"
-          value={org.activeProjects}
+          value={org.activeProjects > 0 ? org.activeProjects : '—'}
           icon={Folder}
           color="purple"
-          subtitle={`${org.completedProjects} completed this year`}
+          subtitle={org.activeProjects > 0 || org.completedProjects > 0 ? `${org.completedProjects} completed this year` : 'No project data yet'}
         />
         <MetricCard
           title="Total Revenue"
-          value={formatCurrency(org.totalRevenue, true)}
-          change={15.3}
+          value={org.totalRevenue > 0 ? formatCurrency(org.totalRevenue, true) : '—'}
           icon={DollarSign}
           color="green"
-          subtitle="This fiscal year"
+          subtitle={org.totalRevenue > 0 ? 'This fiscal year' : 'No revenue data yet'}
         />
         <MetricCard
           title="Budget Utilized"
-          value={`${org.budgetUtilized}%`}
+          value={org.monthlyBudget > 0 ? `${org.budgetUtilized}%` : '—'}
           icon={Activity}
           color="orange"
-          subtitle={`${formatCurrency(org.monthlyBudget, true)} monthly budget`}
+          subtitle={org.monthlyBudget > 0 ? `${formatCurrency(org.monthlyBudget, true)} monthly budget` : 'No budget data yet'}
         />
       </div>
 

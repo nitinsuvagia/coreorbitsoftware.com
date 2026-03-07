@@ -379,15 +379,19 @@ export default function BillingPage() {
                 {isLoading ? (
                   <Skeleton className="h-6 w-16" />
                 ) : (
-                  <Badge className={
-                    subscription?.cancelAtPeriodEnd ? 'bg-orange-500' :
-                    tenantStatus === 'ACTIVE' ? 'bg-green-500' :
-                    tenantStatus === 'TRIAL' ? 'bg-blue-500' :
-                    tenantStatus === 'CANCELLED' ? 'bg-red-500' :
-                    'bg-gray-500'
-                  }>
-                    {subscription?.cancelAtPeriodEnd ? 'Cancelling' : tenantStatus === 'TRIAL' ? 'Trial' : tenantStatus}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge className={
+                      subscription?.cancelAtPeriodEnd ? 'bg-orange-500' :
+                      tenantStatus === 'ACTIVE' ? 'bg-green-500' :
+                      tenantStatus === 'CANCELLED' ? 'bg-red-500' :
+                      'bg-gray-500'
+                    }>
+                      {subscription?.cancelAtPeriodEnd ? 'Cancelling' : tenantStatus}
+                    </Badge>
+                    {currentPlan && (
+                      <Badge variant="secondary">{currentPlan.name}</Badge>
+                    )}
+                  </div>
                 )}
               </div>
             </CardHeader>
