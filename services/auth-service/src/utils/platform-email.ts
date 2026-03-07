@@ -62,33 +62,37 @@ export async function sendPlatformEmail(options: PlatformEmailOptions): Promise<
   const emailConfig = await getPlatformEmailConfig();
 
   if (!emailConfig) {
-    logger.warn('Platform email not configured in Settings > Email. Cannot send email.');
-    return false;
+    logger.error('Platform email not configured in Settings > Email. Cannot send email.');
+    throw new Error('Platform email not configured. Configure SMTP in Settings > Email.');
   }
 
-  try {
-    const transporter = nodemailer.createTransport({
-      host: emailConfig.smtpHost,
-      port: emailConfig.smtpPort,
-      secure: emailConfig.encryption === 'ssl',
-      auth: {
-        user: emailConfig.smtpUsername,
-        pass: emailConfig.smtpPassword,
-      },
-    });
+  logger.info({ 
+    to: options.to, 
+    subject: options.subject,
+    smtpHost: emailConfig.smtpHost,
+    smtpPort: emailConfig.smtpPort,
+    fromEmail: emailConfig.fromEmail,
+    encryption: emailConfig.encryption,
+  }, 'Attempting to send platform email...');
 
-    await transporter.sendMail({
-      from: `"${emailConfig.fromName}" <${emailConfig.fromEmail}>`,
-      to: options.to,
-      subject: options.subject,
-      html: options.html,
-      text: options.text,
-    });
+  const transporter = nodemailer.createTransport({
+    host: emailConfig.smtpHost,
+    port: emailConfig.smtpPort,
+    secure: emailConfig.encryption === 'ssl',
+    auth: {
+      user: emailConfig.smtpUsername,
+      pass: emailConfig.smtpPassword,
+    },
+  });
 
-    logger.info({ to: options.to, subject: options.subject }, 'Platform email sent successfully');
-    return true;
-  } catch (error) {
-    logger.error({ error, to: options.to }, 'Failed to send platform email');
-    return false;
-  }
+  const info = await transporter.sendMail({
+    from: `"${emailConfig.fromName}" <${emailConfig.fromEmail}>`,
+    to: options.to,
+    subject: options.subject,
+    html: options.html,
+    text: options.text,
+  });
+
+  logger.info({ to: options.to, subject: options.subject, messageId: info.messageId }, 'Platform email sent successfully');
+  return true;
 }
