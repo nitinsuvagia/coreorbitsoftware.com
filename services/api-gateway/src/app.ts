@@ -73,7 +73,16 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   const isWildcard = config.corsOrigins.length === 1 && config.corsOrigins[0] === '*';
   const isExplicitlyAllowed = config.corsOrigins.includes(allowedOrigin);
   
-  const isAllowed = isWildcard || isLocalhost || isExplicitlyAllowed;
+  // Check wildcard subdomain patterns (e.g., https://*.coreorbitsoftware.com)
+  const isWildcardMatch = config.corsOrigins.some((pattern: string) => {
+    if (pattern.includes('*')) {
+      const regex = new RegExp('^' + pattern.replace(/\./g, '\\.').replace('*', '[a-zA-Z0-9-]+') + '$');
+      return regex.test(allowedOrigin);
+    }
+    return false;
+  });
+  
+  const isAllowed = isWildcard || isLocalhost || isExplicitlyAllowed || isWildcardMatch;
   
   if (isAllowed && origin) {
     res.setHeader('Access-Control-Allow-Origin', origin);

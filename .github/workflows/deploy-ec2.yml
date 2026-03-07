@@ -180,8 +180,8 @@ jobs:
           REPORT_SERVICE_URL=http://report-service:3009
           AI_SERVICE_URL=http://ai-service:3012
           
-          # CORS
-          CORS_ORIGINS=https://portal.${{ secrets.MAIN_DOMAIN }},https://www.${{ secrets.MAIN_DOMAIN }},https://api.${{ secrets.MAIN_DOMAIN }}
+          # CORS - include wildcard for tenant subdomains
+          CORS_ORIGINS=https://portal.${{ secrets.MAIN_DOMAIN }},https://www.${{ secrets.MAIN_DOMAIN }},https://api.${{ secrets.MAIN_DOMAIN }},https://*.${{ secrets.MAIN_DOMAIN }}
           
           # Email
           SMTP_HOST=${{ secrets.SMTP_HOST }}
