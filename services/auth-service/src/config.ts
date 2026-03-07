@@ -115,7 +115,7 @@ export const config: AuthConfig = {
   
   // Services
   get notificationServiceUrl() { 
-    return getEnv('NOTIFICATION_SERVICE_URL', 'http://notification-service:3006'); 
+    return getEnv('NOTIFICATION_SERVICE_URL', 'http://notification-service:3008'); 
   },
 };
 
