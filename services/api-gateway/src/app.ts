@@ -123,6 +123,7 @@ const skipBodyParserPaths = [
   '/api/v1/tasks',
   '/api/v1/billing',
   '/api/v1/notifications',
+  '/api/v1/email-templates',
   '/api/v1/reports',
   '/api/v1/ai',
   '/api/v1/badges',
@@ -1807,6 +1808,34 @@ app.use('/api/v1/billing',
     },
     onProxyRes: (proxyRes, req) => {
       // Ensure CORS headers from gateway are preserved
+      const origin = req.headers.origin;
+      if (origin) {
+        proxyRes.headers['access-control-allow-origin'] = origin;
+        proxyRes.headers['access-control-allow-credentials'] = 'true';
+      }
+    },
+  })
+);
+
+// Email templates proxy (notification service)
+app.use('/api/v1/email-templates',
+  requireAuth,
+  requireTenantContext,
+  createProxyMiddleware({
+    target: config.notificationServiceUrl,
+    changeOrigin: true,
+    pathRewrite: { '^/api/v1/email-templates': '/api/email-templates' },
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+      // Re-stream body for POST/PUT/PATCH
+      if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
+        const bodyData = JSON.stringify((req as any).body);
+        proxyReq.setHeader('Content-Type', 'application/json');
+        proxyReq.setHeader('Content-Length', Buffer.byteLength(bodyData));
+        proxyReq.write(bodyData);
+      }
+    },
+    onProxyRes: (proxyRes, req) => {
       const origin = req.headers.origin;
       if (origin) {
         proxyRes.headers['access-control-allow-origin'] = origin;

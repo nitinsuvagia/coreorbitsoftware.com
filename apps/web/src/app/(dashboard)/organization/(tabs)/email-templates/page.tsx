@@ -60,6 +60,7 @@ import {
   Search,
   Code,
   Info,
+  Download,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api/client';
@@ -127,6 +128,24 @@ export default function EmailTemplatesPage() {
   const [previewHtml, setPreviewHtml] = useState('');
   const [testEmail, setTestEmail] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [seeding, setSeeding] = useState(false);
+
+  // Seed default templates
+  const handleSeedDefaults = async () => {
+    try {
+      setSeeding(true);
+      const response = await apiClient.post<{ created?: number; existingCount?: number }>('/api/v1/email-templates/seed', {});
+      if (response.success) {
+        toast.success(response.data?.created ? `${response.data.created} default templates created` : 'Templates already exist');
+        fetchTemplates();
+        fetchCategories();
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to seed default templates');
+    } finally {
+      setSeeding(false);
+    }
+  };
 
   // Fetch templates
   const fetchTemplates = useCallback(async () => {
@@ -423,12 +442,24 @@ export default function EmailTemplatesPage() {
             <p className="mt-2 text-sm text-muted-foreground">
               {searchQuery
                 ? 'Try adjusting your search or filters'
-                : 'Create your first custom email template'}
+                : 'Seed default templates to get started, or create your own'}
             </p>
-            <Button className="mt-4" onClick={() => openEditDialog()}>
-              <Plus className="h-4 w-4 mr-2" />
-              Create Template
-            </Button>
+            <div className="mt-4 flex items-center justify-center gap-3">
+              {!searchQuery && (
+                <Button onClick={handleSeedDefaults} disabled={seeding}>
+                  {seeding ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4 mr-2" />
+                  )}
+                  Seed Default Templates
+                </Button>
+              )}
+              <Button variant={searchQuery ? 'default' : 'outline'} onClick={() => openEditDialog()}>
+                <Plus className="h-4 w-4 mr-2" />
+                Create Template
+              </Button>
+            </div>
           </CardContent>
         </Card>
       ) : (

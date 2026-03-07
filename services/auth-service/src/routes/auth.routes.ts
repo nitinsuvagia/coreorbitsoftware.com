@@ -1201,10 +1201,11 @@ router.get('/sso/status', async (req: Request, res: Response, next: NextFunction
     const tenantSlug = req.headers['x-tenant-slug'] as string;
     const tenantId = req.headers['x-tenant-id'] as string;
 
+    // If no tenant context (e.g. platform admin), SSO is not applicable
     if (!tenantSlug || !tenantId) {
-      return res.status(400).json({
-        success: false,
-        error: { code: 'MISSING_TENANT', message: 'Tenant context required.' },
+      return res.json({
+        success: true,
+        data: { enabled: false, type: null, name: null },
       });
     }
 

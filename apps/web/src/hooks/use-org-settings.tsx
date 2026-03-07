@@ -26,13 +26,19 @@ function isAuthenticated(): boolean {
   return !!match;
 }
 
+// Platform admin pages don't have tenant context - skip tenant-specific API calls
+function isPlatformAdminPath(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.location.pathname.startsWith('/admin');
+}
+
 export function OrgSettingsProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<OrganizationLocaleSettings>(DEFAULT_LOCALE_SETTINGS);
   const [loading, setLoading] = useState(true);
 
   const fetchSettings = useCallback(async () => {
-    // Only fetch settings if user is authenticated
-    if (!isAuthenticated()) {
+    // Only fetch settings if user is authenticated and on a tenant page (not platform admin)
+    if (!isAuthenticated() || isPlatformAdminPath()) {
       setLoading(false);
       return;
     }
