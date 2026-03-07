@@ -570,11 +570,12 @@ jobs:
             echo "❌ Unhealthy"
           fi
           
-          # Test login endpoint
+          # Test login endpoint (through nginx on port 80, since api-gateway is internal only)
           echo ""
-          echo "🔍 Testing API endpoint..."
-          API_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:4000/api/v1/auth/platform/login \
+          echo "🔍 Testing API endpoint (via nginx)..."
+          API_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost/api/v1/auth/platform/login \
             -H "Content-Type: application/json" \
+            -H "Host: api.coreorbitsoftware.com" \
             -d '{"email":"test@test.com","password":"test"}' 2>/dev/null || echo "000")
           
           if [ "$API_RESPONSE" = "401" ] || [ "$API_RESPONSE" = "400" ]; then
