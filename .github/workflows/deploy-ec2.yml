@@ -327,6 +327,33 @@ jobs:
             esac
           done <<< "$CHANGED_FILES"
           
+          # ===========================================
+          # Ensure SSL certs exist BEFORE starting nginx
+          # ===========================================
+          echo "🔒 Setting up SSL certificates..."
+          sudo mkdir -p deployment/nginx/ssl
+          
+          # Try to find Let's Encrypt cert
+          CERT_DIR=$(ls -dt /etc/letsencrypt/live/coreorbitsoftware.com* 2>/dev/null | head -1)
+          
+          if [ -n "$CERT_DIR" ] && [ -f "$CERT_DIR/fullchain.pem" ]; then
+            echo "🔒 Let's Encrypt certs found at $CERT_DIR — copying..."
+            sudo cp "$CERT_DIR/fullchain.pem" deployment/nginx/ssl/fullchain.pem
+            sudo cp "$CERT_DIR/privkey.pem" deployment/nginx/ssl/privkey.pem
+            sudo chmod 644 deployment/nginx/ssl/*.pem
+            echo "✅ Real SSL certs installed"
+          elif [ ! -f deployment/nginx/ssl/fullchain.pem ]; then
+            echo "⚠️ No Let's Encrypt certs found — generating self-signed fallback..."
+            sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+              -keyout deployment/nginx/ssl/privkey.pem \
+              -out deployment/nginx/ssl/fullchain.pem \
+              -subj "/CN=coreorbitsoftware.com" 2>/dev/null
+            sudo chmod 644 deployment/nginx/ssl/*.pem
+            echo "✅ Self-signed SSL certs installed (HTTPS will work but browser will show warning)"
+          else
+            echo "✅ SSL certs already exist in deployment/nginx/ssl/"
+          fi
+          
           # Build and deploy with Docker Compose
           # Build services sequentially to avoid memory issues
           
@@ -499,32 +526,28 @@ jobs:
           echo "✅ Seeding complete!"
           SEEDSSH
 
-      - name: Setup SSL if certificates exist
+      - name: Verify SSL Setup
         run: |
-          echo "🔒 Checking for SSL certificates..."
+          echo "🔒 Verifying SSL setup..."
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ServerAliveInterval=60 ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'SSLSSH'
           cd /opt/office-management
-
-          # Find the latest cert directory (could be -0001, -0002, etc. for renewals)
-          CERT_DIR=$(ls -dt /etc/letsencrypt/live/coreorbitsoftware.com* 2>/dev/null | head -1)
-
-          if [ -n "$CERT_DIR" ] && [ -f "$CERT_DIR/fullchain.pem" ]; then
-            echo "🔒 SSL certificates found at $CERT_DIR! Enabling HTTPS..."
-
-            # Copy certs to nginx ssl directory
-            sudo mkdir -p deployment/nginx/ssl
-            sudo cp "$CERT_DIR/fullchain.pem" deployment/nginx/ssl/
-            sudo cp "$CERT_DIR/privkey.pem" deployment/nginx/ssl/
-            sudo chmod 644 deployment/nginx/ssl/*.pem
-
-            # Swap to SSL config
-            cp deployment/nginx/conf.d/default-ssl.conf.template deployment/nginx/conf.d/default.conf
-
-            # Restart nginx to pick up SSL config and certs
-            sudo docker compose -f docker-compose.prod.yml restart nginx
-            echo "✅ SSL enabled!"
+          
+          echo "📋 SSL cert files:"
+          ls -la deployment/nginx/ssl/ 2>/dev/null || echo "  No SSL directory found!"
+          
+          echo ""
+          echo "📋 Nginx config check:"
+          sudo docker exec oms-nginx nginx -t 2>&1 || echo "  Nginx config test failed!"
+          
+          echo ""
+          echo "📋 Nginx listening ports:"
+          sudo docker exec oms-nginx ss -tlnp 2>/dev/null || sudo docker exec oms-nginx netstat -tlnp 2>/dev/null || echo "  Could not check ports"
+          
+          # Test HTTPS locally inside the container
+          if sudo docker exec oms-nginx wget -q -O /dev/null --no-check-certificate https://localhost/health 2>/dev/null; then
+            echo "✅ HTTPS is working inside the container!"
           else
-            echo "ℹ️ No SSL certificates found. Running HTTP-only mode."
+            echo "⚠️ HTTPS not responding inside the container"
           fi
           SSLSSH
 
