@@ -1,18 +1,28 @@
 'use client';
 
+import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   Card,
   CardContent,
+  CardDescription,
+  CardFooter,
   CardHeader,
+  CardTitle,
 } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PhoneDisplay } from '@/components/ui/phone-input';
 import { getInitials, getStatusColor, getAvatarColor } from '@/lib/utils';
 import { useOrgFormatters } from '@/hooks/use-org-settings';
 import { useMyEmployee } from '@/hooks/use-employees';
+import { useAuth } from '@/lib/auth/auth-context';
+import { apiClient } from '@/lib/api/client';
+import { toast } from 'sonner';
 import {
   Mail,
   Phone,
@@ -22,11 +32,108 @@ import {
   AlertCircle,
   GraduationCap,
   CreditCard,
+  Lock,
+  Loader2,
 } from 'lucide-react';
+
+function ChangePasswordCard() {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleChangePassword = async () => {
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      toast.error('All fields are required');
+      return;
+    }
+    if (newPassword.length < 8) {
+      toast.error('New password must be at least 8 characters');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error('New passwords do not match');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const response = await apiClient.post('/api/v1/auth/change-password', {
+        currentPassword,
+        newPassword,
+      });
+      if (response.success) {
+        toast.success('Password changed successfully');
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+      } else {
+        toast.error(response.error?.message || 'Failed to change password');
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to change password');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <Lock className="h-5 w-5" />
+          Change Password
+        </CardTitle>
+        <CardDescription>
+          Update your account password for security
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="currentPassword">Current Password</Label>
+          <Input
+            id="currentPassword"
+            type="password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            placeholder="Enter current password"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="newPassword">New Password</Label>
+          <Input
+            id="newPassword"
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            placeholder="Enter new password (min 8 characters)"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="confirmPassword">Confirm New Password</Label>
+          <Input
+            id="confirmPassword"
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Re-enter new password"
+          />
+        </div>
+      </CardContent>
+      <CardFooter>
+        <Button onClick={handleChangePassword} disabled={saving}>
+          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Change Password
+        </Button>
+      </CardFooter>
+    </Card>
+  );
+}
 
 export default function ProfilePage() {
   const { formatDate } = useOrgFormatters();
   const { data: employee, isLoading, error } = useMyEmployee();
+  const { user } = useAuth();
 
   if (isLoading) {
     return (
@@ -60,13 +167,47 @@ export default function ProfilePage() {
   }
 
   if (error || !employee) {
+    const displayName = user?.firstName
+      ? `${user.firstName} ${user.lastName || ''}`.trim()
+      : user?.email || 'User';
+    const initials = getInitials(displayName);
     return (
-      <div className="flex flex-col items-center justify-center py-12">
-        <AlertCircle className="h-12 w-12 text-destructive mb-4" />
-        <h2 className="text-xl font-semibold">Profile Not Found</h2>
-        <p className="text-muted-foreground mb-4">
-          Your employee profile could not be loaded. Please contact HR.
-        </p>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-3xl font-bold tracking-tight">My Profile</h2>
+            <p className="text-muted-foreground">Your account information</p>
+          </div>
+        </div>
+
+        <div className="grid gap-6 md:grid-cols-3">
+          <Card className="md:col-span-1">
+            <CardContent className="pt-6">
+              <div className="flex flex-col items-center gap-4">
+                <Avatar className="h-24 w-24">
+                  <AvatarFallback className="text-2xl font-semibold bg-primary/10 text-primary">
+                    {initials}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="text-center">
+                  <h3 className="text-xl font-semibold">{displayName}</h3>
+                  <p className="text-muted-foreground text-sm">
+                    {(user?.roles?.[0] || 'user').replace(/_/g, ' ')}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-6 space-y-4">
+                <div className="flex items-center gap-3">
+                  <Mail className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm truncate">{user?.email}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <div className="md:col-span-2">
+            <ChangePasswordCard />
+          </div>
+        </div>
       </div>
     );
   }
@@ -448,6 +589,9 @@ export default function ProfilePage() {
           </Tabs>
         </Card>
       </div>
+
+      {/* Password Change Section */}
+      <ChangePasswordCard />
     </div>
   );
 }

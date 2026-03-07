@@ -123,11 +123,17 @@ export function Header({ title }: HeaderProps) {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link href="/profile">
+                <User className="mr-2 h-4 w-4" />
+                My Profile
+              </Link>
+            </DropdownMenuItem>
             {!isTenantOwner && (
               <DropdownMenuItem asChild>
                 <Link href="/my-360">
                   <User className="mr-2 h-4 w-4" />
-                  My 360° Profile
+                  My 360° View
                 </Link>
               </DropdownMenuItem>
             )}

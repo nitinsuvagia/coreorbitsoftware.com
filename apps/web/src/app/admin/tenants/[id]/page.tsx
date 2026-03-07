@@ -150,7 +150,8 @@ export default function TenantDetailPage() {
     fetchTenant();
   }, [tenantId]);
 
-  const portalUrl = tenant?.slug ? `http://${tenant.slug}.localhost:3000` : '';
+  const mainDomain = process.env.NEXT_PUBLIC_MAIN_DOMAIN || 'localhost:3000';
+  const portalUrl = tenant?.slug ? `https://${tenant.slug}.${mainDomain}` : '';
   const enabledModules = useMemo(() => {
     if (!tenant?.settings) return [];
     return moduleLabels.filter((module) => (tenant.settings as any)[module.key]);

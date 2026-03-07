@@ -389,6 +389,39 @@ app.post('/api/v1/tenants/register', async (req: Request, res: Response, next: N
       data: { activatedAt: new Date() },
     });
 
+    // Auto-create trial subscription with starter plan
+    try {
+      const starterPlan = await prisma.subscriptionPlan.findFirst({
+        where: { slug: 'starter', isActive: true },
+      });
+      if (starterPlan) {
+        const trialDays = data.trialDays || 14;
+        await prisma.subscription.create({
+          data: {
+            tenantId,
+            planId: starterPlan.id,
+            status: 'TRIALING',
+            billingCycle: 'MONTHLY',
+            amount: starterPlan.monthlyPrice,
+            currency: starterPlan.currency,
+            maxUsers: starterPlan.maxUsers,
+            maxStorage: starterPlan.maxStorage,
+            maxProjects: starterPlan.maxProjects,
+            maxClients: starterPlan.maxClients,
+            currentPeriodStart: new Date(),
+            currentPeriodEnd: new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000),
+            trialStart: new Date(),
+            trialEnd: new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000),
+          },
+        });
+        logger.info({ tenantId, planSlug: 'starter' }, 'Trial subscription created for new tenant');
+      } else {
+        logger.warn({ tenantId }, 'Starter plan not found - no subscription created');
+      }
+    } catch (subErr: any) {
+      logger.warn({ tenantId, error: subErr.message }, 'Failed to create trial subscription');
+    }
+
     logger.info({ tenantId, slug: data.slug }, 'Tenant registered via public signup');
 
     // Send welcome email using platform email settings from DB (non-blocking)
@@ -1828,7 +1861,7 @@ app.use('/api/v1/email-templates',
     onProxyReq: (proxyReq, req) => {
       addTenantHeaders(proxyReq, req as TenantContextRequest);
       // Re-stream body for POST/PUT/PATCH
-      if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
+      if ((req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') && (req as any).body) {
         const bodyData = JSON.stringify((req as any).body);
         proxyReq.setHeader('Content-Type', 'application/json');
         proxyReq.setHeader('Content-Length', Buffer.byteLength(bodyData));
@@ -1856,7 +1889,7 @@ app.use('/api/v1/notifications',
     onProxyReq: (proxyReq, req) => {
       addTenantHeaders(proxyReq, req as TenantContextRequest);
       // Re-stream body for POST/PUT/PATCH
-      if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
+      if ((req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') && (req as any).body) {
         const bodyData = JSON.stringify((req as any).body);
         proxyReq.setHeader('Content-Type', 'application/json');
         proxyReq.setHeader('Content-Length', Buffer.byteLength(bodyData));
@@ -2032,6 +2065,55 @@ app.use('/api/v1/platform/plans',
   requireMainDomain,
   requirePlatformAdmin(['SUPER_ADMIN', 'BILLING_ADMIN']),
   pricingPlansRoutes
+);
+
+// Migrate all tenant databases (apply schema changes to existing tenants)
+app.post('/api/v1/platform/migrate-tenants',
+  requireAuth,
+  requireMainDomain,
+  requirePlatformAdmin(['SUPER_ADMIN']),
+  async (req: Request, res: Response) => {
+    try {
+      const prisma = getMasterPrisma();
+      const tenants = await prisma.tenant.findMany({
+        where: { status: { in: ['ACTIVE', 'TRIAL'] } },
+        select: { id: true, slug: true, name: true },
+      });
+
+      const dbManager = getTenantDbManager();
+      const results: Array<{ slug: string; success: boolean; error?: string }> = [];
+
+      for (const tenant of tenants) {
+        try {
+          await dbManager.migrateTenantDatabase(tenant.slug);
+          results.push({ slug: tenant.slug, success: true });
+          logger.info({ tenantSlug: tenant.slug }, 'Tenant database migrated');
+        } catch (err: any) {
+          results.push({ slug: tenant.slug, success: false, error: err.message });
+          logger.error({ tenantSlug: tenant.slug, error: err.message }, 'Tenant migration failed');
+        }
+      }
+
+      const succeeded = results.filter(r => r.success).length;
+      const failed = results.filter(r => !r.success).length;
+
+      res.json({
+        success: true,
+        data: {
+          total: tenants.length,
+          succeeded,
+          failed,
+          results,
+        },
+      });
+    } catch (error: any) {
+      logger.error({ error }, 'Migrate tenants error');
+      res.status(500).json({
+        success: false,
+        error: { message: error.message },
+      });
+    }
+  }
 );
 
 // Platform subscriptions management

@@ -9,11 +9,14 @@
 import { getEventBus as _getEventBus } from './event-bus';
 export { EventBus, getEventBus, createEvent, initializeEventBus, shutdownEventBus, subscribeToEvent } from './event-bus';
 
-// Convenience function for publishing events
+// Convenience function for publishing events (non-critical - failures are logged but don't break business logic)
 export async function publishEvent(eventType: string, payload: any, options?: { tenantId?: string; tenantSlug?: string }): Promise<void> {
-  const eventBus = _getEventBus();
-  // Publish to AUDIT_LOG queue by default or could be routed based on event type
-  await eventBus.sendToQueue('oms-audit-log' as any, eventType, payload, options);
+  try {
+    const eventBus = _getEventBus();
+    await eventBus.sendToQueue('oms-audit-log' as any, eventType, payload, options);
+  } catch (error: any) {
+    console.warn(`[event-bus] Failed to publish event "${eventType}": ${error.message}`);
+  }
 }
 
 // Configuration

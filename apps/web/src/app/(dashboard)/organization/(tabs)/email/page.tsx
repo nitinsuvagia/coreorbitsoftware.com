@@ -313,38 +313,38 @@ export default function OrganizationEmailPage() {
         <CardHeader>
           <CardTitle className="text-lg">Common SMTP Providers</CardTitle>
           <CardDescription>
-            Reference settings for popular email providers
+            Click a provider to auto-fill SMTP settings
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            <div className="p-4 border rounded-lg">
+            <div className="p-4 border rounded-lg cursor-pointer hover:border-primary hover:bg-accent/50 transition-colors" onClick={() => setFormData((f) => ({ ...f, smtpHost: 'smtp.gmail.com', smtpPort: 587, smtpEncryption: 'tls' }))}>
               <h4 className="font-medium mb-2">Gmail / Google Workspace</h4>
               <p className="text-sm text-muted-foreground">Host: smtp.gmail.com</p>
               <p className="text-sm text-muted-foreground">Port: 587 (TLS)</p>
               <p className="text-xs text-muted-foreground mt-1">Requires App Password</p>
             </div>
-            <div className="p-4 border rounded-lg">
+            <div className="p-4 border rounded-lg cursor-pointer hover:border-primary hover:bg-accent/50 transition-colors" onClick={() => setFormData((f) => ({ ...f, smtpHost: 'smtp.office365.com', smtpPort: 587, smtpEncryption: 'tls' }))}>
               <h4 className="font-medium mb-2">Microsoft 365 / Outlook</h4>
               <p className="text-sm text-muted-foreground">Host: smtp.office365.com</p>
               <p className="text-sm text-muted-foreground">Port: 587 (TLS)</p>
             </div>
-            <div className="p-4 border rounded-lg">
+            <div className="p-4 border rounded-lg cursor-pointer hover:border-primary hover:bg-accent/50 transition-colors" onClick={() => setFormData((f) => ({ ...f, smtpHost: 'email-smtp.ap-south-1.amazonaws.com', smtpPort: 587, smtpEncryption: 'tls' }))}>
               <h4 className="font-medium mb-2">Amazon SES</h4>
               <p className="text-sm text-muted-foreground">Host: email-smtp.[region].amazonaws.com</p>
               <p className="text-sm text-muted-foreground">Port: 587 (TLS)</p>
             </div>
-            <div className="p-4 border rounded-lg">
+            <div className="p-4 border rounded-lg cursor-pointer hover:border-primary hover:bg-accent/50 transition-colors" onClick={() => setFormData((f) => ({ ...f, smtpHost: 'smtp.sendgrid.net', smtpPort: 587, smtpEncryption: 'tls' }))}>
               <h4 className="font-medium mb-2">SendGrid</h4>
               <p className="text-sm text-muted-foreground">Host: smtp.sendgrid.net</p>
               <p className="text-sm text-muted-foreground">Port: 587 (TLS)</p>
             </div>
-            <div className="p-4 border rounded-lg">
+            <div className="p-4 border rounded-lg cursor-pointer hover:border-primary hover:bg-accent/50 transition-colors" onClick={() => setFormData((f) => ({ ...f, smtpHost: 'smtp.mailgun.org', smtpPort: 587, smtpEncryption: 'tls' }))}>
               <h4 className="font-medium mb-2">Mailgun</h4>
               <p className="text-sm text-muted-foreground">Host: smtp.mailgun.org</p>
               <p className="text-sm text-muted-foreground">Port: 587 (TLS)</p>
             </div>
-            <div className="p-4 border rounded-lg">
+            <div className="p-4 border rounded-lg cursor-pointer hover:border-primary hover:bg-accent/50 transition-colors" onClick={() => setFormData((f) => ({ ...f, smtpHost: 'smtp.zoho.com', smtpPort: 587, smtpEncryption: 'tls' }))}>
               <h4 className="font-medium mb-2">Zoho Mail</h4>
               <p className="text-sm text-muted-foreground">Host: smtp.zoho.com</p>
               <p className="text-sm text-muted-foreground">Port: 587 (TLS)</p>

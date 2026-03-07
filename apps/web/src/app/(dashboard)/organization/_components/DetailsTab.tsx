@@ -158,7 +158,7 @@ export function DetailsTab({
                 className="rounded-r-none bg-muted"
               />
               <span className="inline-flex items-center px-3 bg-muted border border-l-0 rounded-r-md text-sm text-muted-foreground">
-                .youroms.com
+                .{process.env.NEXT_PUBLIC_MAIN_DOMAIN || 'youroms.com'}
               </span>
             </div>
           </div>

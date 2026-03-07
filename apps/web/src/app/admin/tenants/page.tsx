@@ -38,6 +38,7 @@ import {
   Loader2,
   AlertCircle,
   RefreshCw,
+  Database,
 } from 'lucide-react';
 import Link from 'next/link';
 import { apiClient } from '@/lib/api/client';
@@ -80,6 +81,7 @@ export default function TenantsPage() {
   const [deleting, setDeleting] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
   const [deleteError, setDeleteError] = useState('');
+  const [migrating, setMigrating] = useState(false);
 
   // Debounce search input
   useEffect(() => {
@@ -183,6 +185,25 @@ export default function TenantsPage() {
     }
   };
 
+  const handleMigrateTenants = async () => {
+    setMigrating(true);
+    try {
+      const response = await apiClient.post<{ total: number; succeeded: number; failed: number }>('/api/v1/platform/migrate-tenants', {});
+      if (response.success && response.data) {
+        toast.success(`Migration complete: ${response.data.succeeded}/${response.data.total} tenants updated`);
+        if (response.data.failed > 0) {
+          toast.warning(`${response.data.failed} tenant(s) failed to migrate`);
+        }
+      } else {
+        toast.error(response.error?.message || 'Migration failed');
+      }
+    } catch (err) {
+      toast.error('Failed to migrate tenant databases');
+    } finally {
+      setMigrating(false);
+    }
+  };
+
   if (loading && tenants.length === 0) {
     return (
       <div className="space-y-6">
@@ -261,6 +282,10 @@ export default function TenantsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={handleMigrateTenants} disabled={migrating}>
+            {migrating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
+            {migrating ? 'Migrating...' : 'Migrate DBs'}
+          </Button>
           <Button variant="outline" onClick={fetchTenants} disabled={loading}>
             <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
