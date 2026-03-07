@@ -507,7 +507,7 @@ services:
     networks:
       - oms-network
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000', r => r.statusCode === 200 ? process.exit(0) : process.exit(1)).on('error', () => process.exit(1))\""]
+      test: ["CMD-SHELL", "node -e \"const h=require('http');const r=h.get('http://localhost:3000',res=>{res.resume();process.exit(res.statusCode<400?0:1)});r.on('error',()=>process.exit(1));r.setTimeout(5000,()=>{r.destroy();process.exit(1)})\""]
       interval: 30s
       timeout: 10s
       retries: 5
