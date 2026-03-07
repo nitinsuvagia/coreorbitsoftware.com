@@ -400,7 +400,7 @@ jobs:
           
           echo "⏳ Waiting for Redis to be ready..."
           for i in {1..30}; do
-            if sudo docker exec oms-redis redis-cli ping 2>/dev/null | grep -q PONG; then
+            if sudo docker inspect --format='{{.State.Health.Status}}' oms-redis 2>/dev/null | grep -q healthy; then
               echo "✅ Redis is ready!"
               break
             fi
@@ -544,7 +544,7 @@ jobs:
           fi
           
           echo -n "  Redis: "
-          if sudo docker exec oms-redis redis-cli ping 2>/dev/null | grep -q PONG; then
+          if sudo docker inspect --format='{{.State.Health.Status}}' oms-redis 2>/dev/null | grep -q healthy; then
             echo "✅ Ready"
           else
             echo "❌ Not ready"
