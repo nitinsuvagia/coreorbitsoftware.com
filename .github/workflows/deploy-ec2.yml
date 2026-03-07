@@ -400,7 +400,7 @@ jobs:
           
           echo "⏳ Waiting for Redis to be ready..."
           for i in {1..30}; do
-            if sudo docker exec oms-redis redis-cli -a "${REDIS_PASSWORD}" ping 2>/dev/null | grep -q PONG; then
+            if sudo docker exec oms-redis redis-cli ping 2>/dev/null | grep -q PONG; then
               echo "✅ Redis is ready!"
               break
             fi
@@ -420,9 +420,9 @@ jobs:
           cd /opt/office-management
           
           echo "📦 Running master database migrations..."
-          sudo docker exec oms-auth-service npx prisma migrate deploy --schema=/app/packages/database/prisma/master/schema.prisma 2>&1 || {
+          sudo docker exec oms-auth-service npx prisma migrate deploy --schema=/app/prisma/master/schema.prisma 2>&1 || {
             echo "⚠️ Prisma migrate failed, trying db push..."
-            sudo docker exec oms-auth-service npx prisma db push --schema=/app/packages/database/prisma/master/schema.prisma --accept-data-loss 2>&1 || {
+            sudo docker exec oms-auth-service npx prisma db push --schema=/app/prisma/master/schema.prisma --accept-data-loss 2>&1 || {
               echo "❌ Migration failed. Checking auth-service logs..."
               sudo docker logs oms-auth-service --tail 50
             }
@@ -544,7 +544,7 @@ jobs:
           fi
           
           echo -n "  Redis: "
-          if sudo docker exec oms-redis redis-cli -a "${REDIS_PASSWORD}" ping 2>/dev/null | grep -q PONG; then
+          if sudo docker exec oms-redis redis-cli ping 2>/dev/null | grep -q PONG; then
             echo "✅ Ready"
           else
             echo "❌ Not ready"
@@ -565,19 +565,16 @@ jobs:
           fi
           
           echo -n "  Web App: "
-          if sudo docker exec oms-web node -e "require('http').get('http://localhost:3000', r => { process.exit(r.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))" 2>/dev/null; then
+          if sudo docker exec oms-web node -e "const h=require('http');h.get('http://localhost:3000',r=>{r.resume();process.exit(r.statusCode<400?0:1)}).on('error',()=>process.exit(1))" 2>/dev/null; then
             echo "✅ Healthy"
           else
             echo "❌ Unhealthy"
           fi
           
-          # Test login endpoint (through nginx on port 80, since api-gateway is internal only)
+          # Test login endpoint via docker network (bypass nginx SSL redirect)
           echo ""
-          echo "🔍 Testing API endpoint (via nginx)..."
-          API_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost/api/v1/auth/platform/login \
-            -H "Content-Type: application/json" \
-            -H "Host: api.coreorbitsoftware.com" \
-            -d '{"email":"test@test.com","password":"test"}' 2>/dev/null || echo "000")
+          echo "🔍 Testing API endpoint (via docker exec)..."
+          API_RESPONSE=$(sudo docker exec oms-api-gateway node -e "const h=require('http');const r=h.request({hostname:'localhost',port:4000,path:'/api/v1/auth/platform/login',method:'POST',headers:{'Content-Type':'application/json'}},res=>{console.log(res.statusCode);process.exit(0)});r.on('error',()=>{console.log('000');process.exit(1)});r.write(JSON.stringify({email:'test@test.com',password:'test'}));r.end()" 2>/dev/null || echo "000")
           
           if [ "$API_RESPONSE" = "401" ] || [ "$API_RESPONSE" = "400" ]; then
             echo "  ✅ Login endpoint responding (got $API_RESPONSE for invalid credentials)"

@@ -78,6 +78,9 @@ COPY --from=builder /app/packages/tenant-db-manager/package.json ./node_modules/
 COPY --from=builder /app/node_modules/.prisma/master-client ./node_modules/.prisma/master-client
 COPY --from=builder /app/node_modules/.prisma/tenant-client ./node_modules/.prisma/tenant-client
 
+# Copy Prisma schemas and migrations for runtime migrate deploy
+COPY --from=builder /app/packages/database/prisma ./prisma
+
 USER appuser
 
 EXPOSE 3001
