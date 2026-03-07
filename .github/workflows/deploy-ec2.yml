@@ -335,20 +335,6 @@ jobs:
           sudo docker container prune -f || true
           sudo docker image prune -f || true
 
-          # Setup SSL before starting nginx
-          echo "🔒 Checking for SSL certificates..."
-          if [ -f /etc/letsencrypt/live/coreorbitsoftware.com/fullchain.pem ]; then
-            echo "🔒 SSL certificates found! Enabling HTTPS..."
-            sudo mkdir -p deployment/nginx/ssl
-            sudo cp /etc/letsencrypt/live/coreorbitsoftware.com/fullchain.pem deployment/nginx/ssl/
-            sudo cp /etc/letsencrypt/live/coreorbitsoftware.com/privkey.pem deployment/nginx/ssl/
-            sudo chmod 644 deployment/nginx/ssl/*.pem
-            cp deployment/nginx/conf.d/default-ssl.conf.template deployment/nginx/conf.d/default.conf
-            echo "✅ SSL config activated!"
-          else
-            echo "ℹ️ No SSL certificates found. Running HTTP-only mode."
-          fi
-
           if [ "$FULL_DEPLOY" = true ]; then
             echo "🚀 Mode: FULL DEPLOY"
 
@@ -512,6 +498,32 @@ jobs:
           
           echo "✅ Seeding complete!"
           SEEDSSH
+
+      - name: Setup SSL if certificates exist
+        run: |
+          echo "🔒 Checking for SSL certificates..."
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ServerAliveInterval=60 ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'SSLSSH'
+          cd /opt/office-management
+
+          if [ -f /etc/letsencrypt/live/coreorbitsoftware.com/fullchain.pem ]; then
+            echo "🔒 SSL certificates found! Enabling HTTPS..."
+
+            # Copy certs to nginx ssl directory
+            sudo mkdir -p deployment/nginx/ssl
+            sudo cp /etc/letsencrypt/live/coreorbitsoftware.com/fullchain.pem deployment/nginx/ssl/
+            sudo cp /etc/letsencrypt/live/coreorbitsoftware.com/privkey.pem deployment/nginx/ssl/
+            sudo chmod 644 deployment/nginx/ssl/*.pem
+
+            # Swap to SSL config
+            cp deployment/nginx/conf.d/default-ssl.conf.template deployment/nginx/conf.d/default.conf
+
+            # Restart nginx to pick up SSL config and certs
+            sudo docker compose -f docker-compose.prod.yml restart nginx
+            echo "✅ SSL enabled!"
+          else
+            echo "ℹ️ No SSL certificates found. Running HTTP-only mode."
+          fi
+          SSLSSH
 
       - name: Health Check
         continue-on-error: true
