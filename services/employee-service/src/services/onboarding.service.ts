@@ -180,10 +180,9 @@ export class OnboardingService {
     const companyName = tenant?.legalName || tenant?.name || tenantSlug;
     
     // Build onboarding portal URL with tenant subdomain
-    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    // Insert tenant subdomain into the URL (e.g., http://softqube.localhost:3000/onboarding/...)
-    const urlObj = new URL(baseUrl);
-    const frontendUrl = `${urlObj.protocol}//${tenantSlug}.${urlObj.host}`;
+    const mainDomain = process.env.MAIN_DOMAIN || 'coreorbitsoftware.com';
+    const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
+    const frontendUrl = process.env.NODE_ENV === 'development' ? `http://${tenantSlug}.localhost:3000` : `${protocol}://${tenantSlug}.${mainDomain}`;
     const onboardingUrl = `${frontendUrl}/onboarding/${onboardingToken}`;
 
     // Send onboarding email with temp credentials
@@ -281,11 +280,10 @@ export class OnboardingService {
     const companyName = tenant?.legalName || tenant?.name || tenantSlug;
     
     // Build onboarding portal URL with tenant subdomain
-    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    // Insert tenant subdomain into the URL (e.g., http://softqube.localhost:3000/onboarding/...)
-    const urlObj = new URL(baseUrl);
-    const frontendUrl = `${urlObj.protocol}//${tenantSlug}.${urlObj.host}`;
-    const onboardingUrl = `${frontendUrl}/onboarding/${onboardingToken}`;
+    const resendMainDomain = process.env.MAIN_DOMAIN || 'coreorbitsoftware.com';
+    const resendProtocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
+    const resendFrontendUrl = process.env.NODE_ENV === 'development' ? `http://${tenantSlug}.localhost:3000` : `${resendProtocol}://${tenantSlug}.${resendMainDomain}`;
+    const onboardingUrl = `${resendFrontendUrl}/onboarding/${onboardingToken}`;
 
     // Send onboarding email with temp credentials
     await this.sendOnboardingEmail({

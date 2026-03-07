@@ -4,9 +4,11 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Check, Sparkles, Zap, Loader2, Users, HardDrive, FolderKanban, Building2 } from 'lucide-react';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://api.coreorbitsoftware.com';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.coreorbitsoftware.com';
 
-const SIGNUP_URL = 'http://portal.coreorbitsoftware.com/signup';
+import { siteConfig } from '@/lib/site-config';
+
+const SIGNUP_URL = siteConfig.signupUrl;
 
 interface PlanFeatures {
   customDomain: boolean;

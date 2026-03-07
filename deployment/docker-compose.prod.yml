@@ -440,6 +440,7 @@ services:
       - PORT=3000
       - NEXT_PUBLIC_API_URL=https://api.coreorbitsoftware.com
       - NEXT_PUBLIC_APP_URL=https://portal.coreorbitsoftware.com
+      - NEXT_PUBLIC_MAIN_DOMAIN=coreorbitsoftware.com
     depends_on:
       - api-gateway
     networks:
@@ -469,6 +470,7 @@ services:
       - PORT=3100
       - NEXT_PUBLIC_API_URL=https://api.coreorbitsoftware.com
       - NEXT_PUBLIC_PORTAL_URL=https://portal.coreorbitsoftware.com
+      - NEXT_PUBLIC_MAIN_DOMAIN=coreorbitsoftware.com
     networks:
       - oms-network
     healthcheck:

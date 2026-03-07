@@ -94,7 +94,7 @@ export const config: AuthConfig = {
   get redisUrl() { return getEnv('REDIS_URL', 'redis://localhost:6379'); },
   
   // Domain
-  get mainDomain() { return getEnv('MAIN_DOMAIN', 'youroms.com'); },
+  get mainDomain() { return getEnv('MAIN_DOMAIN', 'coreorbitsoftware.com'); },
   get appUrl() { return getEnv('APP_URL', 'http://localhost:3000'); },
   
   // Logging

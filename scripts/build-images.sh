@@ -48,6 +48,7 @@ SERVICES=(
 NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL:-https://api.coreorbitsoftware.com}"
 NEXT_PUBLIC_APP_URL="${NEXT_PUBLIC_APP_URL:-https://portal.coreorbitsoftware.com}"
 NEXT_PUBLIC_MAIN_DOMAIN="${NEXT_PUBLIC_MAIN_DOMAIN:-coreorbitsoftware.com}"
+NEXT_PUBLIC_PORTAL_URL="${NEXT_PUBLIC_PORTAL_URL:-https://portal.${NEXT_PUBLIC_MAIN_DOMAIN}}"
 
 for service in "${SERVICES[@]}"; do
     IFS=':' read -r name path <<< "$service"
@@ -58,7 +59,7 @@ for service in "${SERVICES[@]}"; do
     if [[ "$name" == "web" ]]; then
         BUILD_ARGS="--build-arg NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} --build-arg NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL} --build-arg NEXT_PUBLIC_MAIN_DOMAIN=${NEXT_PUBLIC_MAIN_DOMAIN}"
     elif [[ "$name" == "public-website" ]]; then
-        BUILD_ARGS="--build-arg NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} --build-arg NEXT_PUBLIC_MAIN_DOMAIN=${NEXT_PUBLIC_MAIN_DOMAIN}"
+        BUILD_ARGS="--build-arg NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} --build-arg NEXT_PUBLIC_MAIN_DOMAIN=${NEXT_PUBLIC_MAIN_DOMAIN} --build-arg NEXT_PUBLIC_PORTAL_URL=${NEXT_PUBLIC_PORTAL_URL}"
     fi
     
     docker build \

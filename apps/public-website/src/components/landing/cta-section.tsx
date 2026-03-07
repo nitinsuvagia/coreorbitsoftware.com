@@ -3,8 +3,9 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { ArrowRight, Sparkles, CheckCircle2 } from 'lucide-react';
+import { siteConfig } from '@/lib/site-config';
 
-const SIGNUP_URL = 'http://portal.coreorbitsoftware.com/signup';
+const SIGNUP_URL = siteConfig.signupUrl;
 
 export function CTASection() {
   return (

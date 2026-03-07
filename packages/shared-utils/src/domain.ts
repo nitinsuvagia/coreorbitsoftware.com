@@ -31,7 +31,7 @@ export interface DomainConfig {
  * Default domain configuration (override via environment)
  */
 const DEFAULT_CONFIG: DomainConfig = {
-  mainDomain: process.env.MAIN_DOMAIN || 'youroms.com',
+  mainDomain: process.env.MAIN_DOMAIN || 'coreorbitsoftware.com',
   platformAdminSubdomain: process.env.PLATFORM_ADMIN_SUBDOMAIN || undefined,
   allowCustomDomains: process.env.ALLOW_CUSTOM_DOMAINS === 'true',
   environment: (process.env.NODE_ENV as DomainConfig['environment']) || 'development',

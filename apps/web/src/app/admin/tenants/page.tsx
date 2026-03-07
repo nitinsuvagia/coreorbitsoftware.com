@@ -395,7 +395,7 @@ export default function TenantsPage() {
                         <div>
                           <p className="font-medium">{tenant.name}</p>
                           <p className="text-sm text-muted-foreground">
-                            {tenant.slug}.localhost:3000
+                            {tenant.slug}.{process.env.NEXT_PUBLIC_MAIN_DOMAIN || 'coreorbitsoftware.com'}
                           </p>
                         </div>
                       </div>
@@ -426,7 +426,7 @@ export default function TenantsPage() {
                       <div className="flex items-center gap-2">
                         <Button variant="ghost" size="icon" asChild>
                           <a
-                            href={`http://${tenant.slug}.localhost:3000`}
+                            href={`https://${tenant.slug}.${process.env.NEXT_PUBLIC_MAIN_DOMAIN || 'coreorbitsoftware.com'}`}
                             target="_blank"
                             rel="noopener noreferrer"
                           >

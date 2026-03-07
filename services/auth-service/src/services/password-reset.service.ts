@@ -98,7 +98,10 @@ export async function forgotPasswordPlatformAdmin(
     });
     
     // Send email with reset link using platform email settings from DB
-    const resetLink = `${config.appUrl}/reset-password?token=${token}&type=platform`;
+    const protocol = config.nodeEnv === 'production' ? 'https' : 'http';
+    const mainDomain = config.mainDomain;
+    const portalUrl = config.nodeEnv === 'development' ? 'http://localhost:3000' : `${protocol}://portal.${mainDomain}`;
+    const resetLink = `${portalUrl}/reset-password?token=${token}&type=platform`;
     logger.info({ email, resetLink }, 'Password reset link generated for platform admin');
     
     await sendPlatformEmail({
@@ -185,8 +188,11 @@ export async function forgotPasswordTenantUser(
       },
     });
     
-    // Send email with reset link using platform email settings from DB
-    const resetLink = `${config.appUrl}/reset-password?token=${token}&type=tenant&slug=${tenantSlug}`;
+    // Send email with reset link - use tenant subdomain URL
+    const protocol = config.nodeEnv === 'production' ? 'https' : 'http';
+    const mainDomain = config.mainDomain;
+    const tenantUrl = config.nodeEnv === 'development' ? `http://${tenantSlug}.localhost:3000` : `${protocol}://${tenantSlug}.${mainDomain}`;
+    const resetLink = `${tenantUrl}/reset-password?token=${token}&type=tenant&slug=${tenantSlug}`;
     logger.info({ email, tenantSlug, resetLink }, 'Password reset link generated for tenant user');
     
     await sendPlatformEmail({

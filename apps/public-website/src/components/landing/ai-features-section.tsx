@@ -14,8 +14,9 @@ import {
   Bot,
   ArrowRight
 } from 'lucide-react';
+import { siteConfig } from '@/lib/site-config';
 
-const SIGNUP_URL = 'http://portal.coreorbitsoftware.com/signup';
+const SIGNUP_URL = siteConfig.signupUrl;
 
 const aiFeatures = [
   {

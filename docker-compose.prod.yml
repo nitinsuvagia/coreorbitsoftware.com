@@ -526,6 +526,7 @@ services:
       args:
         - NEXT_PUBLIC_API_URL=https://api.coreorbitsoftware.com
         - NEXT_PUBLIC_MAIN_DOMAIN=coreorbitsoftware.com
+        - NEXT_PUBLIC_PORTAL_URL=https://portal.coreorbitsoftware.com
     container_name: oms-public-website
     restart: always
     expose:

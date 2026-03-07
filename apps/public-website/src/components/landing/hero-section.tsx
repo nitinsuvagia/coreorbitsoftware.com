@@ -4,8 +4,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ProductDemo } from './product-demo';
 import { ArrowRight, Play, Sparkles, Star, Users, Building2 } from 'lucide-react';
+import { siteConfig } from '@/lib/site-config';
 
-const SIGNUP_URL = 'http://portal.coreorbitsoftware.com/signup';
+const SIGNUP_URL = siteConfig.signupUrl;
 
 export function HeroSection() {
   return (

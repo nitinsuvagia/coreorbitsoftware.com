@@ -364,7 +364,7 @@ export default function NewTenantPage() {
                     value={formData.slug}
                     onChange={(e) => updateField('slug', e.target.value.toLowerCase())}
                   />
-                  <span className="ml-2 text-sm text-muted-foreground">.localhost:3000</span>
+                  <span className="ml-2 text-sm text-muted-foreground">.{process.env.NEXT_PUBLIC_MAIN_DOMAIN || 'coreorbitsoftware.com'}</span>
                 </div>
                 {errors.slug && (
                   <p className="text-sm text-destructive">{errors.slug}</p>
@@ -622,7 +622,7 @@ export default function NewTenantPage() {
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">URL:</span>
                     <span className="font-medium text-primary">
-                      http://{formData.slug}.localhost:3000
+                      https://{formData.slug}.{process.env.NEXT_PUBLIC_MAIN_DOMAIN || 'coreorbitsoftware.com'}
                     </span>
                   </div>
                   <div className="flex justify-between">

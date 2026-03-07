@@ -150,7 +150,7 @@ export default function TenantDetailPage() {
     fetchTenant();
   }, [tenantId]);
 
-  const mainDomain = process.env.NEXT_PUBLIC_MAIN_DOMAIN || 'localhost:3000';
+  const mainDomain = process.env.NEXT_PUBLIC_MAIN_DOMAIN || 'coreorbitsoftware.com';
   const portalUrl = tenant?.slug ? `https://${tenant.slug}.${mainDomain}` : '';
   const enabledModules = useMemo(() => {
     if (!tenant?.settings) return [];

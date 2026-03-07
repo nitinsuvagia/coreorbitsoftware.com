@@ -425,8 +425,10 @@ app.post('/api/v1/tenants/register', async (req: Request, res: Response, next: N
     logger.info({ tenantId, slug: data.slug }, 'Tenant registered via public signup');
 
     // Send welcome email using platform email settings from DB (non-blocking)
-    const appUrl = process.env.APP_URL || 'http://localhost:3000';
-    const loginUrl = `${appUrl}/${data.slug}/login`;
+    const mainDomain = process.env.MAIN_DOMAIN || 'coreorbitsoftware.com';
+    const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
+    const tenantUrl = process.env.NODE_ENV === 'development' ? `http://${data.slug}.localhost:3000` : `${protocol}://${data.slug}.${mainDomain}`;
+    const loginUrl = `${tenantUrl}/login`;
     
     try {
       const { sendPlatformEmail } = await import('./utils/platform-email');

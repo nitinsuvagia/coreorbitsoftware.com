@@ -4,8 +4,9 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Menu, X, Sparkles } from 'lucide-react';
+import { siteConfig } from '@/lib/site-config';
 
-const SIGNUP_URL = 'http://portal.coreorbitsoftware.com/signup';
+const SIGNUP_URL = siteConfig.signupUrl;
 
 export function LandingNavbar() {
   const [isScrolled, setIsScrolled] = useState(false);

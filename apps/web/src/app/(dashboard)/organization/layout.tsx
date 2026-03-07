@@ -359,7 +359,7 @@ export default function OrganizationLayout({
                   </Badge>
                   {org.plan && <Badge variant="secondary">{org.plan.name}</Badge>}
                 </div>
-                <p className="text-muted-foreground">{org.slug}.{process.env.NEXT_PUBLIC_MAIN_DOMAIN || 'youroms.com'}</p>
+                <p className="text-muted-foreground">{org.slug}.{process.env.NEXT_PUBLIC_MAIN_DOMAIN || 'coreorbitsoftware.com'}</p>
                 <div className="flex flex-wrap gap-4 mt-4 text-sm text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Users className="h-4 w-4" />

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { LandingNavbar } from '@/components/landing/navbar';
 import { Footer } from '@/components/landing/footer';
+import { siteConfig } from '@/lib/site-config';
 import { 
   Users, 
   UserCircle, 
@@ -88,7 +89,7 @@ export default function EmployeeManagementPage() {
                   <ArrowRight className="ml-2 w-5 h-5" />
                 </Button>
               </Link>
-              <Link href="http://portal.coreorbitsoftware.com/signup">
+              <Link href={siteConfig.signupUrl}>
                 <Button size="lg" variant="outline">
                   Start Trail
                 </Button>

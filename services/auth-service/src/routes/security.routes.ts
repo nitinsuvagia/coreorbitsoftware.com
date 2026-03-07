@@ -17,16 +17,12 @@ import { sendPlatformEmail } from '../utils/platform-email';
 
 // Helper to build tenant-aware URLs (with subdomain)
 function getTenantUrl(tenantSlug: string, path: string): string {
-  const baseUrl = config.appUrl; // e.g., http://localhost:3000
-  try {
-    const url = new URL(baseUrl);
-    // Insert tenant slug as subdomain
-    url.hostname = `${tenantSlug}.${url.hostname}`;
-    return `${url.origin}${path}`;
-  } catch {
-    // Fallback if URL parsing fails
-    return `${baseUrl}${path}`;
+  const mainDomain = config.mainDomain; // e.g., "coreorbitsoftware.com"
+  const protocol = config.nodeEnv === 'production' ? 'https' : 'http';
+  if (config.nodeEnv === 'development') {
+    return `${protocol}://${tenantSlug}.localhost:3000${path}`;
   }
+  return `${protocol}://${tenantSlug}.${mainDomain}${path}`;
 }
 
 // Send notification email using platform email settings from DB

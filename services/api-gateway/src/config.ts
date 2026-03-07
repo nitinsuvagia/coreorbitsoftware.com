@@ -53,7 +53,7 @@ export const config: GatewayConfig = {
   nodeEnv: process.env.NODE_ENV || 'development',
   
   // Domain Configuration
-  mainDomain: process.env.MAIN_DOMAIN || 'youroms.com',
+  mainDomain: process.env.MAIN_DOMAIN || 'coreorbitsoftware.com',
   platformAdminSubdomain: process.env.PLATFORM_ADMIN_SUBDOMAIN,
   allowCustomDomains: process.env.ALLOW_CUSTOM_DOMAINS === 'true',
   
