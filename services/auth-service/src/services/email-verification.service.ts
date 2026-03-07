@@ -7,6 +7,7 @@ import { randomBytes } from 'crypto';
 import { getTenantDbManager } from '@oms/tenant-db-manager';
 import { logger } from '../utils/logger';
 import { config } from '../config';
+import { sendPlatformEmail } from '../utils/platform-email';
 
 const TOKEN_EXPIRY_HOURS = 24;
 
@@ -55,32 +56,17 @@ export async function requestEmailVerification(
     // Build verification URL
     const verificationUrl = `${config.appUrl}/verify-email?token=${token}&tenant=${tenantSlug}`;
     
-    // Send verification email via notification service (uses tenant SMTP settings)
-    try {
-      const response = await fetch(`${config.notificationServiceUrl}/api/notifications/tenant/email`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'X-Tenant-Slug': tenantSlug,
-        },
-        body: JSON.stringify({
-          to: email,
-          subject: 'Verify Your Email Address',
-          message: `Please verify your email address by clicking the link below:\n\n${verificationUrl}\n\nThis link expires in ${TOKEN_EXPIRY_HOURS} hours.`,
-          html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px">
-            <h2 style="color:#2563eb">Verify Your Email</h2>
-            <p>Please verify your email address by clicking the button below.</p>
-            <p><a href="${verificationUrl}" style="display:inline-block;background:#2563eb;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;margin:16px 0">Verify Email</a></p>
-            <p style="color:#6b7280;font-size:14px">This link expires in ${TOKEN_EXPIRY_HOURS} hours. If you did not create an account, please ignore this email.</p>
-          </div>`,
-        }),
-      });
-      if (!response.ok) {
-        logger.warn({ email, tenantSlug, status: response.status }, 'Failed to send verification email');
-      }
-    } catch (emailError) {
-      logger.error({ error: emailError, email, tenantSlug }, 'Error sending verification email');
-    }
+    // Send verification email using platform email settings from DB
+    await sendPlatformEmail({
+      to: email,
+      subject: 'Verify Your Email Address',
+      html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px">
+        <h2 style="color:#2563eb">Verify Your Email</h2>
+        <p>Please verify your email address by clicking the button below.</p>
+        <p><a href="${verificationUrl}" style="display:inline-block;background:#2563eb;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;margin:16px 0">Verify Email</a></p>
+        <p style="color:#6b7280;font-size:14px">This link expires in ${TOKEN_EXPIRY_HOURS} hours. If you did not create an account, please ignore this email.</p>
+      </div>`,
+    });
     
     logger.info({ userId, email, verificationUrl }, 'Email verification requested');
     

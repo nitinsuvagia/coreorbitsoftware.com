@@ -12,6 +12,7 @@ import { logger } from '../utils/logger';
 import { forgotPasswordPlatformAdmin } from '../services/password-reset.service';
 import { config } from '../config';
 import { createAuditLog, getRequestContext } from '../utils/audit';
+import { sendPlatformEmail } from '../utils/platform-email';
 
 const router = Router();
 
@@ -460,22 +461,14 @@ router.post('/:id/email', async (req: Request, res: Response, next: NextFunction
       });
     }
 
-    // Call notification service to send email
+    // Send email using platform email settings from DB
     try {
-      const emailResponse = await axios.post(
-        `${config.notificationServiceUrl}/api/notifications/platform/email`,
-        {
-          to: admin.email,
-          subject: parsed.data.subject,
-          message: parsed.data.message,
-        },
-        {
-          timeout: 10000,
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
-      );
+      await sendPlatformEmail({
+        to: admin.email,
+        subject: parsed.data.subject,
+        html: parsed.data.message.replace(/\n/g, '<br>'),
+      });
+      const emailResponse = { data: { success: true } };
 
       // Create audit log
       const context = getRequestContext(req);
@@ -671,22 +664,17 @@ router.post('/email/bulk', async (req: Request, res: Response, next: NextFunctio
       });
     }
 
-    // Call notification service bulk email endpoint
+    // Send bulk email using platform email settings from DB
     try {
-      const emailResponse = await axios.post(
-        `${config.notificationServiceUrl}/api/notifications/platform/email/bulk`,
-        {
-          recipients: admins.map(a => a.email),
+      const results = await Promise.allSettled(
+        admins.map(a => sendPlatformEmail({
+          to: a.email,
           subject,
-          message,
-        },
-        {
-          timeout: 30000, // 30 seconds for bulk
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
+          html: message.replace(/\n/g, '<br>'),
+        }))
       );
+      const successCount = results.filter(r => r.status === 'fulfilled').length;
+      const emailResponse = { data: { success: true, sent: successCount, total: admins.length } };
 
       // Create audit log
       const context = getRequestContext(req);

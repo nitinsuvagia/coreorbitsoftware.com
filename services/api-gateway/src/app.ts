@@ -390,38 +390,32 @@ app.post('/api/v1/tenants/register', async (req: Request, res: Response, next: N
 
     logger.info({ tenantId, slug: data.slug }, 'Tenant registered via public signup');
 
-    // Send welcome email (non-blocking, don't fail registration if email fails)
+    // Send welcome email using platform email settings from DB (non-blocking)
     const appUrl = process.env.APP_URL || 'http://localhost:3000';
     const loginUrl = `${appUrl}/${data.slug}/login`;
     
     try {
-      const emailResponse = await fetch(`${config.notificationServiceUrl}/api/notifications/platform/email/templated`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: data.adminEmail,
-          templateName: 'tenant-registration',
-          subject: `Welcome to OMS - ${data.name} is Ready!`,
-          data: {
-            adminFirstName: data.adminFirstName,
-            organizationName: data.name,
-            loginUrl,
-            adminEmail: data.adminEmail,
-            trialEndDate: tenant.trialEndsAt?.toLocaleDateString('en-US', {
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric',
-            }),
-          },
-        }),
+      const { sendPlatformEmail } = await import('./utils/platform-email');
+      const trialEndDate = tenant.trialEndsAt?.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
       });
       
-      if (!emailResponse.ok) {
-        const errBody = await emailResponse.text();
-        logger.warn({ tenantId, slug: data.slug, error: errBody }, 'Failed to send welcome email');
-      } else {
-        logger.info({ tenantId, slug: data.slug }, 'Welcome email sent successfully');
-      }
+      await sendPlatformEmail({
+        to: data.adminEmail,
+        subject: `Welcome to OMS - ${data.name} is Ready!`,
+        html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px">
+          <h2 style="color:#2563eb">Welcome to OMS!</h2>
+          <p>Hi ${data.adminFirstName},</p>
+          <p>Your organization <strong>${data.name}</strong> has been successfully created.</p>
+          <p><a href="${loginUrl}" style="display:inline-block;background:#2563eb;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;margin:16px 0">Log In Now</a></p>
+          <p><strong>Your Login:</strong> ${data.adminEmail}</p>
+          ${trialEndDate ? `<p style="color:#6b7280;font-size:14px">Your trial ends on ${trialEndDate}.</p>` : ''}
+        </div>`,
+      });
+      
+      logger.info({ tenantId, slug: data.slug }, 'Welcome email sent successfully');
     } catch (emailError) {
       logger.warn({ tenantId, slug: data.slug, error: emailError }, 'Failed to send welcome email');
     }

@@ -13,6 +13,7 @@ import { getTenantDbManager } from '@oms/tenant-db-manager';
 import { getMasterPrisma } from '../utils/database';
 import { UAParser } from 'ua-parser-js';
 import { config } from '../config';
+import { sendPlatformEmail } from '../utils/platform-email';
 
 // Helper to build tenant-aware URLs (with subdomain)
 function getTenantUrl(tenantSlug: string, path: string): string {
@@ -28,21 +29,15 @@ function getTenantUrl(tenantSlug: string, path: string): string {
   }
 }
 
-// Notification service helper
+// Send notification email using platform email settings from DB
 async function sendNotificationEmail(email: string, subject: string, message: string, html?: string): Promise<boolean> {
   try {
-    const response = await fetch(`${config.notificationServiceUrl}/api/notifications/platform/email`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        to: email,
-        subject,
-        message,
-        html: html || message.replace(/\n/g, '<br>'),
-      }),
+    await sendPlatformEmail({
+      to: email,
+      subject,
+      html: html || message.replace(/\n/g, '<br>'),
     });
-    const result = await response.json() as { success?: boolean };
-    return result.success ?? false;
+    return true;
   } catch (error) {
     logger.error({ error, email }, 'Failed to send notification email');
     return false;

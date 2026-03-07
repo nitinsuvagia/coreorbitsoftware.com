@@ -9,6 +9,7 @@ import { logger } from '../utils/logger';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { config } from '../config';
+import { sendPlatformEmail } from '../utils/platform-email';
 
 interface ForgotPasswordRequest {
   email: string;
@@ -96,32 +97,20 @@ export async function forgotPasswordPlatformAdmin(
       },
     });
     
-    // Send email with reset link via notification service
+    // Send email with reset link using platform email settings from DB
     const resetLink = `${config.appUrl}/reset-password?token=${token}&type=platform`;
     logger.info({ email, resetLink }, 'Password reset link generated for platform admin');
     
-    try {
-      const response = await fetch(`${config.notificationServiceUrl}/api/notifications/platform/email`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: admin.email,
-          subject: 'Reset Your Password - OMS Platform',
-          message: `You requested a password reset. Click the link below to reset your password:\n\n${resetLink}\n\nThis link expires in ${TOKEN_EXPIRY_HOURS} hour(s). If you did not request this, please ignore this email.`,
-          html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px">
-            <h2 style="color:#2563eb">Password Reset Request</h2>
-            <p>You requested a password reset for your OMS Platform admin account.</p>
-            <p><a href="${resetLink}" style="display:inline-block;background:#2563eb;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;margin:16px 0">Reset Password</a></p>
-            <p style="color:#6b7280;font-size:14px">This link expires in ${TOKEN_EXPIRY_HOURS} hour(s). If you did not request this, please ignore this email.</p>
-          </div>`,
-        }),
-      });
-      if (!response.ok) {
-        logger.warn({ email, status: response.status }, 'Failed to send password reset email');
-      }
-    } catch (emailError) {
-      logger.error({ error: emailError, email }, 'Error sending password reset email');
-    }
+    await sendPlatformEmail({
+      to: admin.email,
+      subject: 'Reset Your Password - OMS Platform',
+      html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px">
+        <h2 style="color:#2563eb">Password Reset Request</h2>
+        <p>You requested a password reset for your OMS Platform admin account.</p>
+        <p><a href="${resetLink}" style="display:inline-block;background:#2563eb;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;margin:16px 0">Reset Password</a></p>
+        <p style="color:#6b7280;font-size:14px">This link expires in ${TOKEN_EXPIRY_HOURS} hour(s). If you did not request this, please ignore this email.</p>
+      </div>`,
+    });
     
     return {
       success: true,
@@ -196,35 +185,20 @@ export async function forgotPasswordTenantUser(
       },
     });
     
-    // Send email with reset link via notification service (uses tenant SMTP settings)
+    // Send email with reset link using platform email settings from DB
     const resetLink = `${config.appUrl}/reset-password?token=${token}&type=tenant&slug=${tenantSlug}`;
     logger.info({ email, tenantSlug, resetLink }, 'Password reset link generated for tenant user');
     
-    try {
-      const response = await fetch(`${config.notificationServiceUrl}/api/notifications/tenant/email`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'X-Tenant-Slug': tenantSlug,
-        },
-        body: JSON.stringify({
-          to: user.email,
-          subject: 'Reset Your Password',
-          message: `You requested a password reset. Click the link below to reset your password:\n\n${resetLink}\n\nThis link expires in ${TOKEN_EXPIRY_HOURS} hour(s). If you did not request this, please ignore this email.`,
-          html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px">
-            <h2 style="color:#2563eb">Password Reset Request</h2>
-            <p>You requested a password reset for your account.</p>
-            <p><a href="${resetLink}" style="display:inline-block;background:#2563eb;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;margin:16px 0">Reset Password</a></p>
-            <p style="color:#6b7280;font-size:14px">This link expires in ${TOKEN_EXPIRY_HOURS} hour(s). If you did not request this, please ignore this email.</p>
-          </div>`,
-        }),
-      });
-      if (!response.ok) {
-        logger.warn({ email, tenantSlug, status: response.status }, 'Failed to send password reset email');
-      }
-    } catch (emailError) {
-      logger.error({ error: emailError, email, tenantSlug }, 'Error sending password reset email');
-    }
+    await sendPlatformEmail({
+      to: user.email,
+      subject: 'Reset Your Password',
+      html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px">
+        <h2 style="color:#2563eb">Password Reset Request</h2>
+        <p>You requested a password reset for your account.</p>
+        <p><a href="${resetLink}" style="display:inline-block;background:#2563eb;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;margin:16px 0">Reset Password</a></p>
+        <p style="color:#6b7280;font-size:14px">This link expires in ${TOKEN_EXPIRY_HOURS} hour(s). If you did not request this, please ignore this email.</p>
+      </div>`,
+    });
     
     return {
       success: true,
