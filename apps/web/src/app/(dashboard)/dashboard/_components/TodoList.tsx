@@ -56,7 +56,7 @@ import {
   TodosResponse,
   CreateTodoInput,
 } from '@/lib/api/dashboard';
-import { format, parseISO, isAfter, isBefore, isToday } from 'date-fns';
+import { format, parseISO, isAfter, isBefore, isToday, startOfDay } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -85,7 +85,8 @@ function formatDueDate(dateStr: string | undefined): string {
 function isOverdue(todo: Todo): boolean {
   if (todo.isCompleted || !todo.dueDate) return false;
   try {
-    return isBefore(parseISO(todo.dueDate), new Date());
+    // A task is overdue only if its due date is before today (not today itself)
+    return isBefore(parseISO(todo.dueDate), startOfDay(new Date()));
   } catch {
     return false;
   }

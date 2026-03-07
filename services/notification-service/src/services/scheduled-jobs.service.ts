@@ -403,10 +403,12 @@ async function runTaskDueReminders(): Promise<void> {
         }
       }
       
-      // Overdue tasks
+      // Overdue tasks (only tasks due before start of today, not tasks due today)
+      const startOfToday = new Date(now);
+      startOfToday.setHours(0, 0, 0, 0);
       const tasksOverdue = await prisma.task.findMany({
         where: {
-          dueDate: { lt: now },
+          dueDate: { lt: startOfToday },
           status: { notIn: ['DONE', 'CANCELLED'] },
         },
         include: {

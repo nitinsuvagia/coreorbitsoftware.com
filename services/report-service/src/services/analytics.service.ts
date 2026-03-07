@@ -160,7 +160,7 @@ export async function getOverviewMetrics(tenantSlug: string): Promise<OverviewMe
     prisma.project.count({
       where: {
         status: { notIn: ['completed', 'cancelled'] },
-        endDate: { lt: now.toJSDate() },
+        endDate: { lt: today },
       },
     }),
   ]);
@@ -173,7 +173,7 @@ export async function getOverviewMetrics(tenantSlug: string): Promise<OverviewMe
     prisma.task.count({
       where: {
         status: { notIn: ['done', 'cancelled'] },
-        dueDate: { lt: now.toJSDate() },
+        dueDate: { lt: today },
       },
     }),
   ]);

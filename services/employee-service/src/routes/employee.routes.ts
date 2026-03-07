@@ -3200,7 +3200,7 @@ router.get('/todos', async (req: Request, res: Response) => {
             where: {
               userId,
               isCompleted: false,
-              dueDate: { lt: new Date() },
+              dueDate: { lt: new Date(new Date().setHours(0, 0, 0, 0)) },
             },
           }),
         },
