@@ -133,10 +133,11 @@ services:
     networks:
       - oms-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost:4000/health || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -169,10 +170,11 @@ services:
     networks:
       - oms-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost:3001/health || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -201,10 +203,11 @@ services:
     networks:
       - oms-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3002/health"]
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3002/health', r => r.statusCode === 200 ? process.exit(0) : process.exit(1)).on('error', () => process.exit(1))\""]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -233,10 +236,11 @@ services:
     networks:
       - oms-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3003/health"]
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3003/health', r => r.statusCode === 200 ? process.exit(0) : process.exit(1)).on('error', () => process.exit(1))\""]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -265,10 +269,11 @@ services:
     networks:
       - oms-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3004/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost:3004/health || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -297,10 +302,11 @@ services:
     networks:
       - oms-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3005/health"]
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3005/health', r => r.statusCode === 200 ? process.exit(0) : process.exit(1)).on('error', () => process.exit(1))\""]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -329,10 +335,11 @@ services:
     networks:
       - oms-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3006/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost:3006/health || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -363,10 +370,11 @@ services:
     networks:
       - oms-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3007/health"]
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3007/health', r => r.statusCode === 200 ? process.exit(0) : process.exit(1)).on('error', () => process.exit(1))\""]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -395,10 +403,11 @@ services:
     networks:
       - oms-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3008/health"]
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3008/health', r => r.statusCode === 200 ? process.exit(0) : process.exit(1)).on('error', () => process.exit(1))\""]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -427,10 +436,11 @@ services:
     networks:
       - oms-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3009/health"]
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3009/health', r => r.statusCode === 200 ? process.exit(0) : process.exit(1)).on('error', () => process.exit(1))\""]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -459,10 +469,11 @@ services:
     networks:
       - oms-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3012/health"]
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3012/health', r => r.statusCode === 200 ? process.exit(0) : process.exit(1)).on('error', () => process.exit(1))\""]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -496,10 +507,11 @@ services:
     networks:
       - oms-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000', r => r.statusCode === 200 ? process.exit(0) : process.exit(1)).on('error', () => process.exit(1))\""]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -526,10 +538,11 @@ services:
     networks:
       - oms-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3100"]
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3100', r => r.statusCode === 200 ? process.exit(0) : process.exit(1)).on('error', () => process.exit(1))\""]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:

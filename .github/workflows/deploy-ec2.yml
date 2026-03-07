@@ -174,6 +174,7 @@ jobs:
           PROJECT_SERVICE_URL=http://project-service:3004
           TASK_SERVICE_URL=http://task-service:3005
           BILLING_SERVICE_URL=http://billing-service:3006
+          CLIENT_SERVICE_URL=http://billing-service:3006
           DOCUMENT_SERVICE_URL=http://document-service:3007
           NOTIFICATION_SERVICE_URL=http://notification-service:3008
           REPORT_SERVICE_URL=http://report-service:3009
@@ -399,7 +400,7 @@ jobs:
           
           echo "⏳ Waiting for Redis to be ready..."
           for i in {1..30}; do
-            if sudo docker exec oms-redis redis-cli ping 2>/dev/null | grep -q PONG; then
+            if sudo docker exec oms-redis redis-cli -a "${REDIS_PASSWORD}" ping 2>/dev/null | grep -q PONG; then
               echo "✅ Redis is ready!"
               break
             fi
@@ -543,28 +544,28 @@ jobs:
           fi
           
           echo -n "  Redis: "
-          if sudo docker exec oms-redis redis-cli ping 2>/dev/null | grep -q PONG; then
+          if sudo docker exec oms-redis redis-cli -a "${REDIS_PASSWORD}" ping 2>/dev/null | grep -q PONG; then
             echo "✅ Ready"
           else
             echo "❌ Not ready"
           fi
           
           echo -n "  Auth Service: "
-          if sudo docker exec oms-auth-service wget -q --spider http://localhost:3001/health 2>/dev/null; then
-            echo "✅ Healthy"
+          if sudo docker exec oms-auth-service curl -sf http://localhost:3001/health 2>/dev/null; then
+            echo " ✅ Healthy"
           else
             echo "❌ Unhealthy"
           fi
           
           echo -n "  API Gateway: "
-          if sudo docker exec oms-api-gateway wget -q --spider http://localhost:4000/health 2>/dev/null; then
-            echo "✅ Healthy"
+          if sudo docker exec oms-api-gateway curl -sf http://localhost:4000/health 2>/dev/null; then
+            echo " ✅ Healthy"
           else
             echo "❌ Unhealthy"
           fi
           
           echo -n "  Web App: "
-          if sudo docker exec oms-web wget -q --spider http://localhost:3000 2>/dev/null; then
+          if sudo docker exec oms-web node -e "require('http').get('http://localhost:3000', r => { process.exit(r.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))" 2>/dev/null; then
             echo "✅ Healthy"
           else
             echo "❌ Unhealthy"

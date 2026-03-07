@@ -77,6 +77,11 @@ app.use(pinoHttp({
 // ============================================================================
 
 app.use((req: Request, res: Response, next: NextFunction) => {
+  // Skip tenant context for health/ready checks
+  if (req.path === '/health' || req.path === '/ready') {
+    return next();
+  }
+
   // Extract tenant context set by API Gateway
   const tenantId = req.headers['x-tenant-id'] as string;
   const tenantSlug = req.headers['x-tenant-slug'] as string;
