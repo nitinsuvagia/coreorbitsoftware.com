@@ -455,6 +455,34 @@ jobs:
             }
           }
           
+          echo ""
+          echo "📦 Running tenant database migrations..."
+          TENANT_DBS=$(sudo docker exec oms-postgres psql -U postgres -tAc "SELECT datname FROM pg_database WHERE datname LIKE 'oms_tenant_%'" 2>/dev/null)
+          
+          if [ -z "$TENANT_DBS" ]; then
+            echo "ℹ️ No tenant databases found, skipping tenant migrations."
+          else
+            DB_PASS=$(sudo docker exec oms-auth-service printenv DATABASE_PASSWORD 2>/dev/null)
+            TOTAL=0
+            SUCCESS=0
+            FAILED=0
+            
+            for DB in $TENANT_DBS; do
+              TOTAL=$((TOTAL + 1))
+              echo "🔄 Migrating tenant: $DB"
+              TENANT_URL="postgresql://postgres:${DB_PASS}@postgres:5432/${DB}"
+              if sudo docker exec -e TENANT_DATABASE_URL="$TENANT_URL" oms-auth-service npx prisma db push --schema=/app/prisma/tenant/schema.prisma --skip-generate --accept-data-loss 2>&1; then
+                SUCCESS=$((SUCCESS + 1))
+                echo "  ✅ $DB migrated successfully"
+              else
+                FAILED=$((FAILED + 1))
+                echo "  ⚠️ $DB migration failed"
+              fi
+            done
+            
+            echo "📊 Tenant migrations: $SUCCESS/$TOTAL succeeded, $FAILED failed"
+          fi
+          
           echo "✅ Migrations complete!"
           MIGRATESSH
 
