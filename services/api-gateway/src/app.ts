@@ -2225,8 +2225,14 @@ function addTenantHeaders(proxyReq: any, req: TenantContextRequest): void {
   if (req.user) {
     proxyReq.setHeader('X-User-ID', req.user.id);
     proxyReq.setHeader('X-User-Type', req.user.type);
+    if (req.user.email) {
+      proxyReq.setHeader('X-User-Email', req.user.email);
+    }
     if (req.user.roles) {
       proxyReq.setHeader('X-User-Roles', req.user.roles.join(','));
+    }
+    if (req.user.permissions?.length) {
+      proxyReq.setHeader('X-User-Permissions', req.user.permissions.join(','));
     }
   }
   

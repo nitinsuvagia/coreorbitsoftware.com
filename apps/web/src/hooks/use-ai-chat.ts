@@ -68,6 +68,19 @@ type SSEEvent = SSEChunkEvent | SSEToolEvent | SSEDoneEvent | SSEErrorEvent;
 // ============================================================================
 
 /**
+ * Check if AI is configured for the tenant
+ */
+export function useAiStatus() {
+  return useQuery({
+    queryKey: ['ai', 'status'],
+    queryFn: () => get<{ aiEnabled: boolean; configured: boolean; model?: string; message: string }>('/api/v1/ai/status'),
+    staleTime: 30 * 1000, // 30 seconds - quick re-check after config changes
+    refetchOnWindowFocus: true,
+    retry: 1,
+  });
+}
+
+/**
  * List user's AI conversations
  */
 export function useAiConversations() {
@@ -234,13 +247,16 @@ export function useStreamingChat() {
         }
       }
 
-      setState(prev => ({ ...prev, isStreaming: false }));
-
-      // Invalidate queries to refresh conversation list
+      // Invalidate queries to refresh conversation list and messages
       queryClient.invalidateQueries({ queryKey: ['ai', 'conversations'] });
       if (finalConversationId) {
-        queryClient.invalidateQueries({ queryKey: ['ai', 'conversation', finalConversationId] });
+        // Wait for conversation data to refresh before clearing streaming state
+        // This prevents the flash back to initial screen
+        await queryClient.invalidateQueries({ queryKey: ['ai', 'conversation', finalConversationId] });
       }
+
+      // Now safe to clear streaming — conversation data has been refreshed
+      setState(prev => ({ ...prev, isStreaming: false, streamingContent: '', activeToolCall: null }));
 
       return finalConversationId;
     } catch (error: any) {

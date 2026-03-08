@@ -162,6 +162,8 @@ function getChatContext(req: Request) {
     tenantId: req.headers['x-tenant-id'] as string || '',
     userId: req.headers['x-user-id'] as string || '',
     userRoles: req.headers['x-user-roles'] as string || '',
+    userEmail: req.headers['x-user-email'] as string || '',
+    userPermissions: req.headers['x-user-permissions'] as string || '',
   };
 }
 
@@ -276,7 +278,7 @@ router.get('/conversations/:id', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'User ID required' });
     }
 
-    const conversation = await getConversation(ctx, req.params.id);
+    const conversation = await getConversation(ctx, req.params.id as string);
     res.json({ success: true, data: conversation });
   } catch (error: any) {
     logger.error({ error: error.message }, 'Failed to get conversation');
@@ -295,7 +297,7 @@ router.delete('/conversations/:id', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'User ID required' });
     }
 
-    await deleteConversation(ctx, req.params.id);
+    await deleteConversation(ctx, req.params.id as string);
     res.json({ success: true, message: 'Conversation deleted' });
   } catch (error: any) {
     logger.error({ error: error.message }, 'Failed to delete conversation');

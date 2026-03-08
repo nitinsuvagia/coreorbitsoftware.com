@@ -240,12 +240,11 @@ router.get('/employee/:employeeId', async (req: Request, res: Response) => {
     const { employeeId } = req.params;
     const reviews = await prisma.$queryRawUnsafe(
       `SELECT pr.*,
-              COALESCE(r.first_name, u.first_name) AS reviewer_first_name,
-              COALESCE(r.last_name, u.last_name) AS reviewer_last_name,
-              COALESCE(r.email, u.email) AS reviewer_email
+              r.first_name AS reviewer_first_name,
+              r.last_name AS reviewer_last_name,
+              r.email AS reviewer_email
        FROM performance_reviews pr
        LEFT JOIN employees r ON pr.reviewer_id = r.id
-       LEFT JOIN users u ON pr.created_by_user_id = u.id
        WHERE pr.employee_id = $1
        ORDER BY pr.created_at DESC`,
       employeeId
@@ -267,13 +266,12 @@ router.get('/:id', async (req: Request, res: Response) => {
     const reviews = await prisma.$queryRawUnsafe(
       `SELECT pr.*,
               e.first_name AS employee_first_name, e.last_name AS employee_last_name, e.email AS employee_email, e.employee_code,
-              COALESCE(r.first_name, u.first_name) AS reviewer_first_name,
-              COALESCE(r.last_name, u.last_name) AS reviewer_last_name,
-              COALESCE(r.email, u.email) AS reviewer_email
+              r.first_name AS reviewer_first_name,
+              r.last_name AS reviewer_last_name,
+              r.email AS reviewer_email
        FROM performance_reviews pr
        LEFT JOIN employees e ON pr.employee_id = e.id
        LEFT JOIN employees r ON pr.reviewer_id = r.id
-       LEFT JOIN users u ON pr.created_by_user_id = u.id
        WHERE pr.id = $1`,
       id
     ) as any[];
@@ -325,13 +323,12 @@ router.get('/', async (req: Request, res: Response) => {
 
     const dataQuery = `SELECT pr.*,
       e.first_name AS employee_first_name, e.last_name AS employee_last_name, e.email AS employee_email, e.employee_code,
-      COALESCE(r.first_name, u.first_name) AS reviewer_first_name,
-      COALESCE(r.last_name, u.last_name) AS reviewer_last_name,
-      COALESCE(r.email, u.email) AS reviewer_email
+      r.first_name AS reviewer_first_name,
+      r.last_name AS reviewer_last_name,
+      r.email AS reviewer_email
       FROM performance_reviews pr
       LEFT JOIN employees e ON pr.employee_id = e.id
       LEFT JOIN employees r ON pr.reviewer_id = r.id
-      LEFT JOIN users u ON pr.created_by_user_id = u.id
       WHERE ${whereClause}
       ORDER BY pr.created_at DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`;
     const countQuery = 'SELECT COUNT(*)::int AS count FROM performance_reviews pr WHERE ' + whereClause;
@@ -402,12 +399,11 @@ router.post('/', async (req: Request, res: Response) => {
     const submittedAt = validatedData.status === 'submitted' ? new Date() : null;
 
     const result = await prisma.$queryRawUnsafe(
-      `INSERT INTO performance_reviews (employee_id, reviewer_id, created_by_user_id, review_period, review_type, communication_rating, technical_skills_rating, teamwork_rating, problem_solving_rating, punctuality_rating, initiative_rating, overall_rating, strengths, areas_for_improvement, goals_next_period, additional_comments, status, submitted_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::timestamp)
+      `INSERT INTO performance_reviews (employee_id, reviewer_id, review_period, review_type, communication_rating, technical_skills_rating, teamwork_rating, problem_solving_rating, punctuality_rating, initiative_rating, overall_rating, strengths, areas_for_improvement, goals_next_period, additional_comments, status, submitted_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::timestamp)
        ON CONFLICT (employee_id, review_period, review_type)
        DO UPDATE SET
          reviewer_id = EXCLUDED.reviewer_id,
-         created_by_user_id = EXCLUDED.created_by_user_id,
          communication_rating = EXCLUDED.communication_rating,
          technical_skills_rating = EXCLUDED.technical_skills_rating,
          teamwork_rating = EXCLUDED.teamwork_rating,
@@ -425,7 +421,6 @@ router.post('/', async (req: Request, res: Response) => {
        RETURNING *`,
       validatedData.employeeId,
       reviewerId,
-      authUserId,
       validatedData.reviewPeriod,
       validatedData.reviewType,
       validatedData.communicationRating ?? null,
