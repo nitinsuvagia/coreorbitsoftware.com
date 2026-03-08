@@ -152,6 +152,7 @@ async function fetchTenantProfile(tenantSlug: string, userId: string) {
 
   const employee = user.employee;
   const metadata = (employee?.metadata as Record<string, any> | null) || {};
+  const userPrefs = (user.appearancePreferences as Record<string, any> | null) || {};
   const managerName = employee?.reportingManager
     ? buildDisplayName(employee.reportingManager.firstName, employee.reportingManager.lastName)
     : undefined;
@@ -173,10 +174,10 @@ async function fetchTenantProfile(tenantSlug: string, userId: string) {
     email: user.email,
     phone: user.phone || undefined,
     avatar: user.avatar || undefined,
-    bio: metadata.bio || undefined,
+    bio: metadata.bio || userPrefs.bio || undefined,
     timezone: user.timezone || undefined,
     language: user.language || undefined,
-    dateFormat: metadata.dateFormat || undefined,
+    dateFormat: metadata.dateFormat || userPrefs.dateFormat || undefined,
     skills: employee?.skills || [],
     location: employee?.workLocation || undefined,
     role: employee?.designation?.name || undefined,
@@ -940,6 +941,14 @@ router.put('/users/profile', async (req: Request, res: Response, next: NextFunct
       if (parsed.data.bio !== undefined) metadata.bio = parsed.data.bio;
       if (parsed.data.dateFormat !== undefined) metadata.dateFormat = parsed.data.dateFormat;
       if (Object.keys(metadata).length) employeeUpdate.metadata = metadata;
+    }
+
+    // For users without an employee record, store bio/dateFormat in appearancePreferences
+    if (!user.employeeId && (parsed.data.bio !== undefined || parsed.data.dateFormat !== undefined)) {
+      const prefs = { ...((user.appearancePreferences as Record<string, any>) || {}) };
+      if (parsed.data.bio !== undefined) prefs.bio = parsed.data.bio;
+      if (parsed.data.dateFormat !== undefined) prefs.dateFormat = parsed.data.dateFormat;
+      userUpdate.appearancePreferences = prefs;
     }
 
     await (prisma as any).$transaction(async (tx: any) => {
