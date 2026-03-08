@@ -1981,6 +1981,39 @@ app.use('/api/documents',
   })
 );
 
+// AI chat streaming proxy (SSE) - must be before general AI proxy
+app.use('/api/v1/ai/chat/stream',
+  requireAuth,
+  requireTenantContext,
+  createProxyMiddleware({
+    target: config.aiServiceUrl,
+    changeOrigin: true,
+    pathRewrite: { '^/api/v1/ai': '/ai' },
+    timeout: 120000,
+    proxyTimeout: 120000,
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+    },
+    onProxyRes: (proxyRes, req) => {
+      // Disable buffering for SSE
+      proxyRes.headers['x-accel-buffering'] = 'no';
+      proxyRes.headers['cache-control'] = 'no-cache';
+      const origin = req.headers.origin;
+      if (origin) {
+        proxyRes.headers['access-control-allow-origin'] = origin;
+        proxyRes.headers['access-control-allow-credentials'] = 'true';
+      }
+    },
+    onError: (err, req, res) => {
+      logger.error({ error: err.message, path: req.url }, 'Error proxying to AI chat stream');
+      (res as any).status(502).json({
+        success: false,
+        error: 'Failed to connect to AI service',
+      });
+    },
+  })
+);
+
 // AI service proxy - centralized AI features (holiday generation, JD generation, etc.)
 app.use('/api/v1/ai',
   requireAuth,
