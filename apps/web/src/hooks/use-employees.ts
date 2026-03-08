@@ -46,6 +46,7 @@ export interface Employee {
   emergencyContacts?: any[];
   bankDetails?: any[];
   educations?: any[];
+  metadata?: Record<string, any>;
   userId?: string;
   systemRole?: { id: string; name: string; slug: string };
   createdAt: string;

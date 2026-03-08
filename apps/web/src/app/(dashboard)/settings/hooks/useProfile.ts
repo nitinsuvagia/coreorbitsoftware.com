@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth/auth-context';
 import { apiClient } from '@/lib/api/client';
@@ -21,63 +22,55 @@ interface UseProfileReturn {
 
 export function useProfile(): UseProfileReturn {
   const { user, updateUser } = useAuth();
+  const queryClient = useQueryClient();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileForm, setProfileForm] = useState<Partial<UserProfile>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
-  const userRef = useRef(user);
-  userRef.current = user;
-  const hasFetchedRef = useRef(false);
+  const fetchedRef = useRef(false);
 
-  const fetchProfile = useCallback(async () => {
+  const fetchProfile = async () => {
     try {
-      // Only show loading skeleton on initial fetch, not re-fetches
-      if (!hasFetchedRef.current) setLoading(true);
       const response = await apiClient.get<UserProfile>('/api/v1/users/profile');
       if (response.success && response.data) {
         setProfile(response.data);
         setProfileForm(response.data);
-        hasFetchedRef.current = true;
+        fetchedRef.current = true;
       }
     } catch (error: any) {
       console.error('Failed to fetch profile:', error);
-      // Use auth user as fallback only on initial load
-      if (!hasFetchedRef.current && userRef.current) {
-        const fallbackProfile = {
-          id: userRef.current.id,
-          firstName: userRef.current.firstName,
-          lastName: userRef.current.lastName,
-          email: userRef.current.email,
-          avatar: userRef.current.avatar,
-        };
-        setProfile(fallbackProfile);
-        setProfileForm(fallbackProfile);
-      }
     } finally {
       setLoading(false);
     }
-  }, []); // No user dependency - prevents re-fetch after save
+  };
 
-  // Populate profile from auth user when user becomes available
+  // Fetch profile once on mount
   useEffect(() => {
-    if (user && !profile && !loading) {
-      const fallbackProfile = {
+    fetchProfile();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // If API hasn't loaded yet and we have auth user, use as fallback display
+  useEffect(() => {
+    if (user && !profile && !fetchedRef.current) {
+      setProfile({
         id: user.id,
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
         avatar: user.avatar,
-      };
-      setProfile(fallbackProfile);
-      setProfileForm(fallbackProfile);
+      });
+      setProfileForm({
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        avatar: user.avatar,
+      });
     }
-  }, [user, profile, loading]);
-
-  useEffect(() => {
-    fetchProfile();
-  }, [fetchProfile]);
+  }, [user, profile]);
 
   const updateProfileForm = (field: keyof UserProfile, value: UserProfile[keyof UserProfile]) => {
     setProfileForm((prev) => ({ ...prev, [field]: value }));
@@ -118,13 +111,17 @@ export function useProfile(): UseProfileReturn {
         setProfileForm(response.data);
         setAvatarFile(null);
         setAvatarPreview(null);
-        // Update auth context to sync avatar with header
+        // Update auth context to sync avatar/name with header
         updateUser({
           firstName: response.data.firstName,
           lastName: response.data.lastName,
           avatar: response.data.avatar,
         });
+        // Invalidate employee query so /profile page picks up bio changes
+        queryClient.invalidateQueries({ queryKey: ['employee', 'me'] });
         toast.success('Profile updated successfully');
+      } else {
+        toast.error(response.error?.message || 'Failed to update profile');
       }
     } catch (error: any) {
       console.error('Failed to save profile:', error);

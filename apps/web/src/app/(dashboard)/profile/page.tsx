@@ -271,10 +271,10 @@ export default function ProfilePage() {
             </div>
 
             {/* Bio */}
-            {(employee as any).metadata?.bio && (
+            {employee.metadata?.bio && (
               <div className="mt-6 pt-4 border-t">
                 <p className="text-xs text-muted-foreground">Bio</p>
-                <p className="text-sm mt-1">{(employee as any).metadata.bio}</p>
+                <p className="text-sm mt-1">{employee.metadata.bio}</p>
               </div>
             )}
 
