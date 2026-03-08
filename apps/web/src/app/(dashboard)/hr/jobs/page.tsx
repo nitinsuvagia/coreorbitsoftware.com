@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -59,6 +59,7 @@ export default function JobDescriptionsPage() {
   const [statusFilter, setStatusFilter] = useState<string>('open');
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
   const orgSettings = useOrgSettings();
+  const searchParams = useSearchParams();
   
   // Dialog states
   const [formOpen, setFormOpen] = useState(false);
@@ -66,6 +67,42 @@ export default function JobDescriptionsPage() {
   const [viewingJob, setViewingJob] = useState<JobDescription | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [jobToDelete, setJobToDelete] = useState<string | null>(null);
+  const [aiPrefillData, setAiPrefillData] = useState<JobFormData | null>(null);
+
+  // Auto-open form if navigated from AI with prefill data
+  useEffect(() => {
+    if (searchParams.get('action') === 'create' && searchParams.get('from') === 'ai') {
+      try {
+        const stored = sessionStorage.getItem('ai_prefill_job');
+        if (stored) {
+          const data = JSON.parse(stored);
+          sessionStorage.removeItem('ai_prefill_job');
+          const empTypeMap: Record<string, string> = { FULL_TIME: 'full-time', PART_TIME: 'part-time', CONTRACT: 'contract', INTERN: 'internship' };
+          const prefill: JobFormData = {
+            title: data.title || '',
+            department: data.department || '',
+            location: '',
+            employmentType: (empTypeMap[data.employmentType] || 'full-time') as JobFormData['employmentType'],
+            salaryMin: 0,
+            salaryMax: 0,
+            currency: orgSettings?.currency || 'INR',
+            status: 'open',
+            closingDate: '',
+            openings: 1,
+            experienceMin: data.experienceMin || 0,
+            experienceMax: data.experienceMax || 0,
+            description: data.description || '',
+            requirements: data.requirements || [],
+            responsibilities: data.responsibilities || [],
+            benefits: data.benefits || [],
+            techStack: [],
+          };
+          setAiPrefillData(prefill);
+          setFormOpen(true);
+        }
+      } catch { /* ignore parse errors */ }
+    }
+  }, [searchParams.get('action'), searchParams.get('from'), searchParams.get('t'), orgSettings?.currency]);
 
   // Load jobs on mount and when filters change
   useEffect(() => {
@@ -706,7 +743,10 @@ export default function JobDescriptionsPage() {
         open={formOpen}
         onOpenChange={(open) => {
           setFormOpen(open);
-          if (!open) setEditingJob(null);
+          if (!open) {
+            setEditingJob(null);
+            setAiPrefillData(null);
+          }
         }}
         onSubmit={handleFormSubmit}
         initialData={
@@ -730,7 +770,7 @@ export default function JobDescriptionsPage() {
                 benefits: editingJob.benefits || [],
                 techStack: editingJob.techStack || [],
               }
-            : undefined
+            : aiPrefillData || undefined
         }
         mode={editingJob ? 'edit' : 'create'}
       />

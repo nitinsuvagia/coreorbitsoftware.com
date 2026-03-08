@@ -1,6 +1,7 @@
 'use client';
 
 import { OnboardingChecklist } from '@/components/onboarding';
+import { AiChatPanel } from '@/components/ai/AiChatPanel';
 import { useAuth } from '@/lib/auth/auth-context';
 
 export function DashboardClientWrapper({ children }: { children: React.ReactNode }) {
@@ -13,6 +14,7 @@ export function DashboardClientWrapper({ children }: { children: React.ReactNode
     <>
       {children}
       {isTenantAdminOrOwner && <OnboardingChecklist />}
+      <AiChatPanel />
     </>
   );
 }

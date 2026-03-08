@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 import type { Integration, OpenAISettings } from '../types';
 
@@ -36,6 +37,7 @@ const defaultOpenAISettings: OpenAISettings = {
 };
 
 export function useIntegrations() {
+  const queryClient = useQueryClient();
   const [integrations, setIntegrations] = useState<Integration[]>(defaultIntegrations);
   const [loadingIntegrations, setLoadingIntegrations] = useState(true);
   const [connectingIntegration, setConnectingIntegration] = useState<string | null>(null);
@@ -144,6 +146,8 @@ export function useIntegrations() {
               : i
           ));
           toast.success('OpenAI integration disabled');
+          // Invalidate AI status so chat panel detects the change immediately
+          queryClient.invalidateQueries({ queryKey: ['ai', 'status'] });
         }
       } else {
         await apiClient.delete(`/api/v1/integrations/${integrationId}`);
@@ -189,6 +193,8 @@ export function useIntegrations() {
         ));
         toast.success('OpenAI settings saved successfully');
         setOpenAIDialogOpen(false);
+        // Invalidate AI status so chat panel detects the change immediately
+        queryClient.invalidateQueries({ queryKey: ['ai', 'status'] });
         
         // Refresh from server to ensure state is in sync
         setTimeout(() => {

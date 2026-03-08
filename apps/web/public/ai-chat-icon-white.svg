@@ -1,0 +1,24 @@
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Chat bubble (top-left) with three dots -->
+  <path d="M20 40 C20 25, 30 15, 48 15 L108 15 C126 15, 136 25, 136 40 L136 75 C136 90, 126 100, 108 100 L65 100 L45 118 L45 100 L48 100 C30 100, 20 90, 20 75 Z" fill="white"/>
+  <circle cx="55" cy="58" r="6" fill="#9333EA"/>
+  <circle cx="78" cy="58" r="6" fill="#9333EA"/>
+  <circle cx="101" cy="58" r="6" fill="#9333EA"/>
+
+  <!-- Robot antenna -->
+  <line x1="138" y1="72" x2="138" y2="52" stroke="white" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="138" cy="46" r="9" fill="none" stroke="white" stroke-width="5"/>
+
+  <!-- Robot face speech bubble (bottom-right) -->
+  <path d="M60 90 C60 75, 72 65, 90 65 L162 65 C180 65, 192 77, 192 92 L192 148 C192 163, 180 175, 162 175 L162 175 L165 195 L140 175 L90 175 C72 175, 60 163, 60 148 Z" fill="#9333EA" stroke="white" stroke-width="7"/>
+
+  <!-- Robot face inner rounded rectangle -->
+  <rect x="85" y="95" width="82" height="55" rx="16" fill="white"/>
+
+  <!-- Robot eyes -->
+  <ellipse cx="109" cy="117" rx="6" ry="8" fill="#9333EA"/>
+  <ellipse cx="143" cy="117" rx="6" ry="8" fill="#9333EA"/>
+
+  <!-- Robot smile -->
+  <path d="M113 133 Q126 145, 139 133" stroke="#9333EA" stroke-width="4" stroke-linecap="round" fill="none"/>
+</svg>
