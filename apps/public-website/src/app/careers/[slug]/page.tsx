@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -14,8 +14,19 @@ import {
   CheckCircle2,
   Upload,
   Loader2,
-  Send
+  Send,
+  RefreshCw
 } from 'lucide-react';
+
+// Generate random math captcha
+const generateCaptcha = () => {
+  const num1 = Math.floor(Math.random() * 10) + 1;
+  const num2 = Math.floor(Math.random() * 10) + 1;
+  const operators = ['+', '-'];
+  const operator = operators[Math.floor(Math.random() * operators.length)];
+  const answer = operator === '+' ? num1 + num2 : num1 - num2;
+  return { question: `${num1} ${operator} ${num2}`, answer };
+};
 
 // Job data - same as careers page
 const allJobs = [
@@ -280,8 +291,19 @@ export default function JobDetailPage() {
     message: ''
   });
   const [cvFile, setCvFile] = useState<File | null>(null);
+  const [captchaAnswer, setCaptchaAnswer] = useState('');
+  const [captcha, setCaptcha] = useState({ question: '', answer: 0 });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+
+  useEffect(() => {
+    setCaptcha(generateCaptcha());
+  }, []);
+
+  const refreshCaptcha = () => {
+    setCaptcha(generateCaptcha());
+    setCaptchaAnswer('');
+  };
 
   if (!job) {
     return (
@@ -304,13 +326,36 @@ export default function JobDetailPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (parseInt(captchaAnswer) !== captcha.answer) {
+      alert('Incorrect captcha answer. Please try again.');
+      refreshCaptcha();
+      return;
+    }
+
     setIsSubmitting(true);
     
-    // Simulate form submission
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    setIsSubmitting(false);
-    setIsSubmitted(true);
+    try {
+      const res = await fetch('/api/career-apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...formData,
+          jobTitle: job.title,
+          jobSlug: job.slug,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to submit application');
+      }
+
+      setIsSubmitted(true);
+    } catch (error) {
+      alert('Something went wrong. Please try again later.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -353,7 +398,7 @@ export default function JobDetailPage() {
       {/* Header */}
       <section className="pt-24 pb-8 md:pt-32 md:pb-12">
         <div className="container mx-auto px-4">
-          <div className="max-w-4xl mx-auto">
+          <div className="max-w-6xl mx-auto">
             <Link href="/careers" className="inline-flex items-center text-slate-600 dark:text-slate-400 hover:text-purple-600 mb-6">
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to all positions
@@ -387,9 +432,9 @@ export default function JobDetailPage() {
       {/* Content */}
       <section className="pb-16 md:pb-24">
         <div className="container mx-auto px-4">
-          <div className="max-w-4xl mx-auto grid lg:grid-cols-3 gap-8">
+          <div className="max-w-6xl mx-auto grid lg:grid-cols-5 gap-8">
             {/* Job Details */}
-            <div className="lg:col-span-2 space-y-8">
+            <div className="lg:col-span-3 space-y-8">
               <div>
                 <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-4">About the Role</h2>
                 <p className="text-slate-600 dark:text-slate-400">{job.description}</p>
@@ -421,10 +466,10 @@ export default function JobDetailPage() {
             </div>
 
             {/* Application Form */}
-            <div className="lg:col-span-1">
-              <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-lg border border-slate-200 dark:border-slate-700 sticky top-24">
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">Apply Now</h2>
-                <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="lg:col-span-2">
+              <div className="bg-white dark:bg-slate-800 rounded-2xl p-8 shadow-lg border border-slate-200 dark:border-slate-700 sticky top-24">
+                <h2 className="text-2xl font-semibold text-slate-900 dark:text-white mb-8">Apply Now</h2>
+                <form onSubmit={handleSubmit} className="space-y-5">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
@@ -524,12 +569,41 @@ export default function JobDetailPage() {
                       Cover Letter / Message
                     </label>
                     <textarea
-                      rows={3}
+                      rows={4}
                       placeholder="Tell us why you're interested in this role..."
                       value={formData.message}
                       onChange={(e) => setFormData({...formData, message: e.target.value})}
                       className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
                     />
+                  </div>
+
+                  {/* Captcha */}
+                  <div className="bg-slate-50 dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Security Check *
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 flex items-center gap-2">
+                        <span className="text-lg font-mono font-bold text-slate-900 dark:text-white bg-white dark:bg-slate-800 px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600">
+                          {captcha.question} = ?
+                        </span>
+                        <button
+                          type="button"
+                          onClick={refreshCaptcha}
+                          className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                        >
+                          <RefreshCw className="w-4 h-4 text-slate-500" />
+                        </button>
+                      </div>
+                      <input
+                        type="number"
+                        required
+                        value={captchaAnswer}
+                        onChange={(e) => setCaptchaAnswer(e.target.value)}
+                        placeholder="Answer"
+                        className="w-24 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      />
+                    </div>
                   </div>
 
                   <Button 

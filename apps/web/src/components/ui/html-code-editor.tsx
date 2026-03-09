@@ -6,7 +6,7 @@ import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import Link from '@tiptap/extension-link';
 import TextAlign from '@tiptap/extension-text-align';
-import TextStyle from '@tiptap/extension-text-style';
+import { TextStyle } from '@tiptap/extension-text-style';
 import Color from '@tiptap/extension-color';
 import Image from '@tiptap/extension-image';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -300,7 +300,7 @@ export function HtmlCodeEditor({
   useEffect(() => {
     if (editor && !isSourceMode && value !== editor.getHTML()) {
       isUpdatingRef.current = true;
-      editor.commands.setContent(value || '', false);
+      editor.commands.setContent(value || '', { emitUpdate: false });
       isUpdatingRef.current = false;
     }
   }, [value, editor, isSourceMode]);
@@ -310,7 +310,7 @@ export function HtmlCodeEditor({
       // Switching from source → visual: push source HTML into editor
       if (editor) {
         isUpdatingRef.current = true;
-        editor.commands.setContent(sourceValue, false);
+        editor.commands.setContent(sourceValue, { emitUpdate: false });
         isUpdatingRef.current = false;
         onChange(sourceValue);
       }

@@ -42,7 +42,7 @@ export function Footer() {
           <div className="lg:col-span-2">
             <Link href="/" className="flex items-center mb-6">
               <img
-                src="/logo-horizontal.svg"
+                src="/logo-horizontal-white.svg"
                 alt="CoreOrbit Software"
                 className="h-14 w-auto"
               />

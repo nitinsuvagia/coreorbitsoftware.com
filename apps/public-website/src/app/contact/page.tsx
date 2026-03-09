@@ -407,7 +407,7 @@ export default function ContactPage() {
 
                   <p className="text-xs text-center text-slate-500 dark:text-slate-400">
                     By submitting this form, you agree to our{' '}
-                    <Link href="#" className="text-blue-600 hover:underline">Privacy Policy</Link>.
+                    <Link href="/privacy-policy" className="text-blue-600 hover:underline">Privacy Policy</Link>.
                   </p>
                 </form>
               </div>

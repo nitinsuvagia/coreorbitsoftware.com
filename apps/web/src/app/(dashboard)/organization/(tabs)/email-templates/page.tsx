@@ -203,7 +203,7 @@ export default function EmailTemplatesPage() {
         const fullTemplate = await apiClient.get<EmailTemplate>(
           `/api/v1/email-templates/${template.id}`
         );
-        const data = fullTemplate.data || fullTemplate;
+        const data = fullTemplate.data ?? template;
         setFormData({
           displayName: data.displayName || template.displayName,
           category: data.category || template.category,
