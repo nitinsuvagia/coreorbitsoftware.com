@@ -551,21 +551,25 @@ export default function NotificationsPage() {
               ))}
             </div>
           ) : filteredNotifications.length === 0 ? (
-            <div className="text-center py-12">
+            <div className="flex flex-col items-center justify-center py-16">
               {filter === 'archived' ? (
                 <>
-                  <Archive className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                  <p className="text-lg font-medium">No archived notifications</p>
-                  <p className="text-muted-foreground">
-                    Archived notifications will appear here
+                  <div className="rounded-full bg-primary/10 p-6 mb-4">
+                    <Archive className="h-16 w-16 text-primary" />
+                  </div>
+                  <h3 className="text-xl font-semibold mb-2">No archived notifications</h3>
+                  <p className="text-muted-foreground text-center max-w-md">
+                    Archived notifications will appear here.
                   </p>
                 </>
               ) : (
                 <>
-                  <Bell className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                  <p className="text-lg font-medium">No notifications</p>
-                  <p className="text-muted-foreground">
-                    {filter === 'unread' ? "You've read all your notifications" : "You don't have any notifications yet"}
+                  <div className="rounded-full bg-primary/10 p-6 mb-4">
+                    <Bell className="h-16 w-16 text-primary" />
+                  </div>
+                  <h3 className="text-xl font-semibold mb-2">No notifications</h3>
+                  <p className="text-muted-foreground text-center max-w-md">
+                    {filter === 'unread' ? "You've read all your notifications. Great job staying on top of things!" : "You don't have any notifications yet. They'll appear here when something needs your attention."}
                   </p>
                 </>
               )}

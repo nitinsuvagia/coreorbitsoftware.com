@@ -215,20 +215,45 @@ export async function loginPlatformAdmin(
     // Generate tokens
     const tokens = generatePlatformTokens(admin);
     
-    // Create session
-    const sessionId = uuidv4();
-    await prisma.platformAdminSession.create({
-      data: {
-        id: sessionId,
+    // Create session (or reuse existing one from same browser/device)
+    const currentUserAgent = request.deviceInfo?.userAgent || 'unknown';
+    const currentIp = request.deviceInfo?.ipAddress || 'unknown';
+    
+    const existingSession = await prisma.platformAdminSession.findFirst({
+      where: {
         adminId: admin.id,
-        tokenHash: hashToken(tokens.refreshToken),
-        tokenFamily: uuidv4(),
-        ipAddress: request.deviceInfo?.ipAddress || 'unknown',
-        userAgent: request.deviceInfo?.userAgent || 'unknown',
-        deviceId: request.deviceInfo?.fingerprint,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
+        userAgent: currentUserAgent,
       },
+      orderBy: { createdAt: 'desc' },
     });
+    
+    if (existingSession) {
+      await prisma.platformAdminSession.update({
+        where: { id: existingSession.id },
+        data: {
+          tokenHash: hashToken(tokens.refreshToken),
+          ipAddress: currentIp,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          lastActivityAt: new Date(),
+        },
+      });
+    } else {
+      const sessionId = uuidv4();
+      await prisma.platformAdminSession.create({
+        data: {
+          id: sessionId,
+          adminId: admin.id,
+          tokenHash: hashToken(tokens.refreshToken),
+          tokenFamily: uuidv4(),
+          ipAddress: currentIp,
+          userAgent: currentUserAgent,
+          deviceId: request.deviceInfo?.fingerprint,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        },
+      });
+    }
     
     // Reset login attempts and update last login
     await prisma.platformAdmin.update({

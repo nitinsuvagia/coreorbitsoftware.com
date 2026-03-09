@@ -189,20 +189,14 @@ async function refreshPlatformAdminToken(
     issuer: config.jwtIssuer,
   });
   
-  // Rotate token - revoke old, create new
+  // Rotate token — update session in-place to avoid creating duplicate session records
   await prisma.platformAdminSession.update({
     where: { id: session.id },
-    data: { revokedAt: new Date() },
-  });
-  
-  await prisma.platformAdminSession.create({
     data: {
-      adminId: session.adminId,
       tokenHash: hashToken(newRefreshToken),
-      tokenFamily: session.tokenFamily,
       ipAddress: request.deviceInfo?.ipAddress || session.ipAddress,
       userAgent: request.deviceInfo?.userAgent || session.userAgent,
-      deviceId: session.deviceId,
+      lastActivityAt: new Date(),
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     },
   });
@@ -361,20 +355,14 @@ async function refreshTenantUserToken(
     issuer: config.jwtIssuer,
   });
   
-  // Rotate token
+  // Rotate token — update session in-place to avoid creating duplicate session records
   await (prisma as any).userSession.update({
     where: { id: session.id },
-    data: { revokedAt: new Date() },
-  });
-  
-  await (prisma as any).userSession.create({
     data: {
-      userId: session.userId,
       tokenHash: hashToken(newRefreshToken),
-      tokenFamily: session.tokenFamily,
       ipAddress: request.deviceInfo?.ipAddress || session.ipAddress,
       userAgent: request.deviceInfo?.userAgent || session.userAgent,
-      deviceId: session.deviceId,
+      lastActivityAt: new Date(),
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     },
   });

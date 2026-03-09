@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { LoginForm } from '@/components/auth/login-form';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Shield, Building2 } from 'lucide-react';
 import { getTenantSlugFromHostname } from '@/lib/domain-context';
 
 function getTenantSlugFromHost(): string | null {
@@ -28,11 +27,11 @@ export default function LoginPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-2">
-            {isPlatformLogin ? (
-              <Shield className="h-10 w-10 text-primary" />
-            ) : (
-              <Building2 className="h-10 w-10 text-primary" />
-            )}
+            <img
+              src="/logo-square.svg"
+              alt="CoreOrbit Software"
+              className="h-20 w-auto"
+            />
           </div>
           <CardTitle className="text-2xl font-bold">
             {isPlatformLogin ? 'Platform Admin Login' : 'Welcome Back'}
@@ -42,7 +41,7 @@ export default function LoginPage() {
               ? 'Sign in as Platform Administrator'
               : tenantSlug 
                 ? `Sign in to ${tenantSlug.charAt(0).toUpperCase() + tenantSlug.slice(1)}`
-                : 'Sign in to your Office Management account'
+                : 'Sign in to your CoreOrbit account'
             }
           </CardDescription>
         </CardHeader>

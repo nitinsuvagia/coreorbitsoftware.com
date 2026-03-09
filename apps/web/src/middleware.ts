@@ -6,6 +6,8 @@ const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'your-super-secret-jwt-key-min-32-characters-long'
 );
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+
 // Paths that don't require authentication (excluding auth pages which are handled separately)
 const publicPaths = [
   '/verify-email',
@@ -29,6 +31,7 @@ const publicPaths = [
   '/favicon.ico',
   '/images',
   '/fonts',
+  '/logo-',
 ];
 
 // Paths that require platform admin access
@@ -102,11 +105,41 @@ function hasRouteAccess(pathname: string, payload: any): boolean {
   return true;
 }
 
+/**
+ * Attempt to refresh the access token using the refresh token.
+ * Returns the new access token and refresh token if successful, null otherwise.
+ */
+async function tryRefreshToken(
+  refreshToken: string
+): Promise<{ accessToken: string; refreshToken?: string } | null> {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    });
+
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    const accessToken =
+      data?.tokens?.accessToken || data?.data?.accessToken || data?.accessToken;
+    const newRefreshToken =
+      data?.tokens?.refreshToken || data?.data?.refreshToken || data?.refreshToken;
+
+    if (!accessToken) return null;
+    return { accessToken, refreshToken: newRefreshToken };
+  } catch {
+    return null;
+  }
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Get token from cookie
   const token = request.cookies.get('accessToken')?.value;
+  const refreshTokenCookie = request.cookies.get('refreshToken')?.value;
 
   // Check if user is on auth pages while logged in - redirect to dashboard
   if (authPages.some(path => pathname.startsWith(path))) {
@@ -117,10 +150,9 @@ export async function middleware(request: NextRequest) {
         const redirectUrl = isPlatformAdmin ? '/admin/dashboard' : '/dashboard';
         return NextResponse.redirect(new URL(redirectUrl, request.url));
       } catch (error) {
-        // Invalid token, allow access to login page and clear bad cookies
+        // Invalid token, allow access to login page and clear only the access token
         const response = NextResponse.next();
         response.cookies.delete('accessToken');
-        response.cookies.delete('refreshToken');
         return response;
       }
     }
@@ -138,6 +170,26 @@ export async function middleware(request: NextRequest) {
   }
 
   if (!token) {
+    // No access token — try refreshing if we have a refresh token
+    if (refreshTokenCookie) {
+      const tokens = await tryRefreshToken(refreshTokenCookie);
+      if (tokens) {
+        const response = NextResponse.redirect(request.url);
+        response.cookies.set('accessToken', tokens.accessToken, {
+          path: '/',
+          maxAge: 86400,
+          sameSite: 'lax',
+        });
+        if (tokens.refreshToken) {
+          response.cookies.set('refreshToken', tokens.refreshToken, {
+            path: '/',
+            maxAge: 2592000,
+            sameSite: 'lax',
+          });
+        }
+        return response;
+      }
+    }
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
@@ -168,7 +220,31 @@ export async function middleware(request: NextRequest) {
 
     return NextResponse.next();
   } catch (error) {
-    // Clear invalid token and redirect to login
+    // Token verification failed (expired, malformed, etc.)
+    // Try refreshing the token before giving up
+    if (refreshTokenCookie) {
+      const tokens = await tryRefreshToken(refreshTokenCookie);
+      if (tokens) {
+        // Refresh succeeded — set new cookies and redirect to same page
+        // (redirect so the next middleware run uses the fresh token)
+        const response = NextResponse.redirect(request.url);
+        response.cookies.set('accessToken', tokens.accessToken, {
+          path: '/',
+          maxAge: 86400,
+          sameSite: 'lax',
+        });
+        if (tokens.refreshToken) {
+          response.cookies.set('refreshToken', tokens.refreshToken, {
+            path: '/',
+            maxAge: 2592000,
+            sameSite: 'lax',
+          });
+        }
+        return response;
+      }
+    }
+
+    // Refresh failed or no refresh token — redirect to login
     const response = NextResponse.redirect(new URL('/login', request.url));
     response.cookies.delete('accessToken');
     response.cookies.delete('refreshToken');

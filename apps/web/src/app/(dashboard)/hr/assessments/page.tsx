@@ -1099,15 +1099,17 @@ function CurrentTab() {
       {/* Empty State */}
       {filteredTests.length === 0 && (
         <Card>
-          <CardContent className="py-12 text-center">
-            <CalendarClock className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">No scheduled tests found</h3>
-            <p className="text-muted-foreground mb-4">
+          <CardContent className="flex flex-col items-center justify-center py-16">
+            <div className="rounded-full bg-primary/10 p-6 mb-4">
+              <CalendarClock className="h-16 w-16 text-primary" />
+            </div>
+            <h3 className="text-xl font-semibold mb-2">No scheduled tests found</h3>
+            <p className="text-muted-foreground text-center max-w-md mb-6">
               {statusFilter !== 'all'
-                ? 'Try clearing the status filter to see all tests'
-                : 'Invite candidates to assessments to get started'}
+                ? 'Try clearing the status filter to see all tests.'
+                : 'Invite candidates to assessments to get started.'}
             </p>
-            <Button onClick={() => router.push('/hr/assessments/invite')}>
+            <Button size="lg" onClick={() => router.push('/hr/assessments/invite')}>
               <UserPlus className="h-4 w-4 mr-2" /> Invite Candidates
             </Button>
           </CardContent>
@@ -1525,15 +1527,17 @@ function QuestionBankTab() {
 
       {!loading && (questions || []).length === 0 && (
         <Card>
-          <CardContent className="py-12 text-center">
-            <FileQuestion className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">No questions found</h3>
-            <p className="text-muted-foreground mb-4">
+          <CardContent className="flex flex-col items-center justify-center py-16">
+            <div className="rounded-full bg-primary/10 p-6 mb-4">
+              <FileQuestion className="h-16 w-16 text-primary" />
+            </div>
+            <h3 className="text-xl font-semibold mb-2">No questions found</h3>
+            <p className="text-muted-foreground text-center max-w-md mb-6">
               {searchQuery || typeFilter !== 'all' || difficultyFilter !== 'all' || categoryFilter !== 'all'
-                ? 'Try adjusting your filters'
-                : 'Get started by adding your first question'}
+                ? 'Try adjusting your filters to find what you\'re looking for.'
+                : 'Get started by adding your first question.'}
             </p>
-            <Button onClick={() => router.push('/hr/assessments/questions/new')}>
+            <Button size="lg" onClick={() => router.push('/hr/assessments/questions/new')}>
               <Plus className="h-4 w-4 mr-2" /> Add Question
             </Button>
           </CardContent>
@@ -1848,15 +1852,17 @@ function TestsTab() {
       )}
 
       {!loading && filteredTests.length === 0 && (
-        <div className="text-center py-12">
-          <ClipboardList className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-          <h3 className="text-lg font-medium mb-2">No tests found</h3>
-          <p className="text-muted-foreground mb-4">
+        <div className="flex flex-col items-center justify-center py-16">
+          <div className="rounded-full bg-primary/10 p-6 mb-4">
+            <ClipboardList className="h-16 w-16 text-primary" />
+          </div>
+          <h3 className="text-xl font-semibold mb-2">No tests found</h3>
+          <p className="text-muted-foreground text-center max-w-md mb-6">
             {searchQuery || statusFilter !== 'all'
-              ? 'Try adjusting your filters'
-              : 'Get started by creating your first test'}
+              ? 'Try adjusting your filters to find what you\'re looking for.'
+              : 'Get started by creating your first test.'}
           </p>
-          <Button onClick={() => router.push('/hr/assessments/tests/new')}>
+          <Button size="lg" onClick={() => router.push('/hr/assessments/tests/new')}>
             <Plus className="h-4 w-4 mr-2" /> Create Test
           </Button>
         </div>

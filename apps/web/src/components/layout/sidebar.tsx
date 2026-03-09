@@ -177,12 +177,19 @@ export function Sidebar({ className }: SidebarProps) {
     >
       {/* Logo */}
       <div className="flex h-16 items-center border-b px-4">
-        <Link href="/dashboard" className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold">
-            O
-          </div>
-          {!collapsed && (
-            <span className="font-semibold">Office Manager</span>
+        <Link href="/dashboard" className="flex items-center">
+          {collapsed ? (
+            <img
+              src="/logo-thumbnail.svg"
+              alt="CoreOrbit"
+              className="h-10 w-10"
+            />
+          ) : (
+            <img
+              src="/logo-horizontal.svg"
+              alt="CoreOrbit Software"
+              className="h-12 w-auto"
+            />
           )}
         </Link>
       </div>

@@ -79,7 +79,7 @@ interface SecurityTabProps {
   onSetShowBackupCodes?: (show: boolean) => void;
   onEnable2FA: () => Promise<void>;
   onVerify2FA: () => Promise<void>;
-  onDisable2FA: () => Promise<void>;
+  onDisable2FA: (password: string) => Promise<void>;
   
   // Sessions
   sessions: ActiveSession[];
@@ -153,6 +153,24 @@ export function SecurityTab({
   const [copiedSecret, setCopiedSecret] = useState(false);
   const [copiedBackupCodes, setCopiedBackupCodes] = useState(false);
   const [showDeletePassword, setShowDeletePassword] = useState(false);
+  const [showDisable2FADialog, setShowDisable2FADialog] = useState(false);
+  const [disable2FAPassword, setDisable2FAPassword] = useState('');
+  const [showDisable2FAPassword, setShowDisable2FAPassword] = useState(false);
+  const [disabling2FA, setDisabling2FA] = useState(false);
+
+  const handleDisable2FA = async () => {
+    if (!disable2FAPassword) return;
+    setDisabling2FA(true);
+    try {
+      await onDisable2FA(disable2FAPassword);
+      setShowDisable2FADialog(false);
+      setDisable2FAPassword('');
+    } catch {
+      // Error is handled by the hook
+    } finally {
+      setDisabling2FA(false);
+    }
+  };
   
   const handleCopySecret = async () => {
     if (secret) {
@@ -299,7 +317,7 @@ export function SecurityTab({
                   <p className="text-sm text-muted-foreground">Your account is protected with 2FA</p>
                 </div>
               </div>
-              <Button variant="outline" onClick={onDisable2FA}>
+              <Button variant="outline" onClick={() => { setDisable2FAPassword(''); setShowDisable2FADialog(true); }}>
                 Disable 2FA
               </Button>
             </div>
@@ -536,6 +554,54 @@ export function SecurityTab({
           <DialogFooter>
             <Button onClick={() => onSetShowBackupCodes?.(false)}>
               I've Saved My Codes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Disable 2FA Confirmation Dialog */}
+      <Dialog open={showDisable2FADialog} onOpenChange={(open) => { setShowDisable2FADialog(open); if (!open) setDisable2FAPassword(''); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5 text-red-500" />
+              Disable Two-Factor Authentication
+            </DialogTitle>
+            <DialogDescription>
+              Enter your password to confirm disabling 2FA. This will make your account less secure.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="disable2faPassword">Password</Label>
+              <div className="relative">
+                <Input
+                  id="disable2faPassword"
+                  type={showDisable2FAPassword ? 'text' : 'password'}
+                  value={disable2FAPassword}
+                  onChange={(e) => setDisable2FAPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  onKeyDown={(e) => { if (e.key === 'Enter' && disable2FAPassword) handleDisable2FA(); }}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-0 top-0 h-full px-3"
+                  onClick={() => setShowDisable2FAPassword(!showDisable2FAPassword)}
+                >
+                  {showDisable2FAPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowDisable2FADialog(false); setDisable2FAPassword(''); }} disabled={disabling2FA}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDisable2FA} disabled={!disable2FAPassword || disabling2FA}>
+              {disabling2FA && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Disable 2FA
             </Button>
           </DialogFooter>
         </DialogContent>

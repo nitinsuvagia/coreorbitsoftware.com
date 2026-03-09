@@ -31,7 +31,7 @@ interface UseSecurityReturn {
   setShowBackupCodes: (show: boolean) => void;
   enable2FA: () => Promise<void>;
   verify2FA: () => Promise<void>;
-  disable2FA: () => Promise<void>;
+  disable2FA: (password: string) => Promise<void>;
   fetch2FAStatus: () => Promise<void>;
   
   // Sessions
@@ -221,11 +221,7 @@ export function useSecurity(): UseSecurityReturn {
     }
   };
 
-  const disable2FA = async () => {
-    // Prompt for password
-    const password = window.prompt('Enter your password to disable 2FA:');
-    if (!password) return;
-
+  const disable2FA = async (password: string) => {
     try {
       const response = await apiClient.post('/api/v1/auth/2fa/disable', { password });
       if (response.success) {

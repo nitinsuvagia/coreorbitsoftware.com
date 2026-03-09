@@ -336,15 +336,17 @@ export function TeamsTab() {
                     ))}
                   </div>
                 ) : filteredMembers.length === 0 ? (
-                  <div className="text-center py-12">
-                    <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                    <h3 className="text-lg font-medium">No members in this team</h3>
-                    <p className="text-muted-foreground mb-4">
+                  <div className="flex flex-col items-center justify-center py-16">
+                    <div className="rounded-full bg-primary/10 p-6 mb-4">
+                      <Users className="h-16 w-16 text-primary" />
+                    </div>
+                    <h3 className="text-xl font-semibold mb-2">No members in this team</h3>
+                    <p className="text-muted-foreground text-center max-w-md mb-6">
                       {selectedTeam.isDefault
-                        ? 'New employees will be automatically added here'
-                        : 'Add employees to this team to start collaborating'}
+                        ? 'New employees will be automatically added here.'
+                        : 'Add employees to this team to start collaborating.'}
                     </p>
-                    <Button onClick={openAddMemberDialog}>
+                    <Button size="lg" onClick={openAddMemberDialog}>
                       <UserPlus className="mr-2 h-4 w-4" />
                       Add Members
                     </Button>
@@ -439,9 +441,12 @@ export function TeamsTab() {
             </>
           ) : (
             <CardContent className="flex items-center justify-center h-[500px]">
-              <div className="text-center text-muted-foreground">
-                <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>Select a team to view members</p>
+              <div className="flex flex-col items-center justify-center">
+                <div className="rounded-full bg-primary/10 p-6 mb-4">
+                  <Users className="h-16 w-16 text-primary" />
+                </div>
+                <h3 className="text-xl font-semibold mb-2">Select a team</h3>
+                <p className="text-muted-foreground text-center max-w-md">Choose a team from the left panel to view and manage its members.</p>
               </div>
             </CardContent>
           )}

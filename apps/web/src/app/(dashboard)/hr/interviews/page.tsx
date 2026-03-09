@@ -738,10 +738,12 @@ export default function InterviewsPage() {
               <InterviewCalendarView interviews={interviews} onView={handleView} />
             ) : interviews.length === 0 ? (
               <Card>
-                <CardContent className="py-12 text-center">
-                  <Calendar className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-medium mb-2">No interviews found</h3>
-                  <p className="text-muted-foreground mb-4">
+                <CardContent className="flex flex-col items-center justify-center py-16">
+                  <div className="rounded-full bg-primary/10 p-6 mb-4">
+                    <Calendar className="h-16 w-16 text-primary" />
+                  </div>
+                  <h3 className="text-xl font-semibold mb-2">No interviews found</h3>
+                  <p className="text-muted-foreground text-center max-w-md mb-6">
                     {activeTab === 'today'
                       ? "You don't have any interviews scheduled for today."
                       : activeTab === 'upcoming'
@@ -750,7 +752,7 @@ export default function InterviewsPage() {
                       ? 'No past interviews found.'
                       : 'No interviews match your filters.'}
                   </p>
-                  <Button onClick={() => setScheduleDialogOpen(true)}>
+                  <Button size="lg" onClick={() => setScheduleDialogOpen(true)}>
                     <Plus className="h-4 w-4 mr-2" />
                     Schedule an Interview
                   </Button>

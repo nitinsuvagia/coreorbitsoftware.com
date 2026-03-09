@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Menu, X, Sparkles } from 'lucide-react';
+import { Menu, X } from 'lucide-react';
 import { siteConfig } from '@/lib/site-config';
 
 const SIGNUP_URL = siteConfig.signupUrl;
@@ -39,21 +39,12 @@ export function LandingNavbar() {
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16 md:h-20">
           {/* Logo */}
-          <Link href="/" className="flex items-center space-x-2 group">
-            <div className="relative">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg group-hover:shadow-xl transition-shadow">
-                <Sparkles className="w-5 h-5 text-white" />
-              </div>
-              <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-white animate-pulse" />
-            </div>
-            <div className="flex flex-col">
-              <span className="font-bold text-xl bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
-                CoreOrbit
-              </span>
-              <span className="text-[10px] text-slate-500 dark:text-slate-400 -mt-1 tracking-wider">
-                AI-POWERED
-              </span>
-            </div>
+          <Link href="/" className="flex items-center group">
+            <img
+              src="/logo-horizontal.svg"
+              alt="CoreOrbit Software"
+              className="h-14 w-auto"
+            />
           </Link>
 
           {/* Desktop Navigation */}

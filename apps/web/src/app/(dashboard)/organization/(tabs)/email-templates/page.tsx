@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { HtmlCodeEditor } from '@/components/ui/html-code-editor';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
@@ -64,6 +65,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api/client';
+import { useOrganizationContext } from '../../context';
 
 // Types
 interface EmailTemplate {
@@ -107,6 +109,8 @@ const CATEGORY_COLORS: Record<string, string> = {
 };
 
 export default function EmailTemplatesPage() {
+  const { org } = useOrganizationContext();
+
   // State
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [categories, setCategories] = useState<TemplateCategory[]>([]);
@@ -190,18 +194,36 @@ export default function EmailTemplatesPage() {
   });
 
   // Open edit dialog
-  const openEditDialog = (template?: EmailTemplate) => {
+  const openEditDialog = async (template?: EmailTemplate) => {
     if (template) {
       setCurrentTemplate(template);
-      setFormData({
-        displayName: template.displayName,
-        category: template.category,
-        description: template.description,
-        subject: template.subject,
-        htmlContent: template.htmlContent,
-        textContent: template.textContent,
-        isActive: template.isActive,
-      });
+      setEditDialogOpen(true);
+      // Fetch full template with htmlContent (list API excludes it)
+      try {
+        const fullTemplate = await apiClient.get<EmailTemplate>(
+          `/api/v1/email-templates/${template.id}`
+        );
+        const data = fullTemplate.data || fullTemplate;
+        setFormData({
+          displayName: data.displayName || template.displayName,
+          category: data.category || template.category,
+          description: data.description || template.description,
+          subject: data.subject || template.subject,
+          htmlContent: data.htmlContent || '',
+          textContent: data.textContent || '',
+          isActive: data.isActive ?? template.isActive,
+        });
+      } catch (error: any) {
+        toast.error('Failed to load template content');
+        setFormData({
+          displayName: template.displayName,
+          category: template.category,
+          description: template.description,
+          subject: template.subject,
+          htmlContent: '',
+          isActive: template.isActive,
+        });
+      }
     } else {
       setCurrentTemplate(null);
       setFormData({
@@ -213,8 +235,8 @@ export default function EmailTemplatesPage() {
         htmlContent: `<h2>{{title}}</h2>\n\n<p>Dear {{recipientName}},</p>\n\n<p>Your content here...</p>\n\n<p>Best regards,<br>\n<strong>{{companyName}} Team</strong></p>`,
         isActive: true,
       });
+      setEditDialogOpen(true);
     }
-    setEditDialogOpen(true);
   };
 
   // Save template
@@ -281,12 +303,91 @@ export default function EmailTemplatesPage() {
             firstName: 'John',
             lastName: 'Doe',
             email: 'john@example.com',
-            companyName: 'Innovatelab Inc',
+            companyName: org?.name || 'Your Company',
+            companyLogo: org?.logo || '',
+            portalUrl: window.location.origin,
+            supportEmail: org?.email || 'support@example.com',
+            year: new Date().getFullYear(),
           },
         }
       );
       if (response.success && response.data) {
-        setPreviewHtml(response.data.html);
+        // Strip wrapper elements from backend-rendered HTML 
+        let bodyHtml = response.data.html;
+        
+        // Remove any old footer sections (class="email-footer" or class="footer")
+        bodyHtml = bodyHtml.replace(/<div class="email-footer">[\s\S]*$/, '');
+        bodyHtml = bodyHtml.replace(/<div class="footer">[\s\S]*?<\/div>/gi, '');
+        
+        // Remove the header section that shows companyName or logo (class="header" or class="email-header")
+        bodyHtml = bodyHtml.replace(/<div class="header">[\s\S]*?<\/div>/gi, '');
+        bodyHtml = bodyHtml.replace(/<div class="email-header">[\s\S]*?<\/div>/gi, '');
+        
+        // Remove copyright lines that templates may embed
+        bodyHtml = bodyHtml.replace(/<p[^>]*>©[\s\S]*?All rights reserved\.?<\/p>/gi, '');
+        bodyHtml = bodyHtml.replace(/<p[^>]*>This is an automated message[\s\S]*?<\/p>/gi, '');
+        
+        // Strip wrapping HTML/head/body/container tags from base template
+        bodyHtml = bodyHtml.replace(/<!DOCTYPE[\s\S]*?<body[^>]*>/gi, '');
+        bodyHtml = bodyHtml.replace(/<\/body>[\s\S]*$/gi, '');
+        bodyHtml = bodyHtml.replace(/<style[\s\S]*?<\/style>/gi, '');
+        bodyHtml = bodyHtml.replace(/<div class="container">/gi, '');
+        
+        // Extract email-body content if present
+        const bodyMatch = bodyHtml.match(/<div class="email-body">([\s\S]*?)<\/div>\s*$/);
+        if (bodyMatch) {
+          bodyHtml = bodyMatch[1];
+        }
+        
+        // Clean up stray closing divs and trim
+        bodyHtml = bodyHtml.replace(/<\/div>\s*<\/div>\s*$/gi, '');
+        bodyHtml = bodyHtml.trim();
+
+        // Wrap in org stationery
+        const logoSrc = org?.reportLogo || org?.logo;
+        const logoHtml = logoSrc
+          ? `<img src="${logoSrc}" alt="${org?.name || ''}" style="max-height:70px;max-width:240px;" />`
+          : '';
+        const addressParts = [
+          org?.address?.line1,
+          org?.address?.line2,
+          [org?.address?.city, org?.address?.state].filter(Boolean).join(', '),
+          org?.address?.country,
+          org?.address?.postalCode,
+        ].filter(Boolean);
+        const stationeryHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
+          body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;background:#f5f5f5;}
+          .stationery{max-width:700px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);}
+          .st-header{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);padding:${logoHtml ? '28px 32px' : '16px 32px'};text-align:center;}
+          .st-body{padding:32px;}
+          .st-footer{background:#f7fafc;padding:24px 32px;text-align:center;border-top:1px solid #e2e8f0;}
+          .st-footer p{color:#718096;font-size:13px;margin:4px 0;line-height:1.5;}
+          .st-footer a{color:#667eea;text-decoration:none;}
+          .st-footer .divider{height:1px;background:#e2e8f0;margin:12px 0;}
+          .button,.st-body a.button{display:inline-block;background-color:#2563eb;color:#ffffff !important;padding:12px 30px;text-decoration:none;border-radius:6px;font-weight:600;margin:15px 0;font-size:16px;}
+          .button:hover{background-color:#1d4ed8;}
+          .st-body h2{color:#1a202c;font-size:20px;margin-bottom:15px;}
+          .st-body p{color:#4a5568;margin-bottom:15px;font-size:15px;line-height:1.6;}
+          .st-body .info-box{background-color:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:15px;margin:15px 0;}
+          .st-body .success-box{background-color:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:15px;margin:15px 0;}
+          .st-body .warning-box{background-color:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:15px;margin:15px 0;}
+          .st-body .divider{border-top:1px solid #e5e7eb;margin:20px 0;}
+          .st-body a{color:#2563eb;}
+        </style></head><body><div class="stationery">
+          <div class="st-header">${logoHtml}</div>
+          <div class="st-body">${bodyHtml}</div>
+          <div class="st-footer">
+            <p><strong>${org?.name || 'Your Organization'}</strong></p>
+            ${addressParts.length ? `<p>${addressParts.join(' &middot; ')}</p>` : ''}
+            ${org?.phone ? `<p>Phone: ${org.phone}</p>` : ''}
+            ${org?.email ? `<p>Email: <a href="mailto:${org.email}">${org.email}</a></p>` : ''}
+            ${org?.website ? `<p><a href="${org.website}" target="_blank">${org.website}</a></p>` : ''}
+            <div class="divider"></div>
+            <p>&copy; ${new Date().getFullYear()} ${org?.name || 'Your Organization'}. All rights reserved.</p>
+            <p style="font-size:11px;color:#a0aec0;">This is an automated message. Please do not reply directly to this email.</p>
+          </div>
+        </div></body></html>`;
+        setPreviewHtml(stationeryHtml);
         setCurrentTemplate(template);
         setPreviewDialogOpen(true);
       }
@@ -576,7 +677,7 @@ export default function EmailTemplatesPage() {
 
       {/* Edit Template Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-6xl max-h-[95vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {currentTemplate ? 'Edit Template' : 'Create New Template'}
@@ -638,13 +739,11 @@ export default function EmailTemplatesPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="htmlContent">Email Content (HTML)</Label>
-                <Textarea
-                  id="htmlContent"
+                <HtmlCodeEditor
                   value={formData.htmlContent || ''}
-                  onChange={(e) => setFormData({ ...formData, htmlContent: e.target.value })}
-                  rows={15}
-                  className="font-mono text-sm"
+                  onChange={(val) => setFormData({ ...formData, htmlContent: val })}
                   placeholder="<h2>Hello {{firstName}}</h2>..."
+                  minHeight="460px"
                 />
                 <p className="text-xs text-muted-foreground">
                   Handlebars syntax is supported. Click the code icon in the filters to see available variables.
@@ -725,7 +824,7 @@ export default function EmailTemplatesPage() {
 
       {/* Preview Dialog */}
       <Dialog open={previewDialogOpen} onOpenChange={setPreviewDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[80vh]">
+        <DialogContent className="max-w-5xl max-h-[95vh]">
           <DialogHeader>
             <DialogTitle>Template Preview</DialogTitle>
             <DialogDescription>
@@ -735,7 +834,7 @@ export default function EmailTemplatesPage() {
           <div className="border rounded-lg overflow-hidden">
             <iframe
               srcDoc={previewHtml}
-              className="w-full h-[500px] border-0"
+              className="w-full h-[600px] border-0"
               title="Email Preview"
             />
           </div>
@@ -817,7 +916,7 @@ export default function EmailTemplatesPage() {
 
       {/* Variables Reference Dialog */}
       <Dialog open={variablesDialogOpen} onOpenChange={setVariablesDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[95vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Available Template Variables</DialogTitle>
             <DialogDescription>

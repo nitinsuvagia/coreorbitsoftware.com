@@ -123,27 +123,31 @@ export function Header({ title }: HeaderProps) {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
-              <Link href="/profile">
-                <User className="mr-2 h-4 w-4" />
-                My Profile
-              </Link>
-            </DropdownMenuItem>
-            {!isTenantOwner && (
-              <DropdownMenuItem asChild>
-                <Link href="/my-360">
-                  <User className="mr-2 h-4 w-4" />
-                  My 360° View
-                </Link>
-              </DropdownMenuItem>
+            {!user?.isPlatformAdmin && (
+              <>
+                <DropdownMenuItem asChild>
+                  <Link href="/settings">
+                    <User className="mr-2 h-4 w-4" />
+                    My Profile
+                  </Link>
+                </DropdownMenuItem>
+                {!isTenantOwner && (
+                  <DropdownMenuItem asChild>
+                    <Link href="/my-360">
+                      <User className="mr-2 h-4 w-4" />
+                      My 360° View
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem asChild>
+                  <Link href="/settings">
+                    <Settings className="mr-2 h-4 w-4" />
+                    Settings
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
             )}
-            <DropdownMenuItem asChild>
-              <Link href="/settings">
-                <Settings className="mr-2 h-4 w-4" />
-                Settings
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
               <button 
                 type="button"

@@ -381,16 +381,18 @@ export default function PerformanceReviewsPage() {
               ))}
             </div>
           ) : filteredReviews.length === 0 ? (
-            <div className="text-center py-12">
-              <BarChart3 className="h-12 w-12 mx-auto text-muted-foreground/40 mb-4" />
-              <h3 className="font-medium text-lg">No reviews found</h3>
-              <p className="text-muted-foreground text-sm mt-1">
+            <div className="flex flex-col items-center justify-center py-16">
+              <div className="rounded-full bg-primary/10 p-6 mb-4">
+                <BarChart3 className="h-16 w-16 text-primary" />
+              </div>
+              <h3 className="text-xl font-semibold mb-2">No reviews found</h3>
+              <p className="text-muted-foreground text-center max-w-md mb-6">
                 {searchQuery || statusFilter !== 'all' || typeFilter !== 'all'
-                  ? 'Try adjusting your filters'
-                  : isSelfOnly ? 'No reviews have been written for you yet' : 'Start by writing a performance review for an employee'}
+                  ? 'Try adjusting your filters to find what you\'re looking for.'
+                  : isSelfOnly ? 'No reviews have been written for you yet.' : 'Start by writing a performance review for an employee.'}
               </p>
               {canWrite && !searchQuery && statusFilter === 'all' && typeFilter === 'all' && (
-                <Button className="mt-4" onClick={() => setShowWriteReview(true)}>
+                <Button size="lg" onClick={() => setShowWriteReview(true)}>
                   <Plus className="mr-2 h-4 w-4" />
                   Write First Review
                 </Button>

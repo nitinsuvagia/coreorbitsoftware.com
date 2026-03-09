@@ -302,23 +302,51 @@ export async function loginTenantUser(
       permissions,
     });
     
-    // Create session
+    // Create session (or reuse existing one from same browser/device)
     const sessionExpiry = request.rememberMe 
       ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
       : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
     
-    await (prisma as any).userSession.create({
-      data: {
-        id: uuidv4(),
+    const currentUserAgent = request.deviceInfo?.userAgent || 'unknown';
+    const currentIp = request.deviceInfo?.ipAddress || 'unknown';
+    
+    // Look for an existing active session from the same browser/device
+    const existingSession = await (prisma as any).userSession.findFirst({
+      where: {
         userId: user.id,
-        tokenHash: hashToken(tokens.refreshToken),
-        tokenFamily: uuidv4(),
-        ipAddress: request.deviceInfo?.ipAddress || 'unknown',
-        userAgent: request.deviceInfo?.userAgent || 'unknown',
-        deviceId: request.deviceInfo?.fingerprint,
-        expiresAt: sessionExpiry,
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
+        userAgent: currentUserAgent,
       },
+      orderBy: { createdAt: 'desc' },
     });
+    
+    if (existingSession) {
+      // Reuse existing session: update token hash, IP, and expiry
+      await (prisma as any).userSession.update({
+        where: { id: existingSession.id },
+        data: {
+          tokenHash: hashToken(tokens.refreshToken),
+          ipAddress: currentIp,
+          expiresAt: sessionExpiry,
+          lastActivityAt: new Date(),
+        },
+      });
+    } else {
+      // Create new session for new browser/device
+      await (prisma as any).userSession.create({
+        data: {
+          id: uuidv4(),
+          userId: user.id,
+          tokenHash: hashToken(tokens.refreshToken),
+          tokenFamily: uuidv4(),
+          ipAddress: currentIp,
+          userAgent: currentUserAgent,
+          deviceId: request.deviceInfo?.fingerprint,
+          expiresAt: sessionExpiry,
+        },
+      });
+    }
     
     // Reset login attempts and update last login
     await (prisma as any).user.update({

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Sparkles, Twitter, Linkedin, Github, Youtube } from 'lucide-react';
+import { Twitter, Linkedin, Github, Youtube } from 'lucide-react';
 
 const footerLinks = {
   solutions: {
@@ -40,14 +40,12 @@ export function Footer() {
         <div className="grid lg:grid-cols-4 gap-12">
           {/* Brand column */}
           <div className="lg:col-span-2">
-            <Link href="/" className="flex items-center space-x-2 mb-6">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 flex items-center justify-center">
-                <Sparkles className="w-5 h-5 text-white" />
-              </div>
-              <div className="flex flex-col">
-                <span className="font-bold text-xl text-white">CoreOrbit</span>
-                <span className="text-[10px] text-slate-400 -mt-1 tracking-wider">AI-POWERED</span>
-              </div>
+            <Link href="/" className="flex items-center mb-6">
+              <img
+                src="/logo-horizontal.svg"
+                alt="CoreOrbit Software"
+                className="h-14 w-auto"
+              />
             </Link>
             <p className="text-slate-400 mb-6 max-w-sm">
               Transform your HR with AI-powered recruitment, digital onboarding, 

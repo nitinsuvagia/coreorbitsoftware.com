@@ -22,6 +22,7 @@ import { jobApi } from '@/lib/api/jobs';
 import { interviewApi, type Interview } from '@/lib/api/interviews';
 import { get } from '@/lib/api/client';
 import { useMyAttendance, useCheckIn, useCheckOut } from '@/hooks/use-attendance';
+import { usePermissions } from '@/hooks/use-permissions';
 import { formatDate, formatTime, formatDuration } from '@/lib/utils';
 import {
   SessionHistoryDialog,
@@ -1272,6 +1273,10 @@ export default function HRDashboardPage() {
   const [assetsStats, setAssetsStats] = useState<AssetsStats | null>(null);
   const [assetsLoading, setAssetsLoading] = useState(true);
 
+  // Check if user is tenant admin (not an employee)
+  const { hasRole } = usePermissions();
+  const isTenantAdmin = hasRole('tenant_admin');
+
   // Fetch today's attendance overview from API
 
   // Personal Check-In/Check-Out
@@ -1868,7 +1873,8 @@ export default function HRDashboardPage() {
         onOpenChange={setShowReviewDialog}
       />
 
-      {/* Personal Check-In / Check-Out Card */}
+      {/* Personal Check-In / Check-Out Card — hidden for tenant admin (not an employee) */}
+      {!isTenantAdmin && (
       <Card className="bg-gradient-to-r from-primary/10 to-primary/5">
         <CardContent className="p-6">
           <div className="flex items-center justify-between flex-wrap gap-4">
@@ -1936,6 +1942,7 @@ export default function HRDashboardPage() {
           </div>
         </CardContent>
       </Card>
+      )}
 
       {/* Today's Overview Row */}
       <div className="grid gap-4 lg:grid-cols-3">

@@ -144,8 +144,9 @@ const HOLIDAY_COLORS: Record<string, { bg: string; text: string; cellBg: string 
 
 export default function LeaveManagementPage() {
   const { user } = useAuth();
-  const { can } = usePermissions();
+  const { can, hasRole } = usePermissions();
   const canManageLeaves = can('leave:write');
+  const isTenantAdmin = hasRole('tenant_admin');
   const [activeTab, setActiveTab] = useState<'requests' | 'calendar'>('requests');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState<string>('all');
@@ -722,7 +723,7 @@ export default function LeaveManagementPage() {
               : 'View and manage your leave requests'}
           </p>
         </div>
-        {canManageLeaves && (
+        {canManageLeaves && (!isTenantAdmin || currentEmployeeId) && (
           <Button onClick={() => { resetCreateForm(); setIsCreateDialogOpen(true); }}>
             <Plus className="h-4 w-4 mr-2" />
             Add Leave
@@ -916,8 +917,8 @@ export default function LeaveManagementPage() {
                 <h3 className="text-xl font-semibold mb-2">No leave requests found</h3>
                 <p className="text-muted-foreground text-center max-w-md mb-6">
                   {selectedStatus === 'pending' 
-                    ? 'No pending leave requests to review.'
-                    : 'No leave requests match your current filters.'}
+                    ? 'No pending leave requests to review. All caught up!'
+                    : 'No leave requests match your current filters. Try adjusting your filters.'}
                 </p>
               </div>
             ) : (
