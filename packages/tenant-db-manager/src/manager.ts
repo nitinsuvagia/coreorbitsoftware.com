@@ -559,6 +559,9 @@ export class TenantDbManager {
     // Create default leave types
     await this.createDefaultLeaveTypes(client);
     
+    // Create default badges
+    await this.createDefaultBadges(client);
+    
     // Create admin user (after departments exist)
     const adminUserId = await this.createAdminUser(client, seedData);
     
@@ -1077,6 +1080,31 @@ export class TenantDbManager {
     await createFolder(COMPANY_MASTER, null, '');
     await createFolder(EMPLOYEE_DOCUMENTS, null, '');
     await createFolder(ON_BOARDING, null, '');
+  }
+  
+  private async createDefaultBadges(client: PrismaClient): Promise<void> {
+    // Check if badges already exist
+    const existingCount = await (client as any).badge.count();
+    if (existingCount > 0) return;
+    
+    const badges = [
+      { name: 'Early Bird', description: 'Consistently arrives on time', icon: 'Clock', color: 'bg-blue-500', category: 'ATTENDANCE', points: 10 },
+      { name: 'Team Player', description: 'Excellent collaboration with teammates', icon: 'Users', color: 'bg-green-500', category: 'TEAMWORK', points: 15 },
+      { name: 'Problem Solver', description: 'Resolved critical issues effectively', icon: 'Lightbulb', color: 'bg-purple-500', category: 'INNOVATION', points: 20 },
+      { name: 'Mentor', description: 'Helped onboard and guide new team members', icon: 'Heart', color: 'bg-pink-500', category: 'LEADERSHIP', points: 25 },
+      { name: 'Star Performer', description: 'Outstanding performance in the quarter', icon: 'Star', color: 'bg-amber-500', category: 'PERFORMANCE', points: 30 },
+      { name: 'Quick Learner', description: 'Rapidly acquired new skills or certifications', icon: 'GraduationCap', color: 'bg-cyan-500', category: 'LEARNING', points: 15 },
+      { name: 'Innovation Champion', description: 'Introduced a creative solution or process improvement', icon: 'Zap', color: 'bg-orange-500', category: 'INNOVATION', points: 25 },
+      { name: 'Reliable Rock', description: 'Consistently delivers on commitments', icon: 'Shield', color: 'bg-slate-500', category: 'PERFORMANCE', points: 20 },
+      { name: '1 Year Milestone', description: 'Completed 1 year with the organization', icon: 'Trophy', color: 'bg-yellow-500', category: 'MILESTONE', points: 50 },
+      { name: '5 Year Milestone', description: 'Completed 5 years with the organization', icon: 'Trophy', color: 'bg-yellow-600', category: 'MILESTONE', points: 100 },
+      { name: 'Customer Hero', description: 'Received outstanding customer/client feedback', icon: 'ThumbsUp', color: 'bg-emerald-500', category: 'SPECIAL', points: 20 },
+      { name: 'Code Ninja', description: 'Exceptional code quality and technical skills', icon: 'Code', color: 'bg-indigo-500', category: 'INNOVATION', points: 20 },
+    ];
+    
+    for (const badge of badges) {
+      await (client as any).badge.create({ data: badge });
+    }
   }
   
   // ==========================================================================
