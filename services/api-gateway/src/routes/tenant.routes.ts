@@ -433,7 +433,9 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         slug: tenant.slug,
         status: tenant.status,
         adminEmail: data.adminEmail,
-        loginUrl: `http://${data.slug}.localhost:3000/login`,
+        loginUrl: process.env.NODE_ENV === 'development'
+          ? `http://${data.slug}.localhost:3000/login`
+          : `${process.env.NODE_ENV === 'production' ? 'https' : 'http'}://${data.slug}.${process.env.MAIN_DOMAIN || 'coreorbitsoftware.com'}/login`,
       },
       message: 'Tenant created successfully',
     });

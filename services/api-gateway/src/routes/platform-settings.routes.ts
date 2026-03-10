@@ -94,7 +94,7 @@ const maintenanceSettingsSchema = z.object({
 const defaultSettings = {
   general: {
     platformName: 'Office Management System',
-    primaryDomain: 'localhost:3000',
+    primaryDomain: process.env.MAIN_DOMAIN || 'coreorbitsoftware.com',
     supportEmail: 'support@oms.local',
     defaultTimezone: 'UTC',
     description: 'Enterprise SaaS Office Management System',

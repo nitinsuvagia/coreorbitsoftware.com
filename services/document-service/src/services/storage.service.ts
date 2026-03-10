@@ -47,8 +47,14 @@ const USE_LOCAL_STORAGE = !process.env.AWS_ACCESS_KEY_ID ||
   process.env.AWS_ACCESS_KEY_ID === 'your-access-key' ||
   process.env.USE_LOCAL_STORAGE === 'true';
 
-// Local storage base path (relative to service root)
-const LOCAL_STORAGE_PATH = process.env.LOCAL_STORAGE_PATH || path.join(process.cwd(), '..', '..', 'uploads', 'documents');
+// Local storage base path
+// In Docker: WORKDIR is /app, volume mounts to /app/uploads
+// In dev: go up from services/document-service to project root /uploads/documents
+const LOCAL_STORAGE_PATH = process.env.LOCAL_STORAGE_PATH || (
+  process.env.NODE_ENV === 'production'
+    ? path.join(process.cwd(), 'uploads', 'documents')
+    : path.join(process.cwd(), '..', '..', 'uploads', 'documents')
+);
 
 if (USE_LOCAL_STORAGE) {
   logger.info({ localPath: LOCAL_STORAGE_PATH }, 'Using LOCAL FILESYSTEM storage (AWS credentials not configured)');

@@ -192,10 +192,14 @@ export async function renderTemplateForTenant(
   const dbTemplate = await loadDbTemplate(templateName, tenantSlug);
   
   if (dbTemplate) {
+    const notifMainDomain = process.env.MAIN_DOMAIN || 'coreorbitsoftware.com';
+    const notifProtocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
     const templateData: TemplateData = {
       ...data,
       year: new Date().getFullYear(),
-      platformUrl: process.env.APP_URL || 'http://localhost:3000',
+      platformUrl: process.env.NODE_ENV === 'development'
+        ? 'http://localhost:3000'
+        : `${notifProtocol}://portal.${notifMainDomain}`,
     };
     
     const subject = dbTemplate.compiledSubject(templateData);
@@ -246,10 +250,14 @@ export function renderTemplate(
   }
   
   // Add common data with explicit types
+  const fileMainDomain = process.env.MAIN_DOMAIN || 'coreorbitsoftware.com';
+  const fileProtocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
   const templateData: TemplateData = {
     ...data,
     year: new Date().getFullYear(),
-    platformUrl: process.env.APP_URL || 'http://localhost:3000',
+    platformUrl: process.env.NODE_ENV === 'development'
+      ? 'http://localhost:3000'
+      : `${fileProtocol}://portal.${fileMainDomain}`,
     headerTitle: data.headerTitle || 'Office Management System',
     subject: data.subject || 'Notification from OMS',
   };

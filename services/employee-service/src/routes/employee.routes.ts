@@ -3978,10 +3978,12 @@ router.post('/:id/send-signin-email', async (req: Request, res: Response) => {
       }
     }
 
-    // Build login URL with tenant subdomain
-    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    const urlObj = new URL(baseUrl);
-    const loginUrl = `${urlObj.protocol}//${tenantSlug}.${urlObj.host}/login`;
+    // Build login URL with tenant subdomain using MAIN_DOMAIN
+    const mainDomain = process.env.MAIN_DOMAIN || 'coreorbitsoftware.com';
+    const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
+    const loginUrl = process.env.NODE_ENV === 'development'
+      ? `http://${tenantSlug}.localhost:3000/login`
+      : `${protocol}://${tenantSlug}.${mainDomain}/login`;
 
     // Get company info for email template
     const masterDb = getMasterPrisma();

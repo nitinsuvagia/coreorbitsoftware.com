@@ -1237,7 +1237,11 @@ export class OnboardingService {
 
       const companyName = tenant?.legalName || tenant?.name || data.tenantSlug;
       const primaryColor = tenant?.settings?.primaryColor || '#667eea';
-      const portalUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      const welcomeMainDomain = process.env.MAIN_DOMAIN || 'coreorbitsoftware.com';
+      const welcomeProtocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
+      const portalUrl = process.env.NODE_ENV === 'development'
+        ? `http://${data.tenantSlug}.localhost:3000`
+        : `${welcomeProtocol}://${data.tenantSlug}.${welcomeMainDomain}`;
 
       const joiningDateStr = new Date(data.joiningDate).toLocaleDateString('en-IN', {
         year: 'numeric',
