@@ -486,6 +486,53 @@ jobs:
           echo "✅ Migrations complete!"
           MIGRATESSH
 
+      - name: Run Tenant Custom SQL Migrations
+        run: |
+          echo "🔄 Running custom SQL migrations on tenant databases..."
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ServerAliveInterval=60 ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'SQLSSH'
+          cd /opt/office-management
+          
+          DB_PASS=$(sudo docker exec oms-auth-service printenv DATABASE_PASSWORD 2>/dev/null)
+          TENANT_DBS=$(sudo docker exec oms-postgres psql -U postgres -tAc "SELECT datname FROM pg_database WHERE datname LIKE 'oms_tenant_%'" 2>/dev/null)
+          
+          if [ -z "$TENANT_DBS" ]; then
+            echo "ℹ️ No tenant databases found, skipping custom SQL."
+          else
+            SQL_DIR="packages/database/prisma/tenant/migrations"
+            
+            for DB in $TENANT_DBS; do
+              echo "🔄 Running custom SQL on: $DB"
+              
+              for MIGRATION_DIR in $(find "$SQL_DIR" -mindepth 1 -maxdepth 1 -type d | sort); do
+                SQL_FILE="$MIGRATION_DIR/migration.sql"
+                if [ -f "$SQL_FILE" ]; then
+                  MIGRATION_NAME=$(basename "$MIGRATION_DIR")
+                  
+                  # Check if this migration was already applied (track in a migrations_log table)
+                  APPLIED=$(sudo docker exec oms-postgres psql -U postgres -d "$DB" -tAc \
+                    "CREATE TABLE IF NOT EXISTS _custom_migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ DEFAULT NOW());
+                     SELECT COUNT(*) FROM _custom_migrations WHERE name = '${MIGRATION_NAME}'" 2>/dev/null)
+                  
+                  if [ "$APPLIED" = "0" ] || [ -z "$APPLIED" ]; then
+                    echo "  📝 Applying: $MIGRATION_NAME"
+                    if cat "$SQL_FILE" | sudo docker exec -i oms-postgres psql -U postgres -d "$DB" 2>&1; then
+                      sudo docker exec oms-postgres psql -U postgres -d "$DB" -c \
+                        "INSERT INTO _custom_migrations (name) VALUES ('${MIGRATION_NAME}') ON CONFLICT DO NOTHING" 2>/dev/null
+                      echo "  ✅ Applied successfully"
+                    else
+                      echo "  ⚠️ SQL execution had warnings (may be OK if tables already exist)"
+                    fi
+                  else
+                    echo "  ⏭️ Already applied: $MIGRATION_NAME"
+                  fi
+                fi
+              done
+            done
+          fi
+          
+          echo "✅ Custom SQL migrations complete!"
+          SQLSSH
+
       - name: Seed Initial Data
         run: |
           echo "🌱 Seeding initial data..."

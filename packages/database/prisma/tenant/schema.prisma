@@ -441,6 +441,7 @@ model Employee {
   employeeOptionalHolidays EmployeeOptionalHoliday[]
   performanceReviews       PerformanceReview[]
   customFields             EmployeeCustomField[]
+  employeeSkills           EmployeeSkill[]
 
   @@index([email])
   @@index([employeeCode])
@@ -1125,6 +1126,9 @@ model PerformanceReview {
   reviewerComments    String?  @map("reviewer_comments") @db.Text
   employeeComments    String?  @map("employee_comments") @db.Text
   
+  // Review type
+  reviewType          String       @default("periodic") @map("review_type") @db.VarChar(50)
+
   // Status
   status              ReviewStatus @default(DRAFT)
   reviewDate          DateTime?    @map("review_date")
@@ -1134,6 +1138,7 @@ model PerformanceReview {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  @@unique([employeeId, reviewPeriod, reviewType])
   @@index([employeeId])
   @@index([reviewerId])
   @@index([reviewPeriod])
@@ -2046,6 +2051,32 @@ model EmployeeBadge {
   @@index([givenBy])
   @@index([givenAt])
   @@map("employee_badges")
+}
+
+// ============================================================================
+// EMPLOYEE SKILLS
+// ============================================================================
+
+model EmployeeSkill {
+  id              String   @id @default(uuid())
+  employeeId      String   @map("employee_id")
+  name            String   @db.VarChar(100)
+  category        String   @default("general") @db.VarChar(50)
+  level           String   @default("intermediate") @db.VarChar(20)
+  yearsExperience Decimal? @map("years_experience") @db.Decimal(4, 1)
+  isPrimary       Boolean  @default(false) @map("is_primary")
+  endorsedBy      String[] @default([]) @map("endorsed_by")
+  notes           String?  @db.VarChar(500)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, name])
+  @@index([employeeId])
+  @@index([category])
+  @@index([level])
+  @@map("employee_skills")
 }
 
 // Assessment Enums
