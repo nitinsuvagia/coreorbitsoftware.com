@@ -103,9 +103,9 @@ router.get('/stats', async (req: Request, res: Response) => {
       SELECT
         COUNT(*)::int AS total,
         COALESCE(AVG(performance_score), 0) AS avg_rating,
-        COUNT(*) FILTER (WHERE status = 'DRAFT')::int AS drafts,
-        COUNT(*) FILTER (WHERE status = 'SUBMITTED')::int AS submitted,
-        COUNT(*) FILTER (WHERE status = 'ACKNOWLEDGED')::int AS acknowledged,
+        COUNT(*) FILTER (WHERE status = 'DRAFT'::"ReviewStatus")::int AS drafts,
+        COUNT(*) FILTER (WHERE status = 'SUBMITTED'::"ReviewStatus")::int AS submitted,
+        COUNT(*) FILTER (WHERE status = 'ACKNOWLEDGED'::"ReviewStatus")::int AS acknowledged,
         COUNT(DISTINCT employee_id)::int AS employees_reviewed,
         COUNT(DISTINCT reviewer_id)::int AS unique_reviewers
       FROM performance_reviews
@@ -150,7 +150,7 @@ router.get('/summary/:employeeId', async (req: Request, res: Response) => {
         MAX(review_period) AS latest_period
       FROM performance_reviews
       WHERE employee_id = $1
-        AND status IN ('SUBMITTED', 'ACKNOWLEDGED')
+        AND status IN ('SUBMITTED'::"ReviewStatus", 'ACKNOWLEDGED'::"ReviewStatus")
     `, employeeId) as any[];
 
     const avg = avgResult[0] || {};
@@ -159,7 +159,7 @@ router.get('/summary/:employeeId', async (req: Request, res: Response) => {
       SELECT performance_score
       FROM performance_reviews
       WHERE employee_id = $1
-        AND status IN ('SUBMITTED', 'ACKNOWLEDGED')
+        AND status IN ('SUBMITTED'::"ReviewStatus", 'ACKNOWLEDGED'::"ReviewStatus")
         AND performance_score IS NOT NULL
       ORDER BY created_at DESC
       LIMIT 2
@@ -180,7 +180,7 @@ router.get('/summary/:employeeId', async (req: Request, res: Response) => {
       FROM (
         SELECT employee_id, AVG(performance_score) AS avg_overall
         FROM performance_reviews
-        WHERE status IN ('SUBMITTED', 'ACKNOWLEDGED')
+        WHERE status IN ('SUBMITTED'::"ReviewStatus", 'ACKNOWLEDGED'::"ReviewStatus")
           AND performance_score IS NOT NULL
         GROUP BY employee_id
       ) sub
@@ -223,7 +223,7 @@ router.get('/pending/count', async (req: Request, res: Response) => {
   try {
     const prisma = getPrismaFromRequest(req);
     const result = await prisma.$queryRawUnsafe(
-      "SELECT COUNT(*)::int AS count FROM performance_reviews WHERE status = 'SUBMITTED'"
+      `SELECT COUNT(*)::int AS count FROM performance_reviews WHERE status = 'SUBMITTED'::"ReviewStatus"`
     ) as any[];
     res.json({ success: true, data: { count: result[0]?.count || 0 } });
   } catch (error: any) {
@@ -310,7 +310,7 @@ router.get('/', async (req: Request, res: Response) => {
     }
     if (status) {
       params.push(status);
-      conditions.push('pr.status = $' + params.length);
+      conditions.push('pr.status = $' + params.length + '::"ReviewStatus"');
     }
     if (reviewType) {
       params.push(reviewType);
@@ -401,7 +401,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     const result = await prisma.$queryRawUnsafe(
       `INSERT INTO performance_reviews (employee_id, reviewer_id, review_period, review_type, communication, quality_of_work, teamwork, productivity, punctuality, initiative, performance_score, strengths, areas_for_improvement, goals, reviewer_comments, status, review_date)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::timestamp)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::"ReviewStatus", $17::timestamp)
        ON CONFLICT (employee_id, review_period, review_type)
        DO UPDATE SET
          reviewer_id = EXCLUDED.reviewer_id,
@@ -500,7 +500,11 @@ router.put('/:id', async (req: Request, res: Response) => {
       const val = (validatedData as any)[key];
       if (val !== undefined) {
         values.push(val);
-        setClauses.push(col + ' = $' + values.length);
+        if (col === 'status') {
+          setClauses.push(col + ' = $' + values.length + '::"ReviewStatus"');
+        } else {
+          setClauses.push(col + ' = $' + values.length);
+        }
       }
     }
 
@@ -555,7 +559,7 @@ router.put('/:id/acknowledge', async (req: Request, res: Response) => {
     const prisma = getPrismaFromRequest(req);
     const { id } = req.params;
     const result = await prisma.$executeRawUnsafe(
-      "UPDATE performance_reviews SET status = 'ACKNOWLEDGED', acknowledged_at = NOW(), updated_at = NOW() WHERE id = $1 AND status = 'SUBMITTED'",
+      `UPDATE performance_reviews SET status = 'ACKNOWLEDGED'::"ReviewStatus", acknowledged_at = NOW(), updated_at = NOW() WHERE id = $1 AND status = 'SUBMITTED'::"ReviewStatus"`,
       id
     );
     if (result === 0) {
@@ -587,7 +591,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     const prisma = getPrismaFromRequest(req);
     const { id } = req.params;
     const result = await prisma.$executeRawUnsafe(
-      "DELETE FROM performance_reviews WHERE id = $1 AND status = 'DRAFT'",
+      `DELETE FROM performance_reviews WHERE id = $1 AND status = 'DRAFT'::"ReviewStatus"`,
       id
     );
     if (result === 0) {
