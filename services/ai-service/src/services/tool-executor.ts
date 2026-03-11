@@ -132,7 +132,7 @@ export async function executeTool(
         let result = `Employee statistics:\n- Total Employees: ${stats?.total ?? stats?.totalEmployees ?? 'N/A'}\n- Active: ${stats?.active ?? stats?.activeCount ?? 'N/A'}\n- On Leave: ${stats?.onLeave ?? 'N/A'}`;
         if (Array.isArray(stats?.byDepartment) && stats.byDepartment.length) {
           result += `\n- Departments: ${stats.byDepartment.length}`;
-          result += `\n\nDepartment breakdown:\n${stats.byDepartment.map((d: any) => `- ${d.name || d.departmentId || 'Unknown'}: ${d._count || d.count || 0} employees`).join('\n')}`;
+          result += `\n\nDepartment breakdown:\n${stats.byDepartment.map((d: any) => `- ${d.name || 'Unassigned'}: ${d.count ?? d._count ?? 0} employees`).join('\n')}`;
         }
         return result;
       }
@@ -253,7 +253,7 @@ export async function executeTool(
         const list = requests.map((r: any) => {
           const empName = `${r.employee?.firstName || ''} ${r.employee?.lastName || ''}`.trim();
           const leaveType = r.leaveType?.name || r.type || 'Leave';
-          const lines = `- **ID:** \`${r.id}\` | **${empName}** | ${leaveType} | ${formatDate(r.fromDate)} to ${formatDate(r.toDate)} | Reason: ${r.reason || 'N/A'}`;
+          const lines = `- **${empName}** | ${leaveType} | ${formatDate(r.fromDate)} to ${formatDate(r.toDate)} | Reason: ${r.reason || 'N/A'}`;
           // Add approve/reject action buttons per request
           const approveData = JSON.stringify({ requestId: r.id, employeeName: empName, leaveType, fromDate: r.fromDate, toDate: r.toDate });
           const rejectData = JSON.stringify({ requestId: r.id, employeeName: empName, leaveType, fromDate: r.fromDate, toDate: r.toDate });
@@ -269,7 +269,7 @@ export async function executeTool(
           ctx,
           { method: 'POST', body: { leaveRequestId: requestId, approverId: ctx.userId, comments: remarks } }
         );
-        return data?.message || `✅ Leave request \`${requestId}\` has been approved.`;
+        return data?.message || `✅ Leave request has been approved successfully.`;
       }
 
       case 'reject_leave_request': {
@@ -279,7 +279,7 @@ export async function executeTool(
           ctx,
           { method: 'POST', body: { leaveRequestId: requestId, approverId: ctx.userId, reason } }
         );
-        return data?.message || `❌ Leave request \`${requestId}\` has been rejected. Reason: ${reason}`;
+        return data?.message || `❌ Leave request has been rejected. Reason: ${reason}`;
       }
 
       case 'get_my_leave_balance': {

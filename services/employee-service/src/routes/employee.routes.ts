@@ -601,7 +601,7 @@ router.get('/stats', async (req: Request, res: Response) => {
   try {
     const prisma = getPrismaFromRequest(req);
 
-    const [total, active, onLeave, byDepartment] = await Promise.all([
+    const [total, active, onLeave, byDepartmentRaw] = await Promise.all([
       prisma.employee.count({ where: { deletedAt: null } }),
       prisma.employee.count({ where: { status: 'ACTIVE', deletedAt: null } }),
       prisma.employee.count({ where: { status: 'ON_LEAVE', deletedAt: null } }),
@@ -611,6 +611,24 @@ router.get('/stats', async (req: Request, res: Response) => {
         where: { deletedAt: null },
       }),
     ]);
+
+    // Resolve department names
+    const deptIds = byDepartmentRaw
+      .map((d: any) => d.departmentId)
+      .filter(Boolean);
+    const departments = deptIds.length
+      ? await prisma.department.findMany({
+          where: { id: { in: deptIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const deptMap = new Map(departments.map((d: any) => [d.id, d.name]));
+
+    const byDepartment = byDepartmentRaw.map((d: any) => ({
+      departmentId: d.departmentId,
+      name: deptMap.get(d.departmentId) || 'Unassigned',
+      count: d._count,
+    }));
 
     res.json({
       success: true,

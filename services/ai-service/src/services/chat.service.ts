@@ -106,6 +106,7 @@ Formatting guidelines:
 - Use headings (##, ###) to organize longer responses.
 - For status values use descriptive text: ✅ for positive/active, ⚠️ for warnings, ❌ for issues.
 - Keep responses concise and scannable.
+- **NEVER show or expose database IDs** (UUIDs, primary keys, foreign keys) in your responses. Always use human-readable identifiers like names, codes, email addresses, or descriptive labels. If tool data contains IDs, omit them entirely from your response.
 
 Behavior guidelines:
 - Always present ALL data returned by tools completely — never filter, truncate, or omit results based on singular/plural phrasing in the user's question. If 5 departments have employees, list all 5 regardless of how the question was worded.
