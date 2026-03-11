@@ -400,8 +400,8 @@ router.post('/', async (req: Request, res: Response) => {
     const reviewDate = validatedData.status === 'SUBMITTED' ? new Date() : null;
 
     const result = await prisma.$queryRawUnsafe(
-      `INSERT INTO performance_reviews (employee_id, reviewer_id, review_period, review_type, communication, quality_of_work, teamwork, productivity, punctuality, initiative, performance_score, strengths, areas_for_improvement, goals, reviewer_comments, status, review_date)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::"ReviewStatus", $17::timestamp)
+      `INSERT INTO performance_reviews (id, employee_id, reviewer_id, review_period, review_type, communication, quality_of_work, teamwork, productivity, punctuality, initiative, performance_score, strengths, areas_for_improvement, goals, reviewer_comments, status, review_date)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::"ReviewStatus", $17::timestamp)
        ON CONFLICT (employee_id, review_period, review_type)
        DO UPDATE SET
          reviewer_id = EXCLUDED.reviewer_id,
