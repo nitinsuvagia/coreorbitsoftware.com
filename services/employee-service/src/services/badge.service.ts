@@ -79,7 +79,7 @@ export async function createBadge(
   const badge = await (prisma as any).$queryRaw`
     INSERT INTO badges (id, name, description, icon, color, category, points, is_active, created_by, created_at, updated_at)
     VALUES (
-      ${id}::uuid,
+      ${id},
       ${input.name},
       ${input.description || null},
       ${input.icon || 'Award'},
@@ -87,7 +87,7 @@ export async function createBadge(
       ${input.category}::"BadgeCategory",
       ${input.points || 10},
       ${input.isActive !== false},
-      ${userId}::uuid,
+      ${userId},
       NOW(),
       NOW()
     )
@@ -153,7 +153,7 @@ export async function getBadgeById(
     SELECT b.*, 
       (SELECT COUNT(*) FROM employee_badges eb WHERE eb.badge_id = b.id)::int as times_awarded
     FROM badges b
-    WHERE b.id = ${id}::uuid
+    WHERE b.id = ${id}
   `;
   return Array.isArray(result) ? result[0] : result;
 }
@@ -203,7 +203,7 @@ export async function deleteBadge(
   prisma: PrismaClient,
   id: string
 ): Promise<void> {
-  await (prisma as any).$queryRaw`DELETE FROM badges WHERE id = ${id}::uuid`;
+  await (prisma as any).$queryRaw`DELETE FROM badges WHERE id = ${id}`;
   logger.info({ badgeId: id }, 'Badge deleted');
 }
 
@@ -234,10 +234,10 @@ export async function assignBadge(
   const result = await (prisma as any).$queryRaw`
     INSERT INTO employee_badges (id, employee_id, badge_id, given_by, given_by_name, reason, given_at, created_at)
     VALUES (
-      ${id}::uuid,
-      ${input.employeeId}::uuid,
-      ${input.badgeId}::uuid,
-      ${givenByUserId}::uuid,
+      ${id},
+      ${input.employeeId},
+      ${input.badgeId},
+      ${givenByUserId},
       ${givenByName},
       ${input.reason || null},
       NOW(),
@@ -269,7 +269,7 @@ export async function revokeBadge(
   assignmentId: string
 ): Promise<void> {
   await (prisma as any).$queryRaw`
-    DELETE FROM employee_badges WHERE id = ${assignmentId}::uuid
+    DELETE FROM employee_badges WHERE id = ${assignmentId}
   `;
   logger.info({ assignmentId }, 'Badge revoked from employee');
 }
@@ -298,7 +298,7 @@ export async function getEmployeeBadges(
       b.points
     FROM employee_badges eb
     JOIN badges b ON b.id = eb.badge_id
-    WHERE eb.employee_id = ${employeeId}::uuid
+    WHERE eb.employee_id = ${employeeId}
     ORDER BY eb.given_at DESC
   `;
   return Array.isArray(result) ? result : [];

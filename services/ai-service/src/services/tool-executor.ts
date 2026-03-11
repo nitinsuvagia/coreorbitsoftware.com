@@ -133,6 +133,9 @@ export async function executeTool(
         if (Array.isArray(stats?.byDepartment) && stats.byDepartment.length) {
           result += `\n- Departments: ${stats.byDepartment.length}`;
           result += `\n\nDepartment breakdown:\n${stats.byDepartment.map((d: any) => `- ${d.name || 'Unassigned'}: ${d.count ?? d._count ?? 0} employees`).join('\n')}`;
+          // Chart: employees per department
+          const deptChartData = stats.byDepartment.map((d: any) => ({ name: d.name || 'Unassigned', value: d.count ?? d._count ?? 0 }));
+          result += `\n\n:::chart{type="bar" title="Employees by Department" xKey="name" yKey="value" color="#6366f1" data=${JSON.stringify(deptChartData)}}:::`;
         }
         return result;
       }
@@ -173,7 +176,14 @@ export async function executeTool(
         const list = departments.map((d: any) =>
           `- **${d.name}**${d.description ? `: ${d.description}` : ''}${d._count?.employees != null ? ` (${d._count.employees} employees)` : ''}`
         ).join('\n');
-        return `Departments (${departments.length}):\n${list}`;
+        // Chart: employees per department
+        const deptCountData = departments
+          .filter((d: any) => d._count?.employees != null)
+          .map((d: any) => ({ name: d.name, value: d._count.employees }));
+        const deptChart = deptCountData.length > 0
+          ? `\n\n:::chart{type="bar" title="Employees per Department" xKey="name" yKey="value" color="#3b82f6" data=${JSON.stringify(deptCountData)}}:::`
+          : '';
+        return `Departments (${departments.length}):\n${list}${deptChart}`;
       }
 
       case 'get_celebrations_today': {
@@ -207,7 +217,19 @@ export async function executeTool(
           ctx
         );
         const overview = data?.data || data;
-        return `Today's attendance overview:\n- Total Employees: ${overview?.totalEmployees ?? overview?.total ?? 'N/A'}\n- Present: ${overview?.present ?? 'N/A'}\n- Absent: ${overview?.absent ?? 'N/A'}\n- Late: ${overview?.late ?? 'N/A'}\n- On Leave: ${overview?.onLeave ?? 'N/A'}\n- Work From Home: ${overview?.workFromHome ?? 'N/A'}\n- Present Rate: ${overview?.presentRate != null ? overview.presentRate + '%' : 'N/A'}`;
+        let attendanceResult = `Today's attendance overview:\n- Total Employees: ${overview?.totalEmployees ?? overview?.total ?? 'N/A'}\n- Present: ${overview?.present ?? 'N/A'}\n- Absent: ${overview?.absent ?? 'N/A'}\n- Late: ${overview?.late ?? 'N/A'}\n- On Leave: ${overview?.onLeave ?? 'N/A'}\n- Work From Home: ${overview?.workFromHome ?? 'N/A'}\n- Present Rate: ${overview?.presentRate != null ? overview.presentRate + '%' : 'N/A'}`;
+        // Chart: attendance status breakdown
+        const attendanceChartData = [
+          { name: 'Present', value: overview?.present ?? 0 },
+          { name: 'Absent', value: overview?.absent ?? 0 },
+          { name: 'Late', value: overview?.late ?? 0 },
+          { name: 'On Leave', value: overview?.onLeave ?? 0 },
+          { name: 'WFH', value: overview?.workFromHome ?? 0 },
+        ].filter(d => d.value > 0);
+        if (attendanceChartData.length > 0) {
+          attendanceResult += `\n\n:::chart{type="doughnut" title="Today's Attendance Breakdown" xKey="name" yKey="value" color="#10b981" data=${JSON.stringify(attendanceChartData)}}:::`;
+        }
+        return attendanceResult;
       }
 
       case 'get_my_attendance': {
@@ -223,7 +245,17 @@ export async function executeTool(
         const list = records.slice(0, 20).map((r: any) =>
           `- ${formatDate(r.date)}: Check-in ${r.checkIn ? formatDateTime(r.checkIn) : '—'} | Check-out ${r.checkOut ? formatDateTime(r.checkOut) : '—'} | ${r.status || 'N/A'}${r.workHours ? ` | ${r.workHours}h` : ''}`
         ).join('\n');
-        return `Your attendance for ${month}/${year} (${records.length} records):\n${list}`;
+        // Chart: work hours over the month
+        const hoursData = records
+          .filter((r: any) => r.workHours != null)
+          .map((r: any) => {
+            const d = new Date(r.date);
+            return { name: `${d.getDate()}/${d.getMonth() + 1}`, value: parseFloat(r.workHours) || 0 };
+          });
+        const hoursChart = hoursData.length > 0
+          ? `\n\n:::chart{type="area" title="Work Hours (${month}/${year})" xKey="name" yKey="value" color="#6366f1" data=${JSON.stringify(hoursData)}}:::`
+          : '';
+        return `Your attendance for ${month}/${year} (${records.length} records):\n${list}${hoursChart}`;
       }
 
       // ====================================================================
@@ -240,7 +272,17 @@ export async function executeTool(
         const list = leaves.map((l: any) =>
           `- **${l.employee?.firstName || ''} ${l.employee?.lastName || ''}** (${l.leaveType?.name || l.type || 'Leave'}): ${formatDate(l.fromDate)} to ${formatDate(l.toDate)}${l.reason ? ` — ${l.reason}` : ''}`
         ).join('\n');
-        return `Employees on leave today (${leaves.length}):\n${list}`;
+        // Chart: on-leave by leave type
+        const leaveTypeCount: Record<string, number> = {};
+        for (const l of leaves) {
+          const lt = l.leaveType?.name || l.type || 'Leave';
+          leaveTypeCount[lt] = (leaveTypeCount[lt] || 0) + 1;
+        }
+        const onLeaveChartData = Object.entries(leaveTypeCount).map(([name, value]) => ({ name, value }));
+        const onLeaveChart = onLeaveChartData.length > 0
+          ? `\n\n:::chart{type="pie" title="On Leave Today by Type" xKey="name" yKey="value" color="#ef4444" data=${JSON.stringify(onLeaveChartData)}}:::`
+          : '';
+        return `Employees on leave today (${leaves.length}):\n${list}${onLeaveChart}`;
       }
 
       case 'get_pending_leave_requests': {
@@ -259,7 +301,17 @@ export async function executeTool(
           const rejectData = JSON.stringify({ requestId: r.id, employeeName: empName, leaveType, fromDate: r.fromDate, toDate: r.toDate });
           return `${lines}\n:::action{type="approve_leave" label="\u2705 Approve" data=${approveData}}:::\n:::action{type="reject_leave" label="\u274C Reject" data=${rejectData}}:::`;
         }).join('\n');
-        return `Pending leave requests (${requests.length}):\n${list}`;
+        // Chart: pending requests by leave type
+        const pendingTypeCount: Record<string, number> = {};
+        for (const r of requests) {
+          const lt = r.leaveType?.name || r.type || 'Leave';
+          pendingTypeCount[lt] = (pendingTypeCount[lt] || 0) + 1;
+        }
+        const pendingChartData = Object.entries(pendingTypeCount).map(([name, value]) => ({ name, value }));
+        const pendingChart = pendingChartData.length > 1
+          ? `\n\n:::chart{type="bar" title="Pending Requests by Leave Type" xKey="name" yKey="value" color="#f97316" data=${JSON.stringify(pendingChartData)}}:::`
+          : '';
+        return `Pending leave requests (${requests.length}):\n${list}${pendingChart}`;
       }
 
       case 'approve_leave_request': {
@@ -292,7 +344,12 @@ export async function executeTool(
         const list = balances.map((b: any) =>
           `- **${b.leaveType?.name || b.type || 'Leave'}**: ${b.remaining ?? b.balance ?? 0} remaining (used ${b.used ?? 0} of ${b.total ?? b.allocated ?? 0})`
         ).join('\n');
-        return `Your leave balance:\n${list}`;
+        // Chart: leave balance by type
+        const leaveChartData = balances.map((b: any) => ({ name: b.leaveType?.name || b.type || 'Leave', value: b.remaining ?? b.balance ?? 0 }));
+        const leaveChart = leaveChartData.length > 0
+          ? `\n\n:::chart{type="bar" title="Leave Balance (Remaining)" xKey="name" yKey="value" color="#f59e0b" data=${JSON.stringify(leaveChartData)}}:::`
+          : '';
+        return `Your leave balance:\n${list}${leaveChart}`;
       }
 
       case 'get_leave_balance_for_employee': {
@@ -306,7 +363,12 @@ export async function executeTool(
         const list = balances.map((b: any) =>
           `- **${b.leaveType?.name || b.type || 'Leave'}**: ${b.remaining ?? b.balance ?? 0} remaining (used ${b.used ?? 0} of ${b.total ?? b.allocated ?? 0})`
         ).join('\n');
-        return `Leave balance:\n${list}`;
+        // Chart: leave balance by type
+        const empLeaveChartData = balances.map((b: any) => ({ name: b.leaveType?.name || b.type || 'Leave', value: b.remaining ?? b.balance ?? 0 }));
+        const empLeaveChart = empLeaveChartData.length > 0
+          ? `\n\n:::chart{type="bar" title="Leave Balance (Remaining)" xKey="name" yKey="value" color="#f59e0b" data=${JSON.stringify(empLeaveChartData)}}:::`
+          : '';
+        return `Leave balance:\n${list}${empLeaveChart}`;
       }
 
       // ====================================================================
@@ -337,7 +399,20 @@ export async function executeTool(
         const list = holidays.map((h: any) =>
           `- **${formatDate(h.date)}** — ${h.name || h.title || 'Holiday'}${h.type ? ` (${h.type})` : ''}${h.isOptional ? ' ⭐ Optional' : ''}`
         ).join('\n');
-        return `Holiday list for ${year} (${holidays.length} holidays):\n${list}`;
+
+        // Build monthly breakdown chart
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const monthlyCounts = new Array(12).fill(0);
+        for (const h of holidays) {
+          try {
+            const month = new Date(h.date).getMonth();
+            monthlyCounts[month]++;
+          } catch { /* skip invalid dates */ }
+        }
+        const chartData = monthNames.map((name, i) => ({ name, value: monthlyCounts[i] }));
+        const chart = `\n\n:::chart{type="bar" title="Holidays by Month (${year})" xKey="name" yKey="value" color="#f59e0b" data=${JSON.stringify(chartData)}}:::`;
+
+        return `Holiday list for ${year} (${holidays.length} holidays):\n${list}${chart}`;
       }
       case 'create_holiday': {
         const holidayData = JSON.stringify({
@@ -397,7 +472,18 @@ export async function executeTool(
         );
         // Returns direct object (no wrapper)
         const s = data?.data || data;
-        return `Interview & Recruitment Statistics:\n- Total Scheduled: ${s.totalScheduled ?? 'N/A'}\n- Completed: ${s.totalCompleted ?? 'N/A'}\n- Cancelled: ${s.totalCancelled ?? 'N/A'}\n- No-shows: ${s.totalNoShow ?? 'N/A'}\n- Pass Rate: ${s.passRate != null ? s.passRate + '%' : 'N/A'}\n- Avg Feedback Time: ${s.avgFeedbackTime != null ? s.avgFeedbackTime + ' days' : 'N/A'}\n- Upcoming Today: ${s.upcomingToday ?? 'N/A'}\n- Upcoming This Week: ${s.upcomingWeek ?? 'N/A'}\n- Total Upcoming: ${s.upcomingAll ?? 'N/A'}`;
+        return `Interview & Recruitment Statistics:\n- Total Scheduled: ${s.totalScheduled ?? 'N/A'}\n- Completed: ${s.totalCompleted ?? 'N/A'}\n- Cancelled: ${s.totalCancelled ?? 'N/A'}\n- No-shows: ${s.totalNoShow ?? 'N/A'}\n- Pass Rate: ${s.passRate != null ? s.passRate + '%' : 'N/A'}\n- Avg Feedback Time: ${s.avgFeedbackTime != null ? s.avgFeedbackTime + ' days' : 'N/A'}\n- Upcoming Today: ${s.upcomingToday ?? 'N/A'}\n- Upcoming This Week: ${s.upcomingWeek ?? 'N/A'}\n- Total Upcoming: ${s.upcomingAll ?? 'N/A'}\n\n` +
+          (() => {
+            const interviewChartData = [
+              { name: 'Scheduled', value: s.totalScheduled ?? 0 },
+              { name: 'Completed', value: s.totalCompleted ?? 0 },
+              { name: 'Cancelled', value: s.totalCancelled ?? 0 },
+              { name: 'No-show', value: s.totalNoShow ?? 0 },
+            ].filter(d => d.value > 0);
+            return interviewChartData.length > 0
+              ? `:::chart{type="bar" title="Interview Status Overview" xKey="name" yKey="value" color="#8b5cf6" data=${JSON.stringify(interviewChartData)}}:::`
+              : '';
+          })();
       }
 
       case 'get_candidate_interviews': {
@@ -447,7 +533,17 @@ export async function executeTool(
         const list = jobs.map((j: any) =>
           `- **${j.title}** | ${j.department || 'N/A'} | ${j.employmentType || 'N/A'} | Status: ${j.status || 'draft'} | Experience: ${j.experienceMin ?? '?'}–${j.experienceMax ?? '?'} yrs | Posted: ${formatDate(j.createdAt)}`
         ).join('\n');
-        return `Job Openings (${jobs.length}):\n${list}`;
+        // Chart: jobs by status
+        const jobStatusCount: Record<string, number> = {};
+        for (const j of jobs) {
+          const st = j.status || 'draft';
+          jobStatusCount[st] = (jobStatusCount[st] || 0) + 1;
+        }
+        const jobChartData = Object.entries(jobStatusCount).map(([name, value]) => ({ name: name.charAt(0).toUpperCase() + name.slice(1), value }));
+        const jobChart = jobChartData.length > 1
+          ? `\n\n:::chart{type="bar" title="Jobs by Status" xKey="name" yKey="value" color="#ec4899" data=${JSON.stringify(jobChartData)}}:::`
+          : '';
+        return `Job Openings (${jobs.length}):\n${list}${jobChart}`;
       }
 
       case 'generate_job_description': {
@@ -548,7 +644,17 @@ export async function executeTool(
           const skills = Array.isArray(c.skills) ? c.skills.map((s: any) => typeof s === 'string' ? s : s.name).join(', ') : '';
           return `- **${c.name || `${c.firstName || ''} ${c.lastName || ''}`}** | ${c.email || 'N/A'} | Status: ${c.status || 'new'} | Experience: ${c.experience ?? 'N/A'} yrs${skills ? ` | Skills: ${skills}` : ''}${c.jobTitle || c.job?.title ? ` | Applied for: ${c.jobTitle || c.job?.title}` : ''}`;
         }).join('\n');
-        return `Candidates (${candidates.length}):\n${list}`;
+        // Chart: candidates by pipeline status
+        const statusCount: Record<string, number> = {};
+        for (const c of candidates) {
+          const st = c.status || 'new';
+          statusCount[st] = (statusCount[st] || 0) + 1;
+        }
+        const candidateChartData = Object.entries(statusCount).map(([name, value]) => ({ name: name.charAt(0).toUpperCase() + name.slice(1), value }));
+        const candidateChart = candidateChartData.length > 1
+          ? `\n\n:::chart{type="pie" title="Candidates by Status" xKey="name" yKey="value" color="#8b5cf6" data=${JSON.stringify(candidateChartData)}}:::`
+          : '';
+        return `Candidates (${candidates.length}):\n${list}${candidateChart}`;
       }
 
       // ====================================================================
@@ -567,7 +673,14 @@ export async function executeTool(
           const list = reviews.map((r: any) =>
             `- **${r.reviewPeriod || r.period || 'Review'}** | Rating: ${r.rating ?? r.overallRating ?? 'N/A'}/5 | Status: ${r.status || 'N/A'} | Reviewer: ${r.reviewer?.name || r.reviewerName || 'N/A'} | Date: ${formatDate(r.reviewDate || r.createdAt)}`
           ).join('\n');
-          return `Performance reviews (${reviews.length}):\n${list}`;
+          // Chart: performance ratings over time
+          const ratingData = reviews
+            .filter((r: any) => (r.rating ?? r.overallRating) != null)
+            .map((r: any) => ({ name: r.reviewPeriod || r.period || formatDate(r.reviewDate || r.createdAt), value: r.rating ?? r.overallRating }));
+          const ratingChart = ratingData.length > 0
+            ? `\n\n:::chart{type="line" title="Performance Ratings Over Time" xKey="name" yKey="value" color="#10b981" data=${JSON.stringify(ratingData)}}:::`
+            : '';
+          return `Performance reviews (${reviews.length}):\n${list}${ratingChart}`;
         } catch (err: any) {
           // Performance reviews table may have schema issues
           logger.warn({ err: err.message, employeeId }, 'Performance review query failed');

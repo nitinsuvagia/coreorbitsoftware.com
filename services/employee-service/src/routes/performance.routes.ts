@@ -28,19 +28,20 @@ function transformReview(r: any) {
     reviewerId: r.reviewer_id,
     reviewPeriod: r.review_period,
     reviewType: r.review_type,
-    communicationRating: r.communication_rating,
-    technicalSkillsRating: r.technical_skills_rating,
-    teamworkRating: r.teamwork_rating,
-    problemSolvingRating: r.problem_solving_rating,
-    punctualityRating: r.punctuality_rating,
-    initiativeRating: r.initiative_rating,
-    overallRating: r.overall_rating ? parseFloat(r.overall_rating) : null,
+    communicationRating: r.communication ? parseFloat(r.communication) : null,
+    technicalSkillsRating: r.quality_of_work ? parseFloat(r.quality_of_work) : null,
+    teamworkRating: r.teamwork ? parseFloat(r.teamwork) : null,
+    problemSolvingRating: r.productivity ? parseFloat(r.productivity) : null,
+    punctualityRating: r.punctuality ? parseFloat(r.punctuality) : null,
+    initiativeRating: r.initiative ? parseFloat(r.initiative) : null,
+    overallRating: r.performance_score ? parseFloat(r.performance_score) : null,
     strengths: r.strengths,
     areasForImprovement: r.areas_for_improvement,
-    goalsNextPeriod: r.goals_next_period,
-    additionalComments: r.additional_comments,
+    goalsNextPeriod: r.goals,
+    additionalComments: r.reviewer_comments,
+    employeeComments: r.employee_comments,
     status: r.status,
-    submittedAt: r.submitted_at,
+    submittedAt: r.review_date,
     acknowledgedAt: r.acknowledged_at,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -71,7 +72,7 @@ const optionalRating = z.number().min(1).max(10).nullable().optional().transform
 const createReviewSchema = z.object({
   employeeId: z.string().min(1),
   reviewPeriod: z.string().min(1).max(50),
-  reviewType: z.enum(['monthly', 'quarterly', 'annual', '360', 'probation']).default('monthly'),
+  reviewType: z.enum(['monthly', 'quarterly', 'annual', '360', 'probation', 'periodic']).default('periodic'),
   communicationRating: optionalRating,
   technicalSkillsRating: optionalRating,
   teamworkRating: optionalRating,
@@ -83,7 +84,7 @@ const createReviewSchema = z.object({
   areasForImprovement: z.string().nullable().optional(),
   goalsNextPeriod: z.string().nullable().optional(),
   additionalComments: z.string().nullable().optional(),
-  status: z.enum(['draft', 'submitted']).default('draft'),
+  status: z.enum(['draft', 'submitted', 'DRAFT', 'SUBMITTED']).default('draft').transform(v => v.toUpperCase()),
 });
 
 const updateReviewSchema = createReviewSchema.partial().omit({ employeeId: true });
@@ -101,10 +102,10 @@ router.get('/stats', async (req: Request, res: Response) => {
     const result = await prisma.$queryRawUnsafe(`
       SELECT
         COUNT(*)::int AS total,
-        COALESCE(AVG(overall_rating), 0) AS avg_rating,
-        COUNT(*) FILTER (WHERE status = 'draft')::int AS drafts,
-        COUNT(*) FILTER (WHERE status = 'submitted')::int AS submitted,
-        COUNT(*) FILTER (WHERE status = 'acknowledged')::int AS acknowledged,
+        COALESCE(AVG(performance_score), 0) AS avg_rating,
+        COUNT(*) FILTER (WHERE status = 'DRAFT')::int AS drafts,
+        COUNT(*) FILTER (WHERE status = 'SUBMITTED')::int AS submitted,
+        COUNT(*) FILTER (WHERE status = 'ACKNOWLEDGED')::int AS acknowledged,
         COUNT(DISTINCT employee_id)::int AS employees_reviewed,
         COUNT(DISTINCT reviewer_id)::int AS unique_reviewers
       FROM performance_reviews
@@ -139,27 +140,27 @@ router.get('/summary/:employeeId', async (req: Request, res: Response) => {
     const avgResult = await prisma.$queryRawUnsafe(`
       SELECT
         COUNT(*)::int AS review_count,
-        COALESCE(AVG(communication_rating), 0) AS communication,
-        COALESCE(AVG(technical_skills_rating), 0) AS technical_skills,
-        COALESCE(AVG(teamwork_rating), 0) AS teamwork,
-        COALESCE(AVG(problem_solving_rating), 0) AS problem_solving,
-        COALESCE(AVG(punctuality_rating), 0) AS punctuality,
-        COALESCE(AVG(initiative_rating), 0) AS initiative,
-        COALESCE(AVG(overall_rating), 0) AS overall_rating,
+        COALESCE(AVG(communication), 0) AS communication,
+        COALESCE(AVG(quality_of_work), 0) AS technical_skills,
+        COALESCE(AVG(teamwork), 0) AS teamwork,
+        COALESCE(AVG(productivity), 0) AS problem_solving,
+        COALESCE(AVG(punctuality), 0) AS punctuality,
+        COALESCE(AVG(initiative), 0) AS initiative,
+        COALESCE(AVG(performance_score), 0) AS overall_rating,
         MAX(review_period) AS latest_period
       FROM performance_reviews
       WHERE employee_id = $1
-        AND status IN ('submitted', 'acknowledged')
+        AND status IN ('SUBMITTED', 'ACKNOWLEDGED')
     `, employeeId) as any[];
 
     const avg = avgResult[0] || {};
 
     const trendResult = await prisma.$queryRawUnsafe(`
-      SELECT overall_rating
+      SELECT performance_score
       FROM performance_reviews
       WHERE employee_id = $1
-        AND status IN ('submitted', 'acknowledged')
-        AND overall_rating IS NOT NULL
+        AND status IN ('SUBMITTED', 'ACKNOWLEDGED')
+        AND performance_score IS NOT NULL
       ORDER BY created_at DESC
       LIMIT 2
     `, employeeId) as any[];
@@ -167,7 +168,7 @@ router.get('/summary/:employeeId', async (req: Request, res: Response) => {
     let trendValue = 0;
     let trendDirection: 'up' | 'down' | 'neutral' = 'neutral';
     if (trendResult.length >= 2) {
-      trendValue = parseFloat(trendResult[0].overall_rating) - parseFloat(trendResult[1].overall_rating);
+      trendValue = parseFloat(trendResult[0].performance_score) - parseFloat(trendResult[1].performance_score);
       trendValue = Math.round(trendValue * 10) / 10;
       trendDirection = trendValue > 0 ? 'up' : trendValue < 0 ? 'down' : 'neutral';
     }
@@ -177,10 +178,10 @@ router.get('/summary/:employeeId', async (req: Request, res: Response) => {
         COUNT(DISTINCT employee_id)::int AS total_employees,
         COUNT(DISTINCT employee_id) FILTER (WHERE avg_overall <= $1)::int AS rank_below
       FROM (
-        SELECT employee_id, AVG(overall_rating) AS avg_overall
+        SELECT employee_id, AVG(performance_score) AS avg_overall
         FROM performance_reviews
-        WHERE status IN ('submitted', 'acknowledged')
-          AND overall_rating IS NOT NULL
+        WHERE status IN ('SUBMITTED', 'ACKNOWLEDGED')
+          AND performance_score IS NOT NULL
         GROUP BY employee_id
       ) sub
     `, avg.overall_rating || 0) as any[];
@@ -222,7 +223,7 @@ router.get('/pending/count', async (req: Request, res: Response) => {
   try {
     const prisma = getPrismaFromRequest(req);
     const result = await prisma.$queryRawUnsafe(
-      "SELECT COUNT(*)::int AS count FROM performance_reviews WHERE status = 'submitted'"
+      "SELECT COUNT(*)::int AS count FROM performance_reviews WHERE status = 'SUBMITTED'"
     ) as any[];
     res.json({ success: true, data: { count: result[0]?.count || 0 } });
   } catch (error: any) {
@@ -396,27 +397,27 @@ router.post('/', async (req: Request, res: Response) => {
       }
     }
 
-    const submittedAt = validatedData.status === 'submitted' ? new Date() : null;
+    const reviewDate = validatedData.status === 'SUBMITTED' ? new Date() : null;
 
     const result = await prisma.$queryRawUnsafe(
-      `INSERT INTO performance_reviews (employee_id, reviewer_id, review_period, review_type, communication_rating, technical_skills_rating, teamwork_rating, problem_solving_rating, punctuality_rating, initiative_rating, overall_rating, strengths, areas_for_improvement, goals_next_period, additional_comments, status, submitted_at)
+      `INSERT INTO performance_reviews (employee_id, reviewer_id, review_period, review_type, communication, quality_of_work, teamwork, productivity, punctuality, initiative, performance_score, strengths, areas_for_improvement, goals, reviewer_comments, status, review_date)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::timestamp)
        ON CONFLICT (employee_id, review_period, review_type)
        DO UPDATE SET
          reviewer_id = EXCLUDED.reviewer_id,
-         communication_rating = EXCLUDED.communication_rating,
-         technical_skills_rating = EXCLUDED.technical_skills_rating,
-         teamwork_rating = EXCLUDED.teamwork_rating,
-         problem_solving_rating = EXCLUDED.problem_solving_rating,
-         punctuality_rating = EXCLUDED.punctuality_rating,
-         initiative_rating = EXCLUDED.initiative_rating,
-         overall_rating = EXCLUDED.overall_rating,
+         communication = EXCLUDED.communication,
+         quality_of_work = EXCLUDED.quality_of_work,
+         teamwork = EXCLUDED.teamwork,
+         productivity = EXCLUDED.productivity,
+         punctuality = EXCLUDED.punctuality,
+         initiative = EXCLUDED.initiative,
+         performance_score = EXCLUDED.performance_score,
          strengths = EXCLUDED.strengths,
          areas_for_improvement = EXCLUDED.areas_for_improvement,
-         goals_next_period = EXCLUDED.goals_next_period,
-         additional_comments = EXCLUDED.additional_comments,
+         goals = EXCLUDED.goals,
+         reviewer_comments = EXCLUDED.reviewer_comments,
          status = EXCLUDED.status,
-         submitted_at = EXCLUDED.submitted_at,
+         review_date = EXCLUDED.review_date,
          updated_at = NOW()
        RETURNING *`,
       validatedData.employeeId,
@@ -435,7 +436,7 @@ router.post('/', async (req: Request, res: Response) => {
       validatedData.goalsNextPeriod ?? null,
       validatedData.additionalComments ?? null,
       validatedData.status,
-      submittedAt,
+      reviewDate,
     ) as any[];
 
     const r = result[0];
@@ -444,7 +445,7 @@ router.post('/', async (req: Request, res: Response) => {
     res.status(201).json({
       success: true,
       data: transformReview(r),
-      message: validatedData.status === 'submitted' ? 'Review submitted successfully' : 'Review saved as draft',
+      message: validatedData.status === 'SUBMITTED' ? 'Review submitted successfully' : 'Review saved as draft',
     });
   } catch (error: any) {
     if (error.name === 'ZodError') {
@@ -481,17 +482,17 @@ router.put('/:id', async (req: Request, res: Response) => {
     const fieldMap: Record<string, string> = {
       reviewPeriod: 'review_period',
       reviewType: 'review_type',
-      communicationRating: 'communication_rating',
-      technicalSkillsRating: 'technical_skills_rating',
-      teamworkRating: 'teamwork_rating',
-      problemSolvingRating: 'problem_solving_rating',
-      punctualityRating: 'punctuality_rating',
-      initiativeRating: 'initiative_rating',
-      overallRating: 'overall_rating',
+      communicationRating: 'communication',
+      technicalSkillsRating: 'quality_of_work',
+      teamworkRating: 'teamwork',
+      problemSolvingRating: 'productivity',
+      punctualityRating: 'punctuality',
+      initiativeRating: 'initiative',
+      overallRating: 'performance_score',
       strengths: 'strengths',
       areasForImprovement: 'areas_for_improvement',
-      goalsNextPeriod: 'goals_next_period',
-      additionalComments: 'additional_comments',
+      goalsNextPeriod: 'goals',
+      additionalComments: 'reviewer_comments',
       status: 'status',
     };
 
@@ -503,8 +504,8 @@ router.put('/:id', async (req: Request, res: Response) => {
       }
     }
 
-    if (validatedData.status === 'submitted') {
-      setClauses.push('submitted_at = NOW()');
+    if (validatedData.status === 'submitted' || validatedData.status === 'SUBMITTED') {
+      setClauses.push('review_date = NOW()');
     }
 
     if (setClauses.length === 0) {
@@ -524,7 +525,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     logger.info({ reviewId: id }, 'Performance review updated');
     res.json({
       success: true,
-      message: validatedData.status === 'submitted' ? 'Review submitted successfully' : 'Review updated',
+      message: (validatedData.status === 'submitted' || validatedData.status === 'SUBMITTED') ? 'Review submitted successfully' : 'Review updated',
     });
   } catch (error: any) {
     if (error.name === 'ZodError') {
@@ -554,7 +555,7 @@ router.put('/:id/acknowledge', async (req: Request, res: Response) => {
     const prisma = getPrismaFromRequest(req);
     const { id } = req.params;
     const result = await prisma.$executeRawUnsafe(
-      "UPDATE performance_reviews SET status = 'acknowledged', acknowledged_at = NOW(), updated_at = NOW() WHERE id = $1 AND status = 'submitted'",
+      "UPDATE performance_reviews SET status = 'ACKNOWLEDGED', acknowledged_at = NOW(), updated_at = NOW() WHERE id = $1 AND status = 'SUBMITTED'",
       id
     );
     if (result === 0) {
@@ -586,7 +587,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     const prisma = getPrismaFromRequest(req);
     const { id } = req.params;
     const result = await prisma.$executeRawUnsafe(
-      "DELETE FROM performance_reviews WHERE id = $1 AND status = 'draft'",
+      "DELETE FROM performance_reviews WHERE id = $1 AND status = 'DRAFT'",
       id
     );
     if (result === 0) {

@@ -442,6 +442,7 @@ model Employee {
   performanceReviews       PerformanceReview[]
   customFields             EmployeeCustomField[]
   employeeSkills           EmployeeSkill[]
+  employeeNotes            EmployeeNote[]
 
   @@index([email])
   @@index([employeeCode])
@@ -2077,6 +2078,27 @@ model EmployeeSkill {
   @@index([category])
   @@index([level])
   @@map("employee_skills")
+}
+
+// ============================================================================
+// EMPLOYEE NOTES
+// ============================================================================
+
+model EmployeeNote {
+  id           String   @id @default(uuid())
+  employeeId   String   @map("employee_id")
+  authorUserId String   @map("author_user_id")
+  authorName   String?  @map("author_name") @db.VarChar(200)
+  content      String   @db.Text
+  isPrivate    Boolean  @default(false) @map("is_private")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([authorUserId])
+  @@map("employee_notes")
 }
 
 // Assessment Enums

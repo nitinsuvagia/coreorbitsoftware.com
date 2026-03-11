@@ -29,7 +29,10 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts';
+import {
+  BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie,
+  XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell, Legend,
+} from 'recharts';
 import {
   useAiStatus,
   useAiConversations,
@@ -120,6 +123,78 @@ const CHART_COLORS = ['#8b5cf6', '#ec4899', '#6366f1', '#f59e0b', '#10b981', '#e
 function AiChart({ config }: { config: { type: string; title?: string; xKey: string; yKey: string; color?: string; data: any[] } }) {
   if (!config.data?.length) return null;
 
+  const chartType = (config.type || 'bar').toLowerCase();
+  const tooltipStyle = { fontSize: 11, borderRadius: 8, border: '1px solid hsl(var(--border))' };
+
+  // Pie / Doughnut chart
+  if (chartType === 'pie' || chartType === 'doughnut') {
+    const innerRadius = chartType === 'doughnut' ? 40 : 0;
+    return (
+      <div className="my-3 p-3 rounded-xl border bg-card">
+        {config.title && <p className="text-xs font-semibold text-foreground mb-2">{config.title}</p>}
+        <ResponsiveContainer width="100%" height={220}>
+          <PieChart>
+            <Pie
+              data={config.data}
+              dataKey={config.yKey}
+              nameKey={config.xKey}
+              cx="50%"
+              cy="50%"
+              innerRadius={innerRadius}
+              outerRadius={80}
+              label={({ name, value }: any) => `${name}: ${value}`}
+              labelLine={{ strokeWidth: 0.5 }}
+              fontSize={10}
+            >
+              {config.data.map((_, i) => (
+                <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip contentStyle={tooltipStyle} />
+            <Legend wrapperStyle={{ fontSize: 10 }} />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  }
+
+  // Line chart
+  if (chartType === 'line') {
+    return (
+      <div className="my-3 p-3 rounded-xl border bg-card">
+        {config.title && <p className="text-xs font-semibold text-foreground mb-2">{config.title}</p>}
+        <ResponsiveContainer width="100%" height={180}>
+          <LineChart data={config.data} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+            <XAxis dataKey={config.xKey} tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={45} />
+            <YAxis tick={{ fontSize: 10 }} allowDecimals={false} width={35} />
+            <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => [value.toLocaleString(), config.yKey === 'value' ? 'Value' : config.yKey]} />
+            <Line type="monotone" dataKey={config.yKey} stroke={config.color || '#8b5cf6'} strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  }
+
+  // Area chart
+  if (chartType === 'area') {
+    return (
+      <div className="my-3 p-3 rounded-xl border bg-card">
+        {config.title && <p className="text-xs font-semibold text-foreground mb-2">{config.title}</p>}
+        <ResponsiveContainer width="100%" height={180}>
+          <AreaChart data={config.data} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+            <XAxis dataKey={config.xKey} tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={45} />
+            <YAxis tick={{ fontSize: 10 }} allowDecimals={false} width={35} />
+            <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => [value.toLocaleString(), config.yKey === 'value' ? 'Value' : config.yKey]} />
+            <Area type="monotone" dataKey={config.yKey} stroke={config.color || '#6366f1'} fill={config.color || '#6366f1'} fillOpacity={0.2} strokeWidth={2} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  }
+
+  // Default: Bar chart
   return (
     <div className="my-3 p-3 rounded-xl border bg-card">
       {config.title && (
@@ -131,7 +206,7 @@ function AiChart({ config }: { config: { type: string; title?: string; xKey: str
           <XAxis dataKey={config.xKey} tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={45} />
           <YAxis tick={{ fontSize: 10 }} allowDecimals={false} width={35} />
           <Tooltip
-            contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid hsl(var(--border))' }}
+            contentStyle={tooltipStyle}
             formatter={(value: number) => [value.toLocaleString(), config.yKey === 'value' ? 'Count' : config.yKey]}
           />
           <Bar dataKey={config.yKey} radius={[4, 4, 0, 0]}>

@@ -95,8 +95,8 @@ router.post('/', async (req: Request, res: Response) => {
     const data = createSkillSchema.parse(req.body);
 
     const result = await prisma.$queryRawUnsafe(
-      `INSERT INTO employee_skills (employee_id, name, category, level, years_experience, is_primary, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO employee_skills (id, employee_id, name, category, level, years_experience, is_primary, notes)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (employee_id, name)
        DO UPDATE SET
          category = EXCLUDED.category,
@@ -142,8 +142,8 @@ router.post('/bulk', async (req: Request, res: Response) => {
     const results: any[] = [];
     for (const skill of skills) {
       const result = await prisma.$queryRawUnsafe(
-        `INSERT INTO employee_skills (employee_id, name, category, level, years_experience, is_primary, notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO employee_skills (id, employee_id, name, category, level, years_experience, is_primary, notes)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (employee_id, name)
          DO UPDATE SET
            category = EXCLUDED.category,

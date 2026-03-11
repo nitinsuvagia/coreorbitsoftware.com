@@ -78,8 +78,8 @@ router.post('/', async (req: Request, res: Response) => {
     } catch {}
 
     const result = await prisma.$queryRawUnsafe(
-      `INSERT INTO employee_notes (employee_id, author_user_id, author_name, content, is_private)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      `INSERT INTO employee_notes (id, employee_id, author_user_id, author_name, content, is_private)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5) RETURNING *`,
       employeeId,
       authUserId,
       authorName,
