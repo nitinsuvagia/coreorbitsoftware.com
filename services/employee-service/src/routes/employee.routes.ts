@@ -602,16 +602,16 @@ router.get('/stats', async (req: Request, res: Response) => {
     const prisma = getPrismaFromRequest(req);
     
     // Only count current employees (exclude TERMINATED, RESIGNED, RETIRED)
-    const currentEmployeeStatuses = ['ACTIVE', 'ON_LEAVE', 'PROBATION', 'NOTICE_PERIOD'];
+    const currentEmployeeStatuses = ['ACTIVE', 'ON_LEAVE', 'PROBATION', 'NOTICE_PERIOD'] as const;
 
     const [total, active, onLeave, byDepartmentRaw] = await Promise.all([
-      prisma.employee.count({ where: { deletedAt: null, status: { in: currentEmployeeStatuses } } }),
+      prisma.employee.count({ where: { deletedAt: null, status: { in: [...currentEmployeeStatuses] } } }),
       prisma.employee.count({ where: { status: 'ACTIVE', deletedAt: null } }),
       prisma.employee.count({ where: { status: 'ON_LEAVE', deletedAt: null } }),
       prisma.employee.groupBy({
         by: ['departmentId'],
         _count: true,
-        where: { deletedAt: null, status: { in: currentEmployeeStatuses } },
+        where: { deletedAt: null, status: { in: [...currentEmployeeStatuses] } },
       }),
     ]);
 
