@@ -18,7 +18,7 @@ const faqs = [
   },
   {
     question: "How secure is employee data on CoreOrbit?",
-    answer: "We use enterprise-grade encryption (AES-256) for data at rest and TLS 1.3 for data in transit. Role-based access controls ensure employees only see relevant information. We're SOC 2 Type II compliant and GDPR ready, with regular security audits and automatic backups."
+    answer: "We use enterprise-grade encryption (AES-256) for data at rest and TLS 1.3 for data in transit. Role-based access controls ensure employees only see relevant information. We follow SOC 2 Type II and GDPR security standards, with regular security audits and automatic backups."
   },
   {
     question: "Can I migrate data from my existing HR system?",

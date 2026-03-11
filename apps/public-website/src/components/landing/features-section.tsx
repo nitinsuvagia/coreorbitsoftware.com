@@ -121,9 +121,9 @@ const highlights = [
     description: 'Optimized performance with instant page loads and real-time updates.',
   },
   {
-    icon: Globe,
-    title: 'Multi-tenant',
-    description: 'Perfect for agencies managing multiple client organizations.',
+    icon: Brain,
+    title: 'AI-Powered Insights',
+    description: 'Smart analytics, automated reports, and AI chat assistant for instant HR answers.',
   },
   {
     icon: Building,

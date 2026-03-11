@@ -118,8 +118,8 @@ export default function PrivacyPolicyPage() {
                   <li>AES-256 encryption for data at rest</li>
                   <li>Multi-factor authentication options</li>
                   <li>Regular security audits and penetration testing</li>
-                  <li>SOC 2 Type II compliance</li>
-                  <li>GDPR and CCPA compliance measures</li>
+                  <li>Built following SOC 2 Type II security standards</li>
+                  <li>Designed with GDPR and CCPA best practices in mind</li>
                 </ul>
               </section>
 
