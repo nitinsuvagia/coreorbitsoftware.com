@@ -11,7 +11,6 @@ import {
   Palmtree, 
   Sparkles, 
   ArrowRight,
-  MapPin,
   Smartphone,
   Bell,
   BarChart3,
@@ -29,11 +28,6 @@ const features = [
     icon: Calendar,
     title: 'Leave Management',
     description: 'Configure unlimited leave types with custom approval workflows. Employees can request and track leave in seconds.'
-  },
-  {
-    icon: MapPin,
-    title: 'Geofencing',
-    description: 'Ensure employees check in from designated locations with GPS-based geofencing and location tracking.'
   },
   {
     icon: Smartphone,
@@ -74,8 +68,15 @@ export default function AttendanceLeavesPage() {
       <LandingNavbar />
       
       {/* Hero Section */}
-      <section className="pt-24 pb-16 md:pt-32 md:pb-24">
-        <div className="container mx-auto px-4">
+      <section className="relative pt-24 pb-16 md:pt-32 md:pb-24 overflow-hidden">
+        {/* Background effects */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-20 left-10 w-72 h-72 bg-orange-400/20 rounded-full blur-3xl animate-pulse" />
+          <div className="absolute top-40 right-10 w-96 h-96 bg-red-400/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
+          <div className="absolute bottom-20 left-1/3 w-80 h-80 bg-yellow-400/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }} />
+          <div className="absolute inset-0 bg-[linear-gradient(to_right,#8080800a_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-[size:48px_48px]" />
+        </div>
+        <div className="container mx-auto px-4 relative">
           <div className="max-w-4xl mx-auto text-center">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 text-sm font-medium mb-6">
               <Clock className="w-4 h-4" />

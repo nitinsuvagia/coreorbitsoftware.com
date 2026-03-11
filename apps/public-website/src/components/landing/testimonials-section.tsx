@@ -30,10 +30,10 @@ const testimonials = [
 ];
 
 const stats = [
-  { value: '10,000+', label: 'Active Users', icon: Users, color: 'from-blue-500 to-cyan-500', iconColor: 'text-blue-600', bgColor: 'bg-blue-100 dark:bg-blue-900/30' },
-  { value: '500+', label: 'Companies', icon: Building2, color: 'from-purple-500 to-pink-500', iconColor: 'text-purple-600', bgColor: 'bg-purple-100 dark:bg-purple-900/30' },
+  { value: '7800+', label: 'Active Users', icon: Users, color: 'from-blue-500 to-cyan-500', iconColor: 'text-blue-600', bgColor: 'bg-blue-100 dark:bg-blue-900/30' },
+  { value: '250+', label: 'Companies', icon: Building2, color: 'from-purple-500 to-pink-500', iconColor: 'text-purple-600', bgColor: 'bg-purple-100 dark:bg-purple-900/30' },
   { value: '99.9%', label: 'Uptime', icon: Clock, color: 'from-green-500 to-emerald-500', iconColor: 'text-green-600', bgColor: 'bg-green-100 dark:bg-green-900/30' },
-  { value: '4.9/5', label: 'Rating', icon: Trophy, color: 'from-yellow-500 to-orange-500', iconColor: 'text-yellow-600', bgColor: 'bg-yellow-100 dark:bg-yellow-900/30' },
+  { value: '4.9/5', label: 'Ratings', icon: Trophy, color: 'from-yellow-500 to-orange-500', iconColor: 'text-yellow-600', bgColor: 'bg-yellow-100 dark:bg-yellow-900/30' },
 ];
 
 export function TestimonialsSection() {
@@ -47,6 +47,10 @@ export function TestimonialsSection() {
 
       <div className="container mx-auto px-4 relative">
         {/* Stats */}
+        <div className="text-center mb-12">
+          <h2 className="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white mb-3">Trusted by Growing Teams Worldwide</h2>
+          <p className="text-slate-600 dark:text-slate-400 text-lg max-w-2xl mx-auto">Numbers that reflect our commitment to delivering excellence</p>
+        </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6 mb-20">
           {stats.map((stat) => (
             <div 

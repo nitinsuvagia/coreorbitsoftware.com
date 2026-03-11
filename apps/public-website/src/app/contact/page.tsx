@@ -136,7 +136,15 @@ export default function ContactPage() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
       <LandingNavbar />
 
-      <div className="container mx-auto px-4 pt-24 pb-12 md:pt-28 md:pb-20">
+      <section className="relative pt-24 pb-12 md:pt-28 md:pb-20 overflow-hidden">
+        {/* Background effects */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-20 left-10 w-72 h-72 bg-blue-400/20 rounded-full blur-3xl animate-pulse" />
+          <div className="absolute top-40 right-10 w-96 h-96 bg-purple-400/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
+          <div className="absolute bottom-20 left-1/3 w-80 h-80 bg-pink-400/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }} />
+          <div className="absolute inset-0 bg-[linear-gradient(to_right,#8080800a_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-[size:48px_48px]" />
+        </div>
+        <div className="container mx-auto px-4 relative">
         <div className="max-w-6xl mx-auto">
           {/* Page Header */}
           <div className="text-center mb-12">
@@ -178,25 +186,6 @@ export default function ContactPage() {
                 </a>
               </div>
 
-              {/* Phone Card */}
-              <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-lg border border-slate-200 dark:border-slate-700">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center mb-4">
-                  <Phone className="w-6 h-6 text-white" />
-                </div>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
-                  Call Us
-                </h3>
-                <p className="text-slate-600 dark:text-slate-400 text-sm mb-3">
-                  Talk to our sales team
-                </p>
-                <a 
-                  href="tel:+1-888-COREORBIT" 
-                  className="text-purple-600 dark:text-purple-400 hover:underline font-medium"
-                >
-                  +1 (888) COREORBIT
-                </a>
-              </div>
-
               {/* Office Card */}
               <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-lg border border-slate-200 dark:border-slate-700">
                 <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-pink-500 to-pink-600 flex items-center justify-center mb-4">
@@ -206,29 +195,14 @@ export default function ContactPage() {
                   Visit Us
                 </h3>
                 <p className="text-slate-600 dark:text-slate-400 text-sm mb-3">
-                  Our headquarters
+                  Our headquarter
                 </p>
                 <address className="text-slate-700 dark:text-slate-300 not-italic text-sm">
-                  123 Innovation Drive<br />
-                  Dallas, TX 75201<br />
+                  Dallas, TX<br />
                   United States
                 </address>
               </div>
 
-              {/* Hours Card */}
-              <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-lg border border-slate-200 dark:border-slate-700">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center mb-4">
-                  <Clock className="w-6 h-6 text-white" />
-                </div>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
-                  Business Hours
-                </h3>
-                <div className="text-slate-600 dark:text-slate-400 text-sm space-y-1">
-                  <p>Monday - Friday: 9AM - 6PM PST</p>
-                  <p>Saturday: 10AM - 4PM PST</p>
-                  <p>Sunday: Closed</p>
-                </div>
-              </div>
             </div>
 
             {/* Contact Form */}
@@ -414,7 +388,8 @@ export default function ContactPage() {
             </div>
           </div>
         </div>
-      </div>
+        </div>
+      </section>
       <Footer />
     </div>
   );

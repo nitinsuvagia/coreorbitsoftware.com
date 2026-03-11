@@ -58,7 +58,7 @@ const allJobs = [
     slug: 'frontend-engineer-react',
     title: 'Frontend Engineer (React)', 
     department: 'Engineering',
-    location: 'San Francisco', 
+    location: 'Dallas', 
     type: 'Full-time',
     description: 'Join our frontend team to build beautiful, performant user interfaces. You will work closely with designers and backend engineers to create the best possible experience for our users.',
     requirements: [
@@ -124,7 +124,7 @@ const allJobs = [
     slug: 'senior-product-manager',
     title: 'Senior Product Manager', 
     department: 'Product',
-    location: 'San Francisco', 
+    location: 'Dallas', 
     type: 'Full-time',
     description: 'Lead product strategy and roadmap for key product areas. You will work closely with customers, engineering, and design to build features that solve real problems.',
     requirements: [
@@ -234,7 +234,7 @@ const allJobs = [
     slug: 'hr-business-partner',
     title: 'HR Business Partner', 
     department: 'Operations',
-    location: 'San Francisco', 
+    location: 'Dallas', 
     type: 'Full-time',
     description: 'Support our growing team as an HR business partner. You will help scale our people operations and culture as we grow.',
     requirements: [
@@ -256,7 +256,7 @@ const allJobs = [
     slug: 'finance-manager',
     title: 'Finance Manager', 
     department: 'Operations',
-    location: 'San Francisco', 
+    location: 'Dallas', 
     type: 'Full-time',
     description: 'Own financial planning, reporting, and analysis for CoreOrbit. You will work closely with leadership to drive business decisions.',
     requirements: [
@@ -309,7 +309,15 @@ export default function JobDetailPage() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
         <LandingNavbar />
-        <div className="container mx-auto px-4 pt-32 pb-16 text-center">
+        <section className="relative pt-32 pb-16 overflow-hidden">
+          {/* Background effects */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            <div className="absolute top-20 left-10 w-72 h-72 bg-purple-400/20 rounded-full blur-3xl animate-pulse" />
+            <div className="absolute top-40 right-10 w-96 h-96 bg-pink-400/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
+            <div className="absolute bottom-20 left-1/3 w-80 h-80 bg-blue-400/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }} />
+            <div className="absolute inset-0 bg-[linear-gradient(to_right,#8080800a_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-[size:48px_48px]" />
+          </div>
+          <div className="container mx-auto px-4 relative text-center">
           <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-4">Position Not Found</h1>
           <p className="text-slate-600 dark:text-slate-400 mb-8">The job position you're looking for doesn't exist or has been filled.</p>
           <Link href="/careers">
@@ -318,7 +326,8 @@ export default function JobDetailPage() {
               Back to Careers
             </Button>
           </Link>
-        </div>
+          </div>
+        </section>
         <Footer />
       </div>
     );
@@ -368,7 +377,15 @@ export default function JobDetailPage() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
         <LandingNavbar />
-        <div className="container mx-auto px-4 pt-32 pb-16">
+        <section className="relative pt-32 pb-16 overflow-hidden">
+          {/* Background effects */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            <div className="absolute top-20 left-10 w-72 h-72 bg-green-400/20 rounded-full blur-3xl animate-pulse" />
+            <div className="absolute top-40 right-10 w-96 h-96 bg-teal-400/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
+            <div className="absolute bottom-20 left-1/3 w-80 h-80 bg-blue-400/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }} />
+            <div className="absolute inset-0 bg-[linear-gradient(to_right,#8080800a_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-[size:48px_48px]" />
+          </div>
+          <div className="container mx-auto px-4 relative">
           <div className="max-w-2xl mx-auto text-center">
             <div className="w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
               <CheckCircle2 className="w-10 h-10 text-green-600" />
@@ -385,7 +402,8 @@ export default function JobDetailPage() {
               </Button>
             </Link>
           </div>
-        </div>
+          </div>
+        </section>
         <Footer />
       </div>
     );
@@ -396,8 +414,15 @@ export default function JobDetailPage() {
       <LandingNavbar />
       
       {/* Header */}
-      <section className="pt-24 pb-8 md:pt-32 md:pb-12">
-        <div className="container mx-auto px-4">
+      <section className="relative pt-24 pb-8 md:pt-32 md:pb-12 overflow-hidden">
+        {/* Background effects */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-20 left-10 w-72 h-72 bg-purple-400/20 rounded-full blur-3xl animate-pulse" />
+          <div className="absolute top-40 right-10 w-96 h-96 bg-pink-400/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
+          <div className="absolute bottom-20 left-1/3 w-80 h-80 bg-blue-400/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }} />
+          <div className="absolute inset-0 bg-[linear-gradient(to_right,#8080800a_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-[size:48px_48px]" />
+        </div>
+        <div className="container mx-auto px-4 relative">
           <div className="max-w-6xl mx-auto">
             <Link href="/careers" className="inline-flex items-center text-slate-600 dark:text-slate-400 hover:text-purple-600 mb-6">
               <ArrowLeft className="w-4 h-4 mr-2" />

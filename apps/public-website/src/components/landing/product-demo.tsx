@@ -600,7 +600,7 @@ function JobCreateScreen({ isActive, onScrollComplete }: { isActive: boolean; on
             <div>
               <label className="text-[8px] text-slate-500 block mb-1">Location</label>
               <div className="bg-slate-50 border rounded px-2 py-1.5 text-[10px] text-slate-700">
-                San Francisco, CA (Remote)
+                Dallas, TX (Remote)
               </div>
             </div>
             <div>

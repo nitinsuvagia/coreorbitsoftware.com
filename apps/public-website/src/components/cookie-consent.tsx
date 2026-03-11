@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Cookie, X, Settings, Check, ChevronDown, ChevronUp } from 'lucide-react';
@@ -23,6 +23,14 @@ export function CookieConsent() {
   const [isVisible, setIsVisible] = useState(false);
   const [showPreferences, setShowPreferences] = useState(false);
   const [preferences, setPreferences] = useState<CookiePreferences>(defaultPreferences);
+  const bannerRef = useRef<HTMLDivElement>(null);
+
+  // Add bottom padding to body so footer isn't hidden behind the banner
+  const updateBodyPadding = useCallback(() => {
+    if (bannerRef.current) {
+      document.body.style.paddingBottom = `${bannerRef.current.offsetHeight}px`;
+    }
+  }, []);
 
   useEffect(() => {
     // Check if user has already made a choice
@@ -33,6 +41,19 @@ export function CookieConsent() {
       return () => clearTimeout(timer);
     }
   }, []);
+
+  useEffect(() => {
+    if (isVisible) {
+      // Small delay to let the banner render before measuring
+      const timer = setTimeout(updateBodyPadding, 100);
+      return () => clearTimeout(timer);
+    } else {
+      document.body.style.paddingBottom = '';
+    }
+    return () => {
+      document.body.style.paddingBottom = '';
+    };
+  }, [isVisible, showPreferences, updateBodyPadding]);
 
   const saveConsent = (prefs: CookiePreferences, type: 'all' | 'partial' | 'reject') => {
     localStorage.setItem('cookie-consent', JSON.stringify({
@@ -80,8 +101,8 @@ export function CookieConsent() {
   if (!isVisible) return null;
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 animate-in slide-in-from-bottom duration-500 p-4">
-      <div className="bg-gradient-to-r from-orange-50 via-amber-50 to-purple-50 dark:from-orange-950/30 dark:via-amber-950/30 dark:to-purple-950/30 border border-orange-200 dark:border-slate-700 shadow-2xl rounded-2xl backdrop-blur-sm">
+    <div ref={bannerRef} className="fixed bottom-0 left-0 right-0 z-50 animate-in slide-in-from-bottom duration-500 p-4">
+      <div className="bg-slate-950 border border-slate-800 shadow-2xl rounded-2xl">
         <div className="container mx-auto px-4 py-4">
           {/* Main Banner */}
           <div className="flex flex-col lg:flex-row lg:items-center gap-4">
@@ -91,13 +112,13 @@ export function CookieConsent() {
                 <Cookie className="w-5 h-5 text-white" />
               </div>
               <div className="flex-1">
-                <h3 className="font-semibold text-slate-900 dark:text-white text-sm mb-1">
+                <h3 className="font-semibold text-white text-sm mb-1">
                   We value your privacy
                 </h3>
-                <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">
+                <p className="text-slate-400 text-sm leading-relaxed">
                   We use cookies to enhance your browsing experience, serve personalized content, and analyze our traffic. 
                   You can choose to accept all cookies, customize your preferences, or reject non-essential cookies.{' '}
-                  <Link href="/cookie-policy" className="text-orange-600 dark:text-orange-400 hover:underline">
+                  <Link href="/cookie-policy" className="text-orange-400 hover:underline">
                     Learn more
                   </Link>
                 </p>
@@ -110,7 +131,7 @@ export function CookieConsent() {
                 variant="outline"
                 size="sm"
                 onClick={() => setShowPreferences(!showPreferences)}
-                className="text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-600"
+                className="bg-gradient-to-r from-sky-400 to-blue-800 hover:from-sky-500 hover:to-blue-900 text-white border-0"
               >
                 <Settings className="w-4 h-4 mr-1" />
                 Preferences
@@ -124,7 +145,7 @@ export function CookieConsent() {
                 variant="outline"
                 size="sm"
                 onClick={handleRejectAll}
-                className="text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-600"
+                className="bg-gradient-to-r from-sky-400 to-blue-800 hover:from-sky-500 hover:to-blue-900 text-white border-0"
               >
                 Reject All
               </Button>
@@ -141,77 +162,77 @@ export function CookieConsent() {
 
           {/* Preferences Panel */}
           {showPreferences && (
-            <div className="mt-4 pt-4 border-t border-amber-200 dark:border-slate-700 animate-in slide-in-from-top duration-300">
+            <div className="mt-4 pt-4 border-t border-slate-800 animate-in slide-in-from-top duration-300">
               <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                 {/* Necessary Cookies */}
-                <div className="bg-white/80 dark:bg-slate-800/80 rounded-xl p-4 border border-amber-100 dark:border-slate-700 shadow-sm">
+                <div className="bg-slate-900/80 rounded-xl p-4 border border-slate-700 shadow-sm">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="font-medium text-slate-900 dark:text-white text-sm">Necessary</span>
+                    <span className="font-medium text-white text-sm">Necessary</span>
                     <div className="w-10 h-5 bg-orange-500 rounded-full flex items-center justify-end px-0.5 cursor-not-allowed">
                       <div className="w-4 h-4 bg-white rounded-full shadow" />
                     </div>
                   </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                  <p className="text-xs text-slate-400">
                     Essential for the website to function. Cannot be disabled.
                   </p>
                 </div>
 
                 {/* Analytics Cookies */}
-                <div className="bg-white/80 dark:bg-slate-800/80 rounded-xl p-4 border border-amber-100 dark:border-slate-700 shadow-sm">
+                <div className="bg-slate-900/80 rounded-xl p-4 border border-slate-700 shadow-sm">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="font-medium text-slate-900 dark:text-white text-sm">Analytics</span>
+                    <span className="font-medium text-white text-sm">Analytics</span>
                     <button
                       onClick={() => togglePreference('analytics')}
                       className={`w-10 h-5 rounded-full flex items-center transition-colors ${
                         preferences.analytics 
                           ? 'bg-orange-500 justify-end' 
-                          : 'bg-slate-300 dark:bg-slate-600 justify-start'
+                          : 'bg-slate-600 justify-start'
                       } px-0.5`}
                     >
                       <div className="w-4 h-4 bg-white rounded-full shadow transition-transform" />
                     </button>
                   </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                  <p className="text-xs text-slate-400">
                     Help us understand how visitors interact with our website.
                   </p>
                 </div>
 
                 {/* Marketing Cookies */}
-                <div className="bg-white/80 dark:bg-slate-800/80 rounded-xl p-4 border border-amber-100 dark:border-slate-700 shadow-sm">
+                <div className="bg-slate-900/80 rounded-xl p-4 border border-slate-700 shadow-sm">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="font-medium text-slate-900 dark:text-white text-sm">Marketing</span>
+                    <span className="font-medium text-white text-sm">Marketing</span>
                     <button
                       onClick={() => togglePreference('marketing')}
                       className={`w-10 h-5 rounded-full flex items-center transition-colors ${
                         preferences.marketing 
                           ? 'bg-orange-500 justify-end' 
-                          : 'bg-slate-300 dark:bg-slate-600 justify-start'
+                          : 'bg-slate-600 justify-start'
                       } px-0.5`}
                     >
                       <div className="w-4 h-4 bg-white rounded-full shadow transition-transform" />
                     </button>
                   </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                  <p className="text-xs text-slate-400">
                     Used to deliver personalized advertisements.
                   </p>
                 </div>
 
                 {/* Preferences Cookies */}
-                <div className="bg-white/80 dark:bg-slate-800/80 rounded-xl p-4 border border-amber-100 dark:border-slate-700 shadow-sm">
+                <div className="bg-slate-900/80 rounded-xl p-4 border border-slate-700 shadow-sm">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="font-medium text-slate-900 dark:text-white text-sm">Preferences</span>
+                    <span className="font-medium text-white text-sm">Preferences</span>
                     <button
                       onClick={() => togglePreference('preferences')}
                       className={`w-10 h-5 rounded-full flex items-center transition-colors ${
                         preferences.preferences 
                           ? 'bg-orange-500 justify-end' 
-                          : 'bg-slate-300 dark:bg-slate-600 justify-start'
+                          : 'bg-slate-600 justify-start'
                       } px-0.5`}
                     >
                       <div className="w-4 h-4 bg-white rounded-full shadow transition-transform" />
                     </button>
                   </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                  <p className="text-xs text-slate-400">
                     Remember your settings and preferences for a better experience.
                   </p>
                 </div>

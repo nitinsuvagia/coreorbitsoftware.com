@@ -35,7 +35,7 @@ const openings = [
     color: 'from-blue-500 to-indigo-500',
     jobs: [
       { slug: 'senior-backend-engineer', title: 'Senior Backend Engineer', location: 'Remote', type: 'Full-time' },
-      { slug: 'frontend-engineer-react', title: 'Frontend Engineer (React)', location: 'San Francisco', type: 'Full-time' },
+      { slug: 'frontend-engineer-react', title: 'Frontend Engineer (React)', location: 'Dallas', type: 'Full-time' },
       { slug: 'ml-engineer', title: 'ML Engineer', location: 'Remote', type: 'Full-time' },
       { slug: 'devops-engineer', title: 'DevOps Engineer', location: 'Remote', type: 'Full-time' }
     ]
@@ -44,7 +44,7 @@ const openings = [
     department: 'Product',
     color: 'from-purple-500 to-pink-500',
     jobs: [
-      { slug: 'senior-product-manager', title: 'Senior Product Manager', location: 'San Francisco', type: 'Full-time' },
+      { slug: 'senior-product-manager', title: 'Senior Product Manager', location: 'Dallas', type: 'Full-time' },
       { slug: 'product-designer', title: 'Product Designer', location: 'Remote', type: 'Full-time' }
     ]
   },
@@ -61,8 +61,8 @@ const openings = [
     department: 'Operations',
     color: 'from-orange-500 to-red-500',
     jobs: [
-      { slug: 'hr-business-partner', title: 'HR Business Partner', location: 'San Francisco', type: 'Full-time' },
-      { slug: 'finance-manager', title: 'Finance Manager', location: 'San Francisco', type: 'Full-time' }
+      { slug: 'hr-business-partner', title: 'HR Business Partner', location: 'Dallas', type: 'Full-time' },
+      { slug: 'finance-manager', title: 'Finance Manager', location: 'Dallas', type: 'Full-time' }
     ]
   }
 ];
@@ -80,8 +80,15 @@ export default function CareersPage() {
       <LandingNavbar />
       
       {/* Hero Section */}
-      <section className="pt-24 pb-16 md:pt-32 md:pb-24">
-        <div className="container mx-auto px-4">
+      <section className="relative pt-24 pb-16 md:pt-32 md:pb-24 overflow-hidden">
+        {/* Background effects */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-20 left-10 w-72 h-72 bg-purple-400/20 rounded-full blur-3xl animate-pulse" />
+          <div className="absolute top-40 right-10 w-96 h-96 bg-pink-400/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
+          <div className="absolute bottom-20 left-1/3 w-80 h-80 bg-blue-400/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }} />
+          <div className="absolute inset-0 bg-[linear-gradient(to_right,#8080800a_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-[size:48px_48px]" />
+        </div>
+        <div className="container mx-auto px-4 relative">
           <div className="max-w-4xl mx-auto text-center">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-sm font-medium mb-6">
               <Briefcase className="w-4 h-4" />

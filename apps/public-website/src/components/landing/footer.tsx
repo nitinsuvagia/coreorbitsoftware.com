@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { Twitter, Linkedin, Github, Youtube } from 'lucide-react';
 
 const footerLinks = {
   solutions: {
@@ -18,6 +17,7 @@ const footerLinks = {
     title: 'Company',
     links: [
       { name: 'About Us', href: '/about' },
+      { name: 'Pricing', href: '/pricing' },
       { name: 'Careers', href: '/careers' },
       { name: 'Contact', href: '/contact' },
       { name: 'Schedule Demo', href: '/schedule-demo' },
@@ -25,12 +25,6 @@ const footerLinks = {
   },
 };
 
-const socialLinks = [
-  { name: 'Twitter', icon: Twitter, href: '#' },
-  { name: 'LinkedIn', icon: Linkedin, href: '#' },
-  { name: 'GitHub', icon: Github, href: '#' },
-  { name: 'YouTube', icon: Youtube, href: '#' },
-];
 
 export function Footer() {
   return (
@@ -51,20 +45,7 @@ export function Footer() {
               Transform your HR with AI-powered recruitment, digital onboarding, 
               and complete employee lifecycle management.
             </p>
-            
-            {/* Social links */}
-            <div className="flex gap-4">
-              {socialLinks.map((social) => (
-                <a
-                  key={social.name}
-                  href={social.href}
-                  className="w-10 h-10 rounded-lg bg-slate-800 hover:bg-slate-700 flex items-center justify-center transition-colors"
-                  aria-label={social.name}
-                >
-                  <social.icon className="w-5 h-5 text-slate-400" />
-                </a>
-              ))}
-            </div>
+
           </div>
 
           {/* Links columns */}

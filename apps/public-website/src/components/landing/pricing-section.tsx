@@ -387,7 +387,7 @@ export function PricingSection() {
                     ))}
                   </ul>
 
-                  <a href={SIGNUP_URL} className="block">
+                  <a href={plan.tier === 'ENTERPRISE' || plan.tier === 'CUSTOM' ? '/contact' : SIGNUP_URL} className="block">
                     <Button 
                       className={`w-full ${
                         isPopular 
@@ -414,11 +414,11 @@ export function PricingSection() {
         <div className="text-center mt-12">
           <p className="text-slate-600 dark:text-slate-400">
             Have questions?{' '}
-            <a href="#" className="text-blue-600 hover:underline font-medium">
+            <a href="#faq" className="text-blue-600 hover:underline font-medium">
               Check our FAQ
             </a>{' '}
             or{' '}
-            <a href="mailto:support@coreorbitsoftware.com" className="text-blue-600 hover:underline font-medium">
+            <a href="/contact" className="text-blue-600 hover:underline font-medium">
               contact us
             </a>
           </p>

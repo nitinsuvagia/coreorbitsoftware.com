@@ -66,6 +66,20 @@ const employeeTools: ToolDefinition[] = [
   {
     type: 'function',
     function: {
+      name: 'get_employee_skills',
+      description: 'Get the technical skills of a specific employee. Use for "what skills does [name] have?", "show skills for employee", "technical skills of [name]". Requires employeeId — search for the employee first if you only have a name.',
+      parameters: {
+        type: 'object',
+        properties: {
+          employeeId: { type: 'string', description: 'The employee ID (UUID)' },
+        },
+        required: ['employeeId'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'get_celebrations_today',
       description: 'Get today\'s birthdays and work anniversaries. Use for "any birthdays today?", "who is celebrating today?", "anniversaries".',
       parameters: { type: 'object', properties: {}, required: [] },

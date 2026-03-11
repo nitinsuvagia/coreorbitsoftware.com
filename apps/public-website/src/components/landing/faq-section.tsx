@@ -116,7 +116,7 @@ export function FAQSection() {
             Still have questions?
           </p>
           <a 
-            href="#" 
+            href="/contact" 
             className="inline-flex items-center gap-2 text-blue-600 dark:text-blue-400 font-semibold hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
           >
             Contact our support team

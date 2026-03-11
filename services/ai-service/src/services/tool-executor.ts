@@ -166,6 +166,42 @@ export async function executeTool(
         return result;
       }
 
+      case 'get_employee_skills': {
+        const { employeeId } = args;
+        const data = await callService(
+          `${EMPLOYEE_SERVICE}/api/v1/employees/${employeeId}/skills`,
+          ctx
+        );
+        const skills = data?.data || [];
+        if (!Array.isArray(skills) || !skills.length) return 'No skills recorded for this employee yet. Skills can be added from the employee profile page.';
+        const grouped: Record<string, any[]> = {};
+        for (const s of skills) {
+          const cat = s.category || 'General';
+          if (!grouped[cat]) grouped[cat] = [];
+          grouped[cat].push(s);
+        }
+        let result = `**Skills (${skills.length}):**\n`;
+        for (const [category, items] of Object.entries(grouped)) {
+          result += `\n**${category.charAt(0).toUpperCase() + category.slice(1)}:**\n`;
+          for (const s of items) {
+            const primary = s.isPrimary ? ' ⭐' : '';
+            const years = s.yearsExperience ? ` (${s.yearsExperience}y)` : '';
+            result += `- ${s.name} — ${s.level}${years}${primary}\n`;
+          }
+        }
+        // Chart: skills by level
+        const levelCounts: Record<string, number> = {};
+        for (const s of skills) {
+          const lvl = s.level || 'unknown';
+          levelCounts[lvl] = (levelCounts[lvl] || 0) + 1;
+        }
+        const chartData = Object.entries(levelCounts).map(([name, value]) => ({ name, value }));
+        if (chartData.length > 1) {
+          result += `\n\n:::chart{type="pie" title="Skills by Level" xKey="name" yKey="value" color="#8b5cf6" data=${JSON.stringify(chartData)}}:::`;
+        }
+        return result;
+      }
+
       case 'get_department_list': {
         const data = await callService(
           `${EMPLOYEE_SERVICE}/api/v1/departments`,
