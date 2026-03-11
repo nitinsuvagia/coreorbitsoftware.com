@@ -368,7 +368,7 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     const prisma = getPrismaFromRequest(req);
-    const authUserId = (req as any).userId || null;
+    const authUserId = (req as any).userId || req.headers['x-user-id'] as string || null;
     const validatedData = createReviewSchema.parse(req.body);
 
     // Look up employee ID from auth user ID for the reviewer
@@ -379,6 +379,11 @@ router.post('/', async (req: Request, res: Response) => {
         authUserId
       ) as any[];
       reviewerId = empResult.length > 0 ? empResult[0].id : null;
+    }
+    
+    // Fallback: use the employee being reviewed as reviewer (self-assessment scenario)
+    if (!reviewerId) {
+      reviewerId = validatedData.employeeId;
     }
 
     let overallRating = validatedData.overallRating ?? null;

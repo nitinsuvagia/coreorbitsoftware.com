@@ -600,35 +600,43 @@ router.get('/status-counts', async (req: Request, res: Response) => {
 router.get('/stats', async (req: Request, res: Response) => {
   try {
     const prisma = getPrismaFromRequest(req);
+    
+    // Only count current employees (exclude TERMINATED, RESIGNED, RETIRED)
+    const currentEmployeeStatuses = ['ACTIVE', 'ON_LEAVE', 'PROBATION', 'NOTICE_PERIOD'];
 
     const [total, active, onLeave, byDepartmentRaw] = await Promise.all([
-      prisma.employee.count({ where: { deletedAt: null } }),
+      prisma.employee.count({ where: { deletedAt: null, status: { in: currentEmployeeStatuses } } }),
       prisma.employee.count({ where: { status: 'ACTIVE', deletedAt: null } }),
       prisma.employee.count({ where: { status: 'ON_LEAVE', deletedAt: null } }),
       prisma.employee.groupBy({
         by: ['departmentId'],
         _count: true,
-        where: { deletedAt: null },
+        where: { deletedAt: null, status: { in: currentEmployeeStatuses } },
       }),
     ]);
 
-    // Resolve department names
+    // Resolve department names and codes
     const deptIds = byDepartmentRaw
       .map((d: any) => d.departmentId)
       .filter(Boolean);
     const departments = deptIds.length
       ? await prisma.department.findMany({
           where: { id: { in: deptIds } },
-          select: { id: true, name: true },
+          select: { id: true, name: true, code: true },
         })
       : [];
-    const deptMap = new Map(departments.map((d: any) => [d.id, d.name]));
+    const deptMap = new Map(departments.map((d: any) => [d.id, { name: d.name, code: d.code }]));
 
-    const byDepartment = byDepartmentRaw.map((d: any) => ({
-      departmentId: d.departmentId,
-      name: deptMap.get(d.departmentId) || 'Unassigned',
-      count: d._count,
-    }));
+    const byDepartment = byDepartmentRaw.map((d: any) => {
+      const dept = deptMap.get(d.departmentId);
+      return {
+        departmentId: d.departmentId,
+        name: dept?.code || dept?.name || 'Unassigned',
+        fullName: dept?.name || 'Unassigned',
+        code: dept?.code || null,
+        count: d._count,
+      };
+    });
 
     res.json({
       success: true,
