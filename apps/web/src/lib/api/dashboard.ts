@@ -87,6 +87,8 @@ export interface UpdateTodoInput extends Partial<CreateTodoInput> {
   status?: TodoStatus;
   isCompleted?: boolean;
   order?: number;
+  // null explicitly clears the assignee
+  assigneeId?: string | null;
 }
 
 export interface TodoFilters {

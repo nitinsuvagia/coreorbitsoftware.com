@@ -444,7 +444,7 @@ router.get('/', async (req: Request, res: Response) => {
       where.employmentType = filters.employmentType;
     }
 
-    const [items, total] = await Promise.all([
+    const [rawItems, total] = await Promise.all([
       prisma.employee.findMany({
         where,
         skip,
@@ -453,10 +453,18 @@ router.get('/', async (req: Request, res: Response) => {
         include: {
           department: { select: { id: true, name: true } },
           designation: { select: { id: true, name: true } },
+          // Include linked user so we can expose their id as userId (needed for todo assignment)
+          user: { select: { id: true } },
         },
       }),
       prisma.employee.count({ where }),
     ]);
+
+    // Flatten user.id → userId at top level so clients can use it directly
+    const items = rawItems.map(({ user, ...emp }: any) => ({
+      ...emp,
+      userId: user?.id ?? null,
+    }));
 
     res.json({
       success: true,
@@ -3210,6 +3218,8 @@ const updateTodoSchema = createTodoSchema.partial().extend({
   status: z.enum(['PENDING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']).optional(),
   isCompleted: z.boolean().optional(),
   order: z.number().optional(),
+  // Allow null to clear the assignee
+  assigneeId: z.string().uuid().optional().nullable(),
 });
 
 /**
@@ -3323,15 +3333,34 @@ router.post('/todos', async (req: Request, res: Response) => {
 
     const data = createTodoSchema.parse(req.body);
 
-    // Resolve creator display name
+    // Resolve creator display name — prefer the linked Employee record's displayName
+    // because the User.firstName can sometimes be set to the company name for tenant admins
     let creatorName: string | undefined;
     try {
       const creatorUser = await prisma.user.findUnique({
         where: { id: userId },
-        select: { firstName: true, lastName: true },
+        select: {
+          firstName: true,
+          lastName: true,
+          displayName: true,
+          employeeId: true,
+        },
       });
       if (creatorUser) {
-        creatorName = `${creatorUser.firstName} ${creatorUser.lastName}`.trim();
+        if (creatorUser.employeeId) {
+          // Prefer the employee profile's displayName (always set to the person's real name)
+          const emp = await prisma.employee.findUnique({
+            where: { id: creatorUser.employeeId },
+            select: { displayName: true, firstName: true, lastName: true },
+          });
+          creatorName = emp?.displayName ||
+            `${emp?.firstName ?? ''} ${emp?.lastName ?? ''}`.trim() ||
+            creatorUser.displayName ||
+            `${creatorUser.firstName} ${creatorUser.lastName}`.trim();
+        } else {
+          creatorName = creatorUser.displayName ||
+            `${creatorUser.firstName} ${creatorUser.lastName}`.trim();
+        }
       }
     } catch { /* non-fatal */ }
 
@@ -3342,7 +3371,7 @@ router.post('/todos', async (req: Request, res: Response) => {
       try {
         const assigneeUser = await prisma.user.findUnique({
           where: { id: resolvedAssigneeId },
-          select: { firstName: true, lastName: true },
+          select: { firstName: true, lastName: true, displayName: true, employeeId: true },
         });
         if (!assigneeUser) {
           return res.status(400).json({
@@ -3350,7 +3379,19 @@ router.post('/todos', async (req: Request, res: Response) => {
             error: { code: 'ASSIGNEE_NOT_FOUND', message: 'Assignee user not found' },
           });
         }
-        assigneeName = `${assigneeUser.firstName} ${assigneeUser.lastName}`.trim();
+        if (assigneeUser.employeeId) {
+          const emp = await prisma.employee.findUnique({
+            where: { id: assigneeUser.employeeId },
+            select: { displayName: true, firstName: true, lastName: true },
+          });
+          assigneeName = emp?.displayName ||
+            `${emp?.firstName ?? ''} ${emp?.lastName ?? ''}`.trim() ||
+            assigneeUser.displayName ||
+            `${assigneeUser.firstName} ${assigneeUser.lastName}`.trim();
+        } else {
+          assigneeName = assigneeUser.displayName ||
+            `${assigneeUser.firstName} ${assigneeUser.lastName}`.trim();
+        }
       } catch (err) {
         return res.status(400).json({
           success: false,
@@ -3448,6 +3489,43 @@ router.put('/todos/:id', async (req: Request, res: Response) => {
       updateData.isCompleted = data.isCompleted;
       updateData.completedAt = data.isCompleted ? new Date() : null;
       updateData.status = data.isCompleted ? 'COMPLETED' : 'PENDING';
+    }
+
+    // Handle assignee change
+    if (data.assigneeId !== undefined) {
+      if (data.assigneeId === null || data.assigneeId === '') {
+        // Clearing the assignee
+        updateData.assigneeId = null;
+        updateData.assigneeName = null;
+      } else {
+        // Resolving new assignee — prefer Employee.displayName over User.firstName
+        const assigneeUser = await prisma.user.findUnique({
+          where: { id: data.assigneeId },
+          select: { firstName: true, lastName: true, displayName: true, employeeId: true },
+        });
+        if (!assigneeUser) {
+          return res.status(400).json({
+            success: false,
+            error: { code: 'ASSIGNEE_NOT_FOUND', message: 'Assignee user not found' },
+          });
+        }
+        let resolvedAssigneeName: string;
+        if (assigneeUser.employeeId) {
+          const emp = await prisma.employee.findUnique({
+            where: { id: assigneeUser.employeeId },
+            select: { displayName: true, firstName: true, lastName: true },
+          });
+          resolvedAssigneeName = emp?.displayName ||
+            `${emp?.firstName ?? ''} ${emp?.lastName ?? ''}`.trim() ||
+            assigneeUser.displayName ||
+            `${assigneeUser.firstName} ${assigneeUser.lastName}`.trim();
+        } else {
+          resolvedAssigneeName = assigneeUser.displayName ||
+            `${assigneeUser.firstName} ${assigneeUser.lastName}`.trim();
+        }
+        updateData.assigneeId = data.assigneeId;
+        updateData.assigneeName = resolvedAssigneeName;
+      }
     }
 
     const todo = await prisma.userTodo.update({

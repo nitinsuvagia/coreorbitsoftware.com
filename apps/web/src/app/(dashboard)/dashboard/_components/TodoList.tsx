@@ -333,7 +333,8 @@ function TodoDialog({ open, onOpenChange, todo, onSave }: TodoDialogProps) {
         dueDate: dueDate || undefined,
         priority,
         category: category.trim() || undefined,
-        assigneeId: selectedAssignee?.userId || undefined,
+        // Always send assigneeId: a UUID when assigned, null to explicitly clear
+        assigneeId: selectedAssignee?.userId ?? null,
       });
       onOpenChange(false);
     } catch (error) {
