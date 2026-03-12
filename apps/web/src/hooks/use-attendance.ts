@@ -69,7 +69,7 @@ export function useAdminWeeklyAttendance(dateFrom: string, dateTo: string) {
     enabled: !!dateFrom && !!dateTo,
     refetchInterval: 30000, // refresh every 30s for live data
   });
-}
+} 
 
 export function useAttendance(filters: AttendanceFilters = {}) {
   // Map frontend param names to backend param names
