@@ -1257,20 +1257,25 @@ enum NotificationType {
 // ============================================================================
 
 model UserTodo {
-  id          String         @id @default(uuid())
-  userId      String         @map("user_id")
-  title       String
-  description String?        @db.Text
-  dueDate     DateTime?      @map("due_date")
-  dueTime     DateTime?      @map("due_time")
-  priority    TodoPriority   @default(MEDIUM)
-  status      TodoStatus     @default(PENDING)
-  isCompleted Boolean        @default(false) @map("is_completed")
-  completedAt DateTime?      @map("completed_at")
-  category    String?        // work, personal, meeting, follow-up, etc.
-  tags        String[]       @default([])
-  reminder    DateTime?      // Optional reminder time
-  order       Int            @default(0) // For manual ordering
+  id           String        @id @default(uuid())
+  userId       String        @map("user_id")
+  title        String
+  description  String?       @db.Text
+  dueDate      DateTime?     @map("due_date")
+  dueTime      DateTime?     @map("due_time")
+  priority     TodoPriority  @default(MEDIUM)
+  status       TodoStatus    @default(PENDING)
+  isCompleted  Boolean       @default(false) @map("is_completed")
+  completedAt  DateTime?     @map("completed_at")
+  category     String?       // work, personal, meeting, follow-up, etc.
+  tags         String[]      @default([])
+  reminder     DateTime?     // Optional reminder time
+  order        Int           @default(0) // For manual ordering
+
+  // Assignment — creator can delegate to another team member
+  assigneeId   String?       @map("assignee_id")   // userId of the assignee
+  assigneeName String?       @map("assignee_name") // display name (denormalized)
+  creatorName  String?       @map("creator_name")  // creator display name (shown to assignee)
 
   // Relations
   user User @relation(fields: [userId], references: [id])
@@ -1279,6 +1284,7 @@ model UserTodo {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([userId])
+  @@index([assigneeId])
   @@index([status])
   @@index([dueDate])
   @@index([isCompleted])

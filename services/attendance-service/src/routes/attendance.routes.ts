@@ -229,10 +229,11 @@ router.post(
       });
     } catch (error) {
       logger.error({ error: (error as Error).message }, 'Self check-in failed');
-      if ((error as Error).message.includes('already checked in') ||
-          (error as Error).message.includes('not found') ||
-          (error as Error).message.includes('inactive') ||
-          (error as Error).message.includes('Already completed')) {
+      const msg = (error as Error).message.toLowerCase();
+      if (msg.includes('already checked in') ||
+          msg.includes('not found') ||
+          msg.includes('inactive') ||
+          msg.includes('already completed')) {
         return res.status(400).json({ error: (error as Error).message });
       }
       next(error);
@@ -317,7 +318,10 @@ router.post(
       });
     } catch (error) {
       logger.error({ error: (error as Error).message }, 'Check-in failed');
-      if ((error as Error).message.includes('already checked in')) {
+      const msg = (error as Error).message.toLowerCase();
+      if (msg.includes('already checked in') ||
+          msg.includes('not found') ||
+          msg.includes('inactive')) {
         return res.status(400).json({ error: (error as Error).message });
       }
       next(error);

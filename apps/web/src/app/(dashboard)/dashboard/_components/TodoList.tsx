@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { useAuth } from '@/lib/auth/auth-context';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
@@ -44,6 +45,9 @@ import {
   CheckCircle2,
   Circle,
   Clock,
+  UserPlus,
+  X,
+  User,
 } from 'lucide-react';
 import {
   getTodos,
@@ -51,10 +55,12 @@ import {
   updateTodo,
   deleteTodo,
   toggleTodo,
+  searchEmployees,
   Todo,
   TodoPriority,
   TodosResponse,
   CreateTodoInput,
+  EmployeeSearchResult,
 } from '@/lib/api/dashboard';
 import { format, parseISO, isAfter, isBefore, isToday, startOfDay } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -94,14 +100,17 @@ function isOverdue(todo: Todo): boolean {
 
 interface TodoItemProps {
   todo: Todo;
+  currentUserId?: string;
   onToggle: (id: string) => void;
   onEdit: (todo: Todo) => void;
   onDelete: (id: string) => void;
 }
 
-function TodoItem({ todo, onToggle, onEdit, onDelete }: TodoItemProps) {
+function TodoItem({ todo, currentUserId, onToggle, onEdit, onDelete }: TodoItemProps) {
   const priority = priorityConfig[todo.priority] || priorityConfig.MEDIUM;
   const overdue = isOverdue(todo);
+  const isAssignedToMe = !!todo.assigneeId && todo.assigneeId === currentUserId && todo.userId !== currentUserId;
+  const isAssignedByMe = !!todo.assigneeId && todo.userId === currentUserId;
 
   return (
     <div className={cn(
@@ -160,13 +169,27 @@ function TodoItem({ todo, onToggle, onEdit, onDelete }: TodoItemProps) {
           </p>
         )}
 
-        {todo.category && (
-          <div className="flex items-center gap-3 mt-1">
+        <div className="flex items-center gap-2 mt-1 flex-wrap">
+          {todo.category && (
             <Badge variant="secondary" className="text-xs">
               {todo.category}
             </Badge>
-          </div>
-        )}
+          )}
+          {/* Assignee badge: shown on creator's side */}
+          {isAssignedByMe && todo.assigneeName && (
+            <Badge variant="outline" className="text-xs text-purple-600 border-purple-200 bg-purple-50 flex items-center gap-1">
+              <User className="h-3 w-3" />
+              → {todo.assigneeName}
+            </Badge>
+          )}
+          {/* "Assigned by" badge: shown on assignee's side */}
+          {isAssignedToMe && todo.creatorName && (
+            <Badge variant="outline" className="text-xs text-indigo-600 border-indigo-200 bg-indigo-50 flex items-center gap-1">
+              <UserPlus className="h-3 w-3" />
+              by {todo.creatorName}
+            </Badge>
+          )}
+        </div>
       </div>
 
       {/* Actions */}
@@ -181,18 +204,28 @@ function TodoItem({ todo, onToggle, onEdit, onDelete }: TodoItemProps) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => onEdit(todo)}>
-            <Edit className="h-4 w-4 mr-2" />
-            Edit
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem 
-            onClick={() => onDelete(todo.id)}
-            className="text-red-600"
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            Delete
-          </DropdownMenuItem>
+          {/* Only the creator can edit/delete */}
+          {!isAssignedToMe && (
+            <DropdownMenuItem onClick={() => onEdit(todo)}>
+              <Edit className="h-4 w-4 mr-2" />
+              Edit
+            </DropdownMenuItem>
+          )}
+          {!isAssignedToMe && <DropdownMenuSeparator />}
+          {!isAssignedToMe && (
+            <DropdownMenuItem 
+              onClick={() => onDelete(todo.id)}
+              className="text-red-600"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete
+            </DropdownMenuItem>
+          )}
+          {isAssignedToMe && (
+            <DropdownMenuItem disabled className="text-muted-foreground text-xs">
+              Assigned to you — read only
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
@@ -214,6 +247,14 @@ function TodoDialog({ open, onOpenChange, todo, onSave }: TodoDialogProps) {
   const [category, setCategory] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // Assignee state
+  const [assigneeSearch, setAssigneeSearch] = useState('');
+  const [assigneeSuggestions, setAssigneeSuggestions] = useState<EmployeeSearchResult[]>([]);
+  const [selectedAssignee, setSelectedAssignee] = useState<EmployeeSearchResult | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [loadingAssignees, setLoadingAssignees] = useState(false);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     if (open) {
       if (todo) {
@@ -222,15 +263,61 @@ function TodoDialog({ open, onOpenChange, todo, onSave }: TodoDialogProps) {
         setDueDate(todo.dueDate ? todo.dueDate.split('T')[0] : '');
         setPriority(todo.priority);
         setCategory(todo.category || '');
+        if (todo.assigneeName) {
+          setAssigneeSearch(todo.assigneeName);
+          setSelectedAssignee({ id: '', userId: todo.assigneeId, firstName: '', lastName: '', displayName: todo.assigneeName, email: '' });
+        } else {
+          setAssigneeSearch('');
+          setSelectedAssignee(null);
+        }
       } else {
         setTitle('');
         setDescription('');
         setDueDate('');
         setPriority('MEDIUM');
         setCategory('');
+        setAssigneeSearch('');
+        setSelectedAssignee(null);
       }
+      setShowSuggestions(false);
+      setAssigneeSuggestions([]);
     }
   }, [open, todo]);
+
+  const handleAssigneeSearch = (value: string) => {
+    setAssigneeSearch(value);
+    setSelectedAssignee(null);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    if (!value.trim()) {
+      setAssigneeSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+    searchDebounceRef.current = setTimeout(async () => {
+      setLoadingAssignees(true);
+      try {
+        const results = await searchEmployees(value);
+        setAssigneeSuggestions(results);
+        setShowSuggestions(true);
+      } finally {
+        setLoadingAssignees(false);
+      }
+    }, 300);
+  };
+
+  const handleSelectAssignee = (emp: EmployeeSearchResult) => {
+    setSelectedAssignee(emp);
+    setAssigneeSearch(emp.displayName);
+    setShowSuggestions(false);
+    setAssigneeSuggestions([]);
+  };
+
+  const handleClearAssignee = () => {
+    setSelectedAssignee(null);
+    setAssigneeSearch('');
+    setShowSuggestions(false);
+    setAssigneeSuggestions([]);
+  };
 
   const handleSave = async () => {
     if (!title.trim()) {
@@ -246,6 +333,7 @@ function TodoDialog({ open, onOpenChange, todo, onSave }: TodoDialogProps) {
         dueDate: dueDate || undefined,
         priority,
         category: category.trim() || undefined,
+        assigneeId: selectedAssignee?.userId || undefined,
       });
       onOpenChange(false);
     } catch (error) {
@@ -257,7 +345,7 @@ function TodoDialog({ open, onOpenChange, todo, onSave }: TodoDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[440px]">
         <DialogHeader>
           <DialogTitle>{todo ? 'Edit Todo' : 'Add New Todo'}</DialogTitle>
           <DialogDescription>
@@ -285,6 +373,58 @@ function TodoDialog({ open, onOpenChange, todo, onSave }: TodoDialogProps) {
               placeholder="Add more details..."
               rows={2}
             />
+          </div>
+
+          {/* Assign to — employee search */}
+          <div className="grid gap-2">
+            <Label htmlFor="assignee" className="flex items-center gap-1">
+              <UserPlus className="h-4 w-4" />
+              Assign to (optional)
+            </Label>
+            <div className="relative">
+              {selectedAssignee ? (
+                <div className="flex items-center gap-2 border rounded-md px-3 py-2 bg-purple-50 border-purple-200">
+                  <User className="h-4 w-4 text-purple-600 shrink-0" />
+                  <span className="flex-1 text-sm font-medium text-purple-700">{selectedAssignee.displayName}</span>
+                  <button type="button" onClick={handleClearAssignee} className="text-purple-400 hover:text-purple-700 transition-colors">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <Input
+                  id="assignee"
+                  value={assigneeSearch}
+                  onChange={(e) => handleAssigneeSearch(e.target.value)}
+                  onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                  onFocus={() => assigneeSuggestions.length > 0 && setShowSuggestions(true)}
+                  placeholder="Search employee name..."
+                  autoComplete="off"
+                />
+              )}
+              {showSuggestions && (
+                <div className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-md max-h-48 overflow-y-auto">
+                  {loadingAssignees ? (
+                    <div className="px-3 py-2 text-sm text-muted-foreground">Searching...</div>
+                  ) : assigneeSuggestions.length === 0 ? (
+                    <div className="px-3 py-2 text-sm text-muted-foreground">No employees found</div>
+                  ) : (
+                    assigneeSuggestions.map((emp) => (
+                      <button
+                        key={emp.id}
+                        type="button"
+                        onMouseDown={() => handleSelectAssignee(emp)}
+                        className="w-full text-left px-3 py-2 hover:bg-accent transition-colors"
+                      >
+                        <div className="font-medium text-sm">{emp.displayName}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {emp.designation?.name}{emp.department?.name ? ` · ${emp.department.name}` : ''}
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -339,6 +479,8 @@ function TodoDialog({ open, onOpenChange, todo, onSave }: TodoDialogProps) {
 }
 
 export function TodoList({ loading: externalLoading }: TodoListProps) {
+  const { user } = useAuth();
+  const currentUserId = user?.id;
   const [todosData, setTodosData] = useState<TodosResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -531,6 +673,7 @@ export function TodoList({ loading: externalLoading }: TodoListProps) {
                   <TodoItem
                     key={todo.id}
                     todo={todo}
+                    currentUserId={currentUserId}
                     onToggle={handleToggle}
                     onEdit={handleEdit}
                     onDelete={handleDelete}

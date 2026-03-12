@@ -2980,4 +2980,103 @@ router.post('/integrations/openai/disable', async (req: TenantRequest, res: Resp
   }
 });
 
+// ============================================================================
+// GET ORG-WIDE TODO TASKS (Admin / Tenant Admin only)
+// GET /api/v1/organization/todos
+// Query params: page, limit, search, userId, priority, status, dueDateFrom, dueDateTo
+// ============================================================================
+
+router.get('/todos', async (req: TenantRequest, res: Response, next: NextFunction) => {
+  try {
+    const tenantSlug = req.tenantContext?.tenantSlug || req.domainResolution?.tenantSlug;
+    if (!tenantSlug) {
+      return res.status(400).json({ success: false, error: { code: 'TENANT_REQUIRED', message: 'Tenant context is required' } });
+    }
+
+    const page     = Math.max(1, parseInt(String(req.query.page  || '1'),  10));
+    const limit    = Math.min(100, Math.max(1, parseInt(String(req.query.limit || '20'), 10)));
+    const skip     = (page - 1) * limit;
+    const search   = typeof req.query.search   === 'string' ? req.query.search.trim()   : undefined;
+    const userId   = typeof req.query.userId   === 'string' ? req.query.userId.trim()   : undefined;
+    const priority = typeof req.query.priority === 'string' ? req.query.priority.trim() : undefined;
+    const status   = typeof req.query.status   === 'string' ? req.query.status.trim()   : undefined;
+    const dueDateFrom = typeof req.query.dueDateFrom === 'string' ? req.query.dueDateFrom : undefined;
+    const dueDateTo   = typeof req.query.dueDateTo   === 'string' ? req.query.dueDateTo   : undefined;
+
+    const tenantPrisma = await getTenantPrismaBySlug(tenantSlug);
+
+    // Build where clause
+    const where: Record<string, unknown> = {};
+    if (search) {
+      where.title = { contains: search, mode: 'insensitive' };
+    }
+    if (userId) {
+      // Filter by creator OR assignee matching this userId
+      where.OR = [{ userId }, { assigneeId: userId }];
+    }
+    if (priority) {
+      where.priority = priority.toUpperCase();
+    }
+    if (status === 'completed') {
+      where.isCompleted = true;
+    } else if (status === 'pending') {
+      where.isCompleted = false;
+      where.status = { in: ['PENDING', 'IN_PROGRESS'] };
+    } else if (status) {
+      where.status = status.toUpperCase();
+    }
+    if (dueDateFrom || dueDateTo) {
+      where.dueDate = {
+        ...(dueDateFrom ? { gte: new Date(dueDateFrom) } : {}),
+        ...(dueDateTo   ? { lte: new Date(dueDateTo)   } : {}),
+      };
+    }
+
+    const [total, todos] = await Promise.all([
+      (tenantPrisma as any).userTodo.count({ where }),
+      (tenantPrisma as any).userTodo.findMany({
+        where,
+        orderBy: [{ dueDate: 'asc' }, { priority: 'asc' }, { createdAt: 'desc' }],
+        skip,
+        take: limit,
+        select: {
+          id:           true,
+          title:        true,
+          description:  true,
+          priority:     true,
+          status:       true,
+          isCompleted:  true,
+          completedAt:  true,
+          dueDate:      true,
+          dueTime:      true,
+          category:     true,
+          tags:         true,
+          userId:       true,
+          creatorName:  true,
+          assigneeId:   true,
+          assigneeName: true,
+          createdAt:    true,
+          updatedAt:    true,
+        },
+      }),
+    ]);
+
+    return res.json({
+      success: true,
+      data: {
+        items: todos,
+        pagination: {
+          page,
+          limit,
+          total,
+          pages: Math.ceil(total / limit),
+        },
+      },
+    });
+  } catch (error) {
+    logger.error({ error: (error as Error).message }, 'Failed to get org todos');
+    next(error);
+  }
+});
+
 export default router;

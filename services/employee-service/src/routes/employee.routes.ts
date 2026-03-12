@@ -3202,6 +3202,8 @@ const createTodoSchema = z.object({
   category: z.string().optional(),
   tags: z.array(z.string()).optional(),
   reminder: z.string().optional(),
+  // Assignment: pass the userId of the employee to assign this task to
+  assigneeId: z.string().uuid().optional(),
 });
 
 const updateTodoSchema = createTodoSchema.partial().extend({
@@ -3227,26 +3229,32 @@ router.get('/todos', async (req: Request, res: Response) => {
 
     const { status, priority, category, completed, search, page = '1', pageSize = '50' } = req.query;
 
-    const where: any = { userId };
+    // Build visibility filter: show todos I created OR todos assigned to me
+    const visibilityFilter = { OR: [{ userId }, { assigneeId: userId }] };
 
-    if (status) {
-      where.status = status as string;
-    }
-    if (priority) {
-      where.priority = priority as string;
-    }
-    if (category) {
-      where.category = category as string;
-    }
-    if (completed !== undefined) {
-      where.isCompleted = completed === 'true';
-    }
-    if (search) {
-      where.OR = [
-        { title: { contains: search as string, mode: 'insensitive' } },
-        { description: { contains: search as string, mode: 'insensitive' } },
-      ];
-    }
+    const buildWhere = (extra: Record<string, any> = {}) => {
+      const base: any = { ...extra, ...visibilityFilter };
+      // Merge OR search query correctly
+      if (search) {
+        base.AND = [
+          visibilityFilter,
+          {
+            OR: [
+              { title: { contains: search as string, mode: 'insensitive' } },
+              { description: { contains: search as string, mode: 'insensitive' } },
+            ],
+          },
+        ];
+        delete base.OR;
+      }
+      return base;
+    };
+
+    const where: any = buildWhere();
+    if (status) where.status = status as string;
+    if (priority) where.priority = priority as string;
+    if (category) where.category = category as string;
+    if (completed !== undefined) where.isCompleted = completed === 'true';
 
     const [todos, total] = await Promise.all([
       prisma.userTodo.findMany({
@@ -3264,6 +3272,7 @@ router.get('/todos', async (req: Request, res: Response) => {
       prisma.userTodo.count({ where }),
     ]);
 
+    const today = new Date(new Date().setHours(0, 0, 0, 0));
     res.json({
       success: true,
       data: {
@@ -3276,13 +3285,13 @@ router.get('/todos', async (req: Request, res: Response) => {
         },
         summary: {
           total,
-          pending: await prisma.userTodo.count({ where: { userId, isCompleted: false } }),
-          completed: await prisma.userTodo.count({ where: { userId, isCompleted: true } }),
+          pending: await prisma.userTodo.count({ where: { ...visibilityFilter, isCompleted: false } }),
+          completed: await prisma.userTodo.count({ where: { ...visibilityFilter, isCompleted: true } }),
           overdue: await prisma.userTodo.count({
             where: {
-              userId,
+              ...visibilityFilter,
               isCompleted: false,
-              dueDate: { lt: new Date(new Date().setHours(0, 0, 0, 0)) },
+              dueDate: { lt: today },
             },
           }),
         },
@@ -3314,6 +3323,42 @@ router.post('/todos', async (req: Request, res: Response) => {
 
     const data = createTodoSchema.parse(req.body);
 
+    // Resolve creator display name
+    let creatorName: string | undefined;
+    try {
+      const creatorUser = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { firstName: true, lastName: true },
+      });
+      if (creatorUser) {
+        creatorName = `${creatorUser.firstName} ${creatorUser.lastName}`.trim();
+      }
+    } catch { /* non-fatal */ }
+
+    // Resolve assignee display name if assigning to someone
+    let assigneeName: string | undefined;
+    let resolvedAssigneeId = data.assigneeId;
+    if (resolvedAssigneeId) {
+      try {
+        const assigneeUser = await prisma.user.findUnique({
+          where: { id: resolvedAssigneeId },
+          select: { firstName: true, lastName: true },
+        });
+        if (!assigneeUser) {
+          return res.status(400).json({
+            success: false,
+            error: { code: 'ASSIGNEE_NOT_FOUND', message: 'Assignee user not found' },
+          });
+        }
+        assigneeName = `${assigneeUser.firstName} ${assigneeUser.lastName}`.trim();
+      } catch (err) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'ASSIGNEE_LOOKUP_FAILED', message: 'Failed to resolve assignee' },
+        });
+      }
+    }
+
     const todo = await prisma.userTodo.create({
       data: {
         id: uuidv4(),
@@ -3326,10 +3371,13 @@ router.post('/todos', async (req: Request, res: Response) => {
         category: data.category,
         tags: data.tags || [],
         reminder: data.reminder ? new Date(data.reminder) : null,
+        assigneeId: resolvedAssigneeId || null,
+        assigneeName: assigneeName || null,
+        creatorName: creatorName || null,
       },
     });
 
-    logger.info({ todoId: todo.id, userId }, 'Todo created');
+    logger.info({ todoId: todo.id, userId, assigneeId: resolvedAssigneeId }, 'Todo created');
 
     res.status(201).json({
       success: true,
@@ -3369,15 +3417,15 @@ router.put('/todos/:id', async (req: Request, res: Response) => {
       });
     }
 
-    // Check ownership
+    // Creator OR assignee can update a todo
     const existing = await prisma.userTodo.findFirst({
-      where: { id: todoId, userId },
+      where: { id: todoId, OR: [{ userId }, { assigneeId: userId }] },
     });
 
     if (!existing) {
       return res.status(404).json({
         success: false,
-        error: { code: 'NOT_FOUND', message: 'Todo not found' },
+        error: { code: 'NOT_FOUND', message: 'Todo not found or access denied' },
       });
     }
 
@@ -3447,7 +3495,7 @@ router.delete('/todos/:id', async (req: Request, res: Response) => {
       });
     }
 
-    // Check ownership
+    // Only the creator can delete a todo
     const existing = await prisma.userTodo.findFirst({
       where: { id: todoId, userId },
     });
@@ -3455,7 +3503,7 @@ router.delete('/todos/:id', async (req: Request, res: Response) => {
     if (!existing) {
       return res.status(404).json({
         success: false,
-        error: { code: 'NOT_FOUND', message: 'Todo not found' },
+        error: { code: 'NOT_FOUND', message: 'Todo not found or only the creator can delete it' },
       });
     }
 
@@ -3494,15 +3542,15 @@ router.patch('/todos/:id/toggle', async (req: Request, res: Response) => {
       });
     }
 
-    // Check ownership
+    // Creator OR assignee can toggle a todo
     const existing = await prisma.userTodo.findFirst({
-      where: { id: todoId, userId },
+      where: { id: todoId, OR: [{ userId }, { assigneeId: userId }] },
     });
 
     if (!existing) {
       return res.status(404).json({
         success: false,
-        error: { code: 'NOT_FOUND', message: 'Todo not found' },
+        error: { code: 'NOT_FOUND', message: 'Todo not found or access denied' },
       });
     }
 

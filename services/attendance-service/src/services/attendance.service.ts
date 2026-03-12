@@ -280,22 +280,26 @@ export async function checkIn(
     },
   });
   
-  // Emit check-in event
-  await eventBus.sendToQueue(
-    SQS_QUEUES.ATTENDANCE_CHECK_IN,
-    'attendance.check_in',
-    {
-      attendanceId: attendance.id,
-      employeeId: input.employeeId,
-      checkInTime: now.toISOString(),
-      location: input.location,
-      deviceInfo: input.deviceInfo,
-      isRemote: input.isRemote || false,
-      isLate,
-    },
-    tenantContext
-  );
-  
+  // Emit check-in event (best-effort — don't fail the check-in if the event bus is unavailable)
+  try {
+    await eventBus.sendToQueue(
+      SQS_QUEUES.ATTENDANCE_CHECK_IN,
+      'attendance.check_in',
+      {
+        attendanceId: attendance.id,
+        employeeId: input.employeeId,
+        checkInTime: now.toISOString(),
+        location: input.location,
+        deviceInfo: input.deviceInfo,
+        isRemote: input.isRemote || false,
+        isLate,
+      },
+      tenantContext
+    );
+  } catch (eventError) {
+    logger.warn({ error: (eventError as Error).message, attendanceId: attendance.id }, 'Failed to emit check-in event — attendance was still recorded');
+  }
+
   logger.info({
     attendanceId: attendance.id,
     employeeId: input.employeeId,
@@ -413,20 +417,24 @@ export async function checkOut(
     });
   }
   
-  // Emit check-out event
-  await eventBus.sendToQueue(
-    SQS_QUEUES.ATTENDANCE_CHECK_OUT,
-    'attendance.check_out',
-    {
-      attendanceId: input.attendanceId,
-      employeeId: attendance.employeeId,
-      checkOutTime: now.toISOString(),
-      workHours: workMinutes / 60,
-      overtimeHours: overtimeMinutes / 60,
-    },
-    tenantContext
-  );
-  
+  // Emit check-out event (best-effort — don't fail the check-out if the event bus is unavailable)
+  try {
+    await eventBus.sendToQueue(
+      SQS_QUEUES.ATTENDANCE_CHECK_OUT,
+      'attendance.check_out',
+      {
+        attendanceId: input.attendanceId,
+        employeeId: attendance.employeeId,
+        checkOutTime: now.toISOString(),
+        workHours: workMinutes / 60,
+        overtimeHours: overtimeMinutes / 60,
+      },
+      tenantContext
+    );
+  } catch (eventError) {
+    logger.warn({ error: (eventError as Error).message, attendanceId: input.attendanceId }, 'Failed to emit check-out event — attendance was still recorded');
+  }
+
   logger.info({
     attendanceId: input.attendanceId,
     workMinutes,

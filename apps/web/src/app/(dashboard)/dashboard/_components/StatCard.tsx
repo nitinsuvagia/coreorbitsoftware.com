@@ -7,6 +7,7 @@ import type { StatCardProps } from '../types';
 
 interface ExtendedStatCardProps extends StatCardProps {
   iconColor?: string;
+  onClick?: () => void;
 }
 
 const iconColorClasses: Record<string, string> = {
@@ -19,7 +20,7 @@ const iconColorClasses: Record<string, string> = {
   primary: 'bg-primary/10 text-primary',
 };
 
-export function StatCard({ title, value, description, icon, iconColor = 'primary', trend, loading }: ExtendedStatCardProps) {
+export function StatCard({ title, value, description, icon, iconColor = 'primary', trend, loading, onClick }: ExtendedStatCardProps) {
   if (loading) {
     return (
       <Card>
@@ -38,7 +39,10 @@ export function StatCard({ title, value, description, icon, iconColor = 'primary
   }
 
   return (
-    <Card>
+    <Card
+      className={onClick ? 'cursor-pointer hover:shadow-md transition-shadow hover:ring-2 hover:ring-primary/30' : ''}
+      onClick={onClick}
+    >
       <CardContent className="p-6">
         <div className="flex items-center justify-between">
           <div className="flex-1">

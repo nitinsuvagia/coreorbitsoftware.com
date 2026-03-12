@@ -29,6 +29,7 @@ import {
   AlertsCard,
   RecentActivity,
   CalendarSection,
+  OrgTasksModal,
 } from './_components';
 
 export default function DashboardPage() {
@@ -185,6 +186,7 @@ function AdminDashboard({ firstName }: { firstName?: string }) {
   const { stats, tenant, limits, loading, error } = useDashboard();
   const { hasRole } = usePermissions();
   const isTenantOwner = hasRole('tenant_admin');
+  const [orgTasksOpen, setOrgTasksOpen] = useState(false);
 
   return (
     <div className="space-y-6">
@@ -198,7 +200,10 @@ function AdminDashboard({ firstName }: { firstName?: string }) {
       {!isTenantOwner && <CheckInCard />}
 
       {/* Stats Grid */}
-      <StatsGrid stats={stats} limits={limits} loading={loading} />
+      <StatsGrid stats={stats} limits={limits} loading={loading} onPendingTasksClick={() => setOrgTasksOpen(true)} />
+
+      {/* Org-wide Tasks Modal (admin only) */}
+      <OrgTasksModal open={orgTasksOpen} onClose={() => setOrgTasksOpen(false)} />
 
       {/* Content Grid - Schedule and Tasks */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">

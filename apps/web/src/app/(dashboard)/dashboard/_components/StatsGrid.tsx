@@ -8,9 +8,10 @@ interface StatsGridProps {
   stats?: DashboardStats;
   limits?: DashboardLimits;
   loading: boolean;
+  onPendingTasksClick?: () => void;
 }
 
-export function StatsGrid({ stats, limits, loading }: StatsGridProps) {
+export function StatsGrid({ stats, limits, loading, onPendingTasksClick }: StatsGridProps) {
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
       <StatCard
@@ -44,6 +45,7 @@ export function StatsGrid({ stats, limits, loading }: StatsGridProps) {
         icon={<CheckSquare className="h-6 w-6" />}
         iconColor="orange"
         loading={loading}
+        onClick={onPendingTasksClick}
       />
     </div>
   );

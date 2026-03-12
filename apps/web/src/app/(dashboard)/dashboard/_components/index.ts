@@ -12,3 +12,4 @@ export { RecentActivity } from './RecentActivity';
 export { WelcomeHeader } from './WelcomeHeader';
 export { ErrorAlert } from './ErrorAlert';
 export { CalendarSection } from './CalendarSection';
+export { OrgTasksModal } from './OrgTasksModal';

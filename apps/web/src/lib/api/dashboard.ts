@@ -62,6 +62,10 @@ export interface Todo {
   tags: string[];
   reminder?: string;
   order: number;
+  // Assignment
+  assigneeId?: string;   // userId of assignee
+  assigneeName?: string; // display name of assignee
+  creatorName?: string;  // display name of creator (visible to assignee)
   createdAt: string;
   updatedAt: string;
 }
@@ -75,6 +79,8 @@ export interface CreateTodoInput {
   category?: string;
   tags?: string[];
   reminder?: string;
+  // Optional assignee (userId of the employee to assign this task to)
+  assigneeId?: string;
 }
 
 export interface UpdateTodoInput extends Partial<CreateTodoInput> {
@@ -232,6 +238,98 @@ export async function toggleTodo(id: string): Promise<Todo | null> {
   } catch (error) {
     console.error('Failed to toggle todo:', error);
     throw error;
+  }
+}
+
+// ============================================================================
+// API FUNCTIONS - Employee Search (for @mention assignee picker)
+// ============================================================================
+
+export interface EmployeeSearchResult {
+  id: string;       // this is the employee record id
+  userId?: string;  // the linked user id (used as assigneeId)
+  firstName: string;
+  lastName: string;
+  displayName: string;
+  email: string;
+  avatar?: string;
+  department?: { name: string };
+  designation?: { name: string };
+}
+
+/**
+ * Search active employees by name for the assignee picker.
+ * Returns up to 10 matching employees.
+ */
+export async function searchEmployees(query: string): Promise<EmployeeSearchResult[]> {
+  if (!query.trim()) return [];
+  try {
+    const params = new URLSearchParams({
+      search: query.trim(),
+      status: 'ACTIVE',
+      limit: '10',
+    });
+    // api.get returns { data: { success, data: { items, ... } } } (Axios shape)
+    const response = await api.get<{ success: boolean; data: { items: EmployeeSearchResult[] } }>(
+      `/api/v1/employees?${params.toString()}`
+    );
+    return response.data.data?.items ?? [];
+  } catch (error) {
+    console.error('Failed to search employees:', error);
+    return [];
+  }
+}
+
+// ============================================================================
+// API FUNCTIONS - Org-wide Todos (Admin / Tenant Admin)
+// ============================================================================
+
+export interface OrgTodoFilters {
+  page?: number;
+  limit?: number;
+  search?: string;
+  userId?: string;     // filter by creator or assignee userId
+  priority?: string;
+  status?: string;     // 'pending' | 'completed' | 'IN_PROGRESS' | 'CANCELLED'
+  dueDateFrom?: string;
+  dueDateTo?: string;
+}
+
+export interface OrgTodoPagination {
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+}
+
+export interface OrgTodosResponse {
+  items: Todo[];
+  pagination: OrgTodoPagination;
+}
+
+/**
+ * Fetch all org-wide todos (admin only).
+ * Requires organization:view or organization:manage permission.
+ */
+export async function fetchOrgTodos(filters?: OrgTodoFilters): Promise<OrgTodosResponse> {
+  try {
+    const params = new URLSearchParams();
+    if (filters?.page)        params.append('page',        String(filters.page));
+    if (filters?.limit)       params.append('limit',       String(filters.limit));
+    if (filters?.search)      params.append('search',      filters.search);
+    if (filters?.userId)      params.append('userId',      filters.userId);
+    if (filters?.priority)    params.append('priority',    filters.priority);
+    if (filters?.status)      params.append('status',      filters.status);
+    if (filters?.dueDateFrom) params.append('dueDateFrom', filters.dueDateFrom);
+    if (filters?.dueDateTo)   params.append('dueDateTo',   filters.dueDateTo);
+
+    const response = await api.get<{ success: boolean; data: OrgTodosResponse }>(
+      `/api/v1/organization/todos?${params.toString()}`
+    );
+    return response.data.data;
+  } catch (error) {
+    console.error('Failed to fetch org todos:', error);
+    return { items: [], pagination: { page: 1, limit: 20, total: 0, pages: 0 } };
   }
 }
 
