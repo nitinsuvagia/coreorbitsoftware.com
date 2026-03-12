@@ -436,6 +436,22 @@ export async function createFoldersForEmployeeDirectly(
   logger.info({ employeeId }, 'Creating folders for employee directly');
 
   try {
+    // Resolve a valid user ID — 'system' is not a UUID and violates the FK on folders.created_by
+    let resolvedUserId = creatorUserId;
+    if (!creatorUserId || creatorUserId === 'system') {
+      const fallbackUser = await prisma.user.findFirst({
+        where: { deletedAt: null },
+        select: { id: true },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (!fallbackUser) {
+        logger.warn({ employeeId }, 'No users found to use as folder creator, skipping folder creation');
+        return;
+      }
+      resolvedUserId = fallbackUser.id;
+      logger.info({ employeeId, resolvedUserId }, 'Resolved system user to real user for folder creation');
+    }
+
     // Get employee details directly
     const employee = await prisma.employee.findUnique({
       where: { id: employeeId },
@@ -469,7 +485,7 @@ export async function createFoldersForEmployeeDirectly(
           parentId: null,
           path: '/Employee Documents',
           depth: 1,
-          createdBy: creatorUserId,
+          createdBy: resolvedUserId,
         },
       });
     }
@@ -499,7 +515,7 @@ export async function createFoldersForEmployeeDirectly(
         parentId: employeeDocsFolder.id,
         path: employeePath,
         depth: 2,
-        createdBy: creatorUserId,
+        createdBy: resolvedUserId,
       },
     });
 
@@ -510,7 +526,7 @@ export async function createFoldersForEmployeeDirectly(
         subfolder,
         employeeFolder.id,
         employeePath,
-        creatorUserId
+        resolvedUserId
       );
     }
 
