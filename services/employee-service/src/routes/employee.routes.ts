@@ -350,6 +350,13 @@ router.post('/', async (req: Request, res: Response) => {
 
     logger.info({ employeeId: employee.id, employeeCode }, 'Employee created');
 
+    // Auto-create default onboarding checklist for new employee
+    try {
+      await createDefaultOnboardingChecklist(prisma, employee.id);
+    } catch (checklistErr) {
+      logger.warn({ error: (checklistErr as Error).message, employeeId: employee.id }, 'Failed to create onboarding checklist (non-fatal)');
+    }
+
     // Log activity for new hire
     await logEmployeeHired(
       prisma,
@@ -2011,14 +2018,13 @@ router.get('/recruitment-stats', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /employees/onboarding-stats - Get onboarding statistics for HR dashboard
+ * GET /employees/onboarding-stats - Get onboarding statistics for HR dashboard (real checklist data)
  */
 router.get('/onboarding-stats', async (req: Request, res: Response) => {
   try {
     const prisma = getPrismaFromRequest(req);
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
     // New hires this month
     const newHiresThisMonth = await prisma.employee.count({
@@ -2028,58 +2034,96 @@ router.get('/onboarding-stats', async (req: Request, res: Response) => {
       },
     });
 
-    // Employees joined in last 30 days (onboarding period)
-    const recentJoiners = await prisma.employee.findMany({
+    // All checklists with their tasks (for employees who are ACTIVE)
+    const checklists = await prisma.onboardingChecklist.findMany({
+      include: {
+        tasks: { select: { status: true } },
+        employee: {
+          select: {
+            id: true,
+            displayName: true,
+            joinDate: true,
+            avatar: true,
+            status: true,
+          },
+        },
+      },
       where: {
-        joinDate: { gte: thirtyDaysAgo },
-        deletedAt: null,
-        status: 'ACTIVE',
+        employee: { status: 'ACTIVE', deletedAt: null },
       },
-      select: {
-        id: true,
-        displayName: true,
-        joinDate: true,
-        avatar: true,
-      },
-      orderBy: { joinDate: 'desc' },
     });
 
-    // Calculate onboarding progress (simulated based on days since join)
-    const pendingTasks = recentJoiners.map((emp) => {
-      const daysElapsed = Math.ceil((now.getTime() - emp.joinDate.getTime()) / (1000 * 60 * 60 * 24));
-      const totalTasks = 25;
-      // Estimate completed tasks based on days (5 tasks per week)
-      const tasksCompleted = Math.min(Math.floor((daysElapsed / 7) * 5), totalTasks);
-      
-      return {
-        id: emp.id,
-        employee: emp.displayName,
-        joinDate: emp.joinDate.toISOString().split('T')[0],
-        daysElapsed,
-        tasksCompleted,
-        totalTasks,
-        avatar: emp.avatar,
-      };
-    }).filter(t => t.tasksCompleted < t.totalTasks);
+    // Build per-employee progress
+    const employeeProgress = checklists
+      .filter((c) => c.employee)
+      .map((c) => {
+        const total = c.tasks.length;
+        const completed = c.tasks.filter((t) => t.status === 'COMPLETED').length;
+        const daysElapsed = Math.ceil(
+          (now.getTime() - new Date(c.employee.joinDate).getTime()) / (1000 * 60 * 60 * 24)
+        );
+        return { id: c.id, employee: c.employee, total, completed, daysElapsed };
+      });
 
-    const onboardingInProgress = pendingTasks.length;
-    const onboardingCompleted = recentJoiners.length - onboardingInProgress;
-    
-    // Completion rate
-    const completionRate = recentJoiners.length > 0 
-      ? parseFloat(((onboardingCompleted / recentJoiners.length) * 100).toFixed(1))
-      : 0;
+    // In-progress: checklist not 100% completed
+    const inProgressList = employeeProgress.filter((e) => e.completed < e.total);
+    const completedList = employeeProgress.filter((e) => e.total > 0 && e.completed >= e.total);
 
-    // Avg completion time (days for completed onboardings)
-    const avgCompletionTime = 14; // Default 2 weeks
+    const onboardingInProgress = inProgressList.length;
+    const onboardingCompleted = completedList.length;
 
-    // Checklist summary
+    const completionRate =
+      employeeProgress.length > 0
+        ? parseFloat(((completedList.length / employeeProgress.length) * 100).toFixed(1))
+        : 0;
+
+    // Avg completion days for those who completed
+    const avgCompletionTime =
+      completedList.length > 0
+        ? Math.round(completedList.reduce((sum, e) => sum + e.daysElapsed, 0) / completedList.length)
+        : 0;
+
+    // Pending tasks list (top 5, sorted by least progress)
+    const pendingTasks = inProgressList
+      .sort((a, b) => a.completed / (a.total || 1) - b.completed / (b.total || 1))
+      .slice(0, 5)
+      .map((e) => ({
+        id: e.employee.id,
+        employee: e.employee.displayName,
+        joinDate: new Date(e.employee.joinDate).toISOString().split('T')[0],
+        daysElapsed: e.daysElapsed,
+        tasksCompleted: e.completed,
+        totalTasks: e.total,
+        avatar: e.employee.avatar,
+      }));
+
+    // Checklist summary (aggregate across all active checklists)
+    const allChecklists = await prisma.onboardingChecklist.findMany({
+      include: {
+        tasks: { select: { category: true, status: true } },
+        employee: { select: { status: true, deletedAt: true } },
+      },
+      where: { employee: { status: 'ACTIVE', deletedAt: null } },
+    });
+
+    const countCompleted = (cat: string) =>
+      allChecklists.reduce(
+        (sum, c) => sum + c.tasks.filter((t) => t.category === cat && t.status === 'COMPLETED').length,
+        0
+      );
+    const countTotal = (cat: string) =>
+      allChecklists.reduce((sum, c) => sum + c.tasks.filter((t) => t.category === cat).length, 0);
+
     const checklistSummary = {
-      documentsSubmitted: Math.floor(recentJoiners.length * 0.85),
-      itSetupComplete: Math.floor(recentJoiners.length * 0.9),
-      trainingAssigned: recentJoiners.length,
-      mentorAssigned: Math.floor(recentJoiners.length * 0.95),
-      total: recentJoiners.length,
+      documentsSubmitted: countCompleted('DOCUMENTATION'),
+      documentsTotal: countTotal('DOCUMENTATION'),
+      itSetupComplete: countCompleted('IT_SETUP'),
+      itSetupTotal: countTotal('IT_SETUP'),
+      trainingAssigned: countCompleted('TRAINING'),
+      trainingTotal: countTotal('TRAINING'),
+      mentorAssigned: countCompleted('TEAM_INTRO'),
+      mentorTotal: countTotal('TEAM_INTRO'),
+      total: allChecklists.length,
     };
 
     res.json({
@@ -2090,7 +2134,7 @@ router.get('/onboarding-stats', async (req: Request, res: Response) => {
         onboardingCompleted,
         avgCompletionTime,
         completionRate,
-        pendingTasks: pendingTasks.slice(0, 5),
+        pendingTasks,
         checklistSummary,
       },
     });
@@ -4137,6 +4181,187 @@ router.post('/:id/send-signin-email', async (req: Request, res: Response) => {
       success: false,
       error: { code: 'SEND_SIGNIN_EMAIL_FAILED', message: (error as Error).message },
     });
+  }
+});
+
+// ============================================================================
+// ONBOARDING CHECKLIST
+// ============================================================================
+
+/**
+ * Default checklist tasks seeded for every new employee.
+ * dueDay = day number after joinDate by which the task should be done.
+ */
+const DEFAULT_ONBOARDING_TASKS: Array<{
+  title: string;
+  description: string;
+  category: string;
+  dueDay: number;
+  sortOrder: number;
+}> = [
+  // DOCUMENTATION
+  { title: 'Submit signed offer letter', description: 'Upload signed copy of offer letter.', category: 'DOCUMENTATION', dueDay: 1, sortOrder: 1 },
+  { title: 'Submit government-issued ID proof', description: 'Aadhaar / PAN / Passport copy.', category: 'DOCUMENTATION', dueDay: 1, sortOrder: 2 },
+  { title: 'Submit address proof', description: 'Utility bill / rental agreement / bank statement.', category: 'DOCUMENTATION', dueDay: 2, sortOrder: 3 },
+  { title: 'Submit educational certificates', description: 'Degree / marksheets / diplomas.', category: 'DOCUMENTATION', dueDay: 3, sortOrder: 4 },
+  { title: 'Submit previous employment documents', description: 'Relieving letter, experience letter, last 3-month payslips.', category: 'DOCUMENTATION', dueDay: 5, sortOrder: 5 },
+  // PAYROLL
+  { title: 'Submit bank account details', description: 'Account number, IFSC, cancelled cheque.', category: 'PAYROLL', dueDay: 2, sortOrder: 6 },
+  { title: 'Submit PF / ESI nomination form', description: 'Form 2 for PF nomination.', category: 'PAYROLL', dueDay: 5, sortOrder: 7 },
+  // IT_SETUP
+  { title: 'Collect laptop / workstation', description: 'Collect assigned hardware from IT team.', category: 'IT_SETUP', dueDay: 1, sortOrder: 8 },
+  { title: 'System & email account created', description: 'Official email and system login credentials provided.', category: 'IT_SETUP', dueDay: 1, sortOrder: 9 },
+  { title: 'Set up required software & tools', description: 'Install all role-specific software (Slack, VPN, IDEs, etc.).', category: 'IT_SETUP', dueDay: 3, sortOrder: 10 },
+  // COMPLIANCE
+  { title: 'Sign NDA / confidentiality agreement', description: 'Read and sign the non-disclosure agreement.', category: 'COMPLIANCE', dueDay: 1, sortOrder: 11 },
+  { title: 'Sign code of conduct', description: 'Acknowledge company code of conduct policy.', category: 'COMPLIANCE', dueDay: 2, sortOrder: 12 },
+  { title: 'Complete POSH awareness', description: 'Complete Prevention of Sexual Harassment orientation.', category: 'COMPLIANCE', dueDay: 7, sortOrder: 13 },
+  // TRAINING
+  { title: 'Attend company orientation', description: 'Company overview, culture & values session.', category: 'TRAINING', dueDay: 1, sortOrder: 14 },
+  { title: 'Complete mandatory policy training', description: 'IT security, leave, expense, and HR policies.', category: 'TRAINING', dueDay: 7, sortOrder: 15 },
+  { title: 'Complete role-specific onboarding training', description: 'Department / role-level training plan.', category: 'TRAINING', dueDay: 14, sortOrder: 16 },
+  // TEAM_INTRO
+  { title: 'Meet reporting manager', description: 'One-on-one with direct manager.', category: 'TEAM_INTRO', dueDay: 1, sortOrder: 17 },
+  { title: 'Meet the team', description: 'Introduction with immediate team members.', category: 'TEAM_INTRO', dueDay: 1, sortOrder: 18 },
+  { title: 'Buddy / mentor assigned', description: 'HR to assign an onboarding buddy.', category: 'TEAM_INTRO', dueDay: 2, sortOrder: 19 },
+  // WORKSPACE
+  { title: 'Collect access card / biometric enrollment', description: 'Register fingerprint / collect RFID access card.', category: 'WORKSPACE', dueDay: 1, sortOrder: 20 },
+  { title: 'Desk & workspace set up', description: 'Workstation / hot-desk allocated and ready.', category: 'WORKSPACE', dueDay: 1, sortOrder: 21 },
+  // OTHER
+  { title: 'Update employee profile on HRMS', description: 'Add photo, emergency contact, and address on the portal.', category: 'OTHER', dueDay: 3, sortOrder: 22 },
+  { title: '30-day check-in with HR', description: 'Feedback session with HR after first month.', category: 'OTHER', dueDay: 30, sortOrder: 23 },
+  { title: '60-day check-in with manager', description: 'Performance and settling-in review session.', category: 'OTHER', dueDay: 60, sortOrder: 24 },
+  { title: 'Complete probation review', description: 'Formal probation performance review.', category: 'OTHER', dueDay: 90, sortOrder: 25 },
+];
+
+/**
+ * Create default onboarding checklist for an employee (idempotent).
+ */
+async function createDefaultOnboardingChecklist(prisma: PrismaClient, employeeId: string) {
+  // If already exists, skip
+  const existing = await prisma.onboardingChecklist.findUnique({ where: { employeeId } });
+  if (existing) return existing;
+
+  return prisma.onboardingChecklist.create({
+    data: {
+      employeeId,
+      tasks: {
+        create: DEFAULT_ONBOARDING_TASKS.map((t) => ({
+          title: t.title,
+          description: t.description,
+          category: t.category as any,
+          dueDay: t.dueDay,
+          sortOrder: t.sortOrder,
+          status: 'PENDING',
+        })),
+      },
+    },
+    include: { tasks: true },
+  });
+}
+
+/**
+ * GET /employees/:id/onboarding-checklist
+ * Returns the onboarding checklist for an employee, auto-creating it if missing.
+ */
+router.get('/:id/onboarding-checklist', async (req: Request, res: Response) => {
+  try {
+    const prisma = getPrismaFromRequest(req);
+    const { id } = req.params;
+
+    let checklist = await prisma.onboardingChecklist.findUnique({
+      where: { employeeId: id },
+      include: {
+        tasks: { orderBy: { sortOrder: 'asc' } },
+        employee: { select: { id: true, displayName: true, joinDate: true, avatar: true } },
+      },
+    });
+
+    if (!checklist) {
+      const emp = await prisma.employee.findUnique({ where: { id } });
+      if (!emp) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Employee not found' } });
+      checklist = await createDefaultOnboardingChecklist(prisma, id) as any;
+      // Re-fetch with full includes
+      checklist = await prisma.onboardingChecklist.findUnique({
+        where: { employeeId: id },
+        include: {
+          tasks: { orderBy: { sortOrder: 'asc' } },
+          employee: { select: { id: true, displayName: true, joinDate: true, avatar: true } },
+        },
+      });
+    }
+
+    const tasks = checklist!.tasks;
+    const completed = tasks.filter((t) => t.status === 'COMPLETED').length;
+    const total = tasks.length;
+
+    res.json({
+      success: true,
+      data: {
+        ...checklist,
+        completedCount: completed,
+        totalCount: total,
+        progressPercent: total > 0 ? Math.round((completed / total) * 100) : 0,
+      },
+    });
+  } catch (error) {
+    logger.error({ error: (error as Error).message }, 'Failed to get onboarding checklist');
+    res.status(500).json({ success: false, error: { code: 'CHECKLIST_FETCH_FAILED', message: (error as Error).message } });
+  }
+});
+
+/**
+ * PATCH /employees/:id/onboarding-checklist/tasks/:taskId
+ * Update a single task (status, notes).
+ */
+router.patch('/:id/onboarding-checklist/tasks/:taskId', async (req: Request, res: Response) => {
+  try {
+    const prisma = getPrismaFromRequest(req);
+    const { id, taskId } = req.params;
+    const { status, notes } = req.body;
+
+    const checklist = await prisma.onboardingChecklist.findUnique({ where: { employeeId: id } });
+    if (!checklist) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Checklist not found' } });
+
+    const updateData: any = {};
+    if (status) updateData.status = status;
+    if (notes !== undefined) updateData.notes = notes;
+    if (status === 'COMPLETED') {
+      updateData.completedAt = new Date();
+      updateData.completedBy = (req as any).userId || null;
+    } else if (status === 'PENDING' || status === 'IN_PROGRESS') {
+      updateData.completedAt = null;
+      updateData.completedBy = null;
+    }
+
+    const task = await prisma.onboardingTask.update({
+      where: { id: taskId },
+      data: updateData,
+    });
+
+    res.json({ success: true, data: task });
+  } catch (error) {
+    logger.error({ error: (error as Error).message }, 'Failed to update onboarding task');
+    res.status(500).json({ success: false, error: { code: 'TASK_UPDATE_FAILED', message: (error as Error).message } });
+  }
+});
+
+/**
+ * POST /employees/:id/onboarding-checklist/reset
+ * Reset checklist to defaults (delete and recreate).
+ */
+router.post('/:id/onboarding-checklist/reset', async (req: Request, res: Response) => {
+  try {
+    const prisma = getPrismaFromRequest(req);
+    const { id } = req.params;
+
+    await prisma.onboardingChecklist.deleteMany({ where: { employeeId: id } });
+    const checklist = await createDefaultOnboardingChecklist(prisma, id);
+
+    res.json({ success: true, data: checklist });
+  } catch (error) {
+    logger.error({ error: (error as Error).message }, 'Failed to reset onboarding checklist');
+    res.status(500).json({ success: false, error: { code: 'CHECKLIST_RESET_FAILED', message: (error as Error).message } });
   }
 });
 

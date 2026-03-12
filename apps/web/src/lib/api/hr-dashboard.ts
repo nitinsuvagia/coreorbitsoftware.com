@@ -253,9 +253,13 @@ export interface OnboardingStats {
   }>;
   checklistSummary: {
     documentsSubmitted: number;
+    documentsTotal: number;
     itSetupComplete: number;
+    itSetupTotal: number;
     trainingAssigned: number;
+    trainingTotal: number;
     mentorAssigned: number;
+    mentorTotal: number;
     total: number;
   };
 }
@@ -377,7 +381,7 @@ export async function getOnboardingStats(): Promise<OnboardingStats> {
       avgCompletionTime: 0,
       completionRate: 0,
       pendingTasks: [],
-      checklistSummary: { documentsSubmitted: 0, itSetupComplete: 0, trainingAssigned: 0, mentorAssigned: 0, total: 0 },
+      checklistSummary: { documentsSubmitted: 0, documentsTotal: 0, itSetupComplete: 0, itSetupTotal: 0, trainingAssigned: 0, trainingTotal: 0, mentorAssigned: 0, mentorTotal: 0, total: 0 },
     };
   }
 }

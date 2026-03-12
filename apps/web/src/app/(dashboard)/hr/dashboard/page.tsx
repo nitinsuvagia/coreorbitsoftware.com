@@ -2212,10 +2212,10 @@ export default function HRDashboardPage() {
               <CardContent>
                 <div className="space-y-3">
                   {[
-                    { label: 'Documents Submitted', value: onboardingStats?.checklistSummary.documentsSubmitted ?? 0, total: onboardingStats?.checklistSummary.total ?? 0, icon: FileCheck },
-                    { label: 'IT Setup Complete', value: onboardingStats?.checklistSummary.itSetupComplete ?? 0, total: onboardingStats?.checklistSummary.total ?? 0, icon: Laptop },
-                    { label: 'Training Assigned', value: onboardingStats?.checklistSummary.trainingAssigned ?? 0, total: onboardingStats?.checklistSummary.total ?? 0, icon: BookOpen },
-                    { label: 'Mentor Assigned', value: onboardingStats?.checklistSummary.mentorAssigned ?? 0, total: onboardingStats?.checklistSummary.total ?? 0, icon: Users },
+                    { label: 'Documents Submitted', value: onboardingStats?.checklistSummary.documentsSubmitted ?? 0, total: onboardingStats?.checklistSummary.documentsTotal ?? 0, icon: FileCheck },
+                    { label: 'IT Setup Complete', value: onboardingStats?.checklistSummary.itSetupComplete ?? 0, total: onboardingStats?.checklistSummary.itSetupTotal ?? 0, icon: Laptop },
+                    { label: 'Training Completed', value: onboardingStats?.checklistSummary.trainingAssigned ?? 0, total: onboardingStats?.checklistSummary.trainingTotal ?? 0, icon: BookOpen },
+                    { label: 'Team Intro Done', value: onboardingStats?.checklistSummary.mentorAssigned ?? 0, total: onboardingStats?.checklistSummary.mentorTotal ?? 0, icon: Users },
                   ].map((item) => (
                     <div key={item.label} className="space-y-1">
                       <div className="flex items-center justify-between text-sm">
