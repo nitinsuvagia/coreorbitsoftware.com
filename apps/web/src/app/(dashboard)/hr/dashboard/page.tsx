@@ -1844,7 +1844,7 @@ export default function HRDashboardPage() {
                         )}
                       </div>
 
-                      {/* Work Anniversaries Section */
+                      {/* Work Anniversaries Section */}
                       <div className="space-y-2">
                         <div className="flex items-center gap-2 mb-2">
                           <Award className="h-3.5 w-3.5 text-amber-500" />
