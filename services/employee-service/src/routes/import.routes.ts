@@ -812,6 +812,7 @@ router.post('/execute', upload.single('file'), async (req: Request, res: Respons
     const prisma = getPrismaFromRequest(req);
     const userId = (req as any).userId;
     const tenantSlug = (req as any).tenantSlug;
+    const tenantId = (req as any).tenantId;
     const skipDuplicates = req.body.skipDuplicates === 'true' || req.body.skipDuplicates === true;
 
     // Parse Excel file
@@ -1076,7 +1077,8 @@ router.post('/execute', upload.single('file'), async (req: Request, res: Respons
             {
               headers: {
                 'X-Tenant-Slug': tenantSlug,
-                'X-User-Id': userId,
+                'X-Tenant-Id': tenantId || '',
+                'X-User-Id': userId || 'system',
               },
               timeout: 10000, // 10 second timeout
             }

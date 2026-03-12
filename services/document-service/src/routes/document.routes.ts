@@ -195,6 +195,68 @@ router.post(
   })
 );
 
+// Upload employee profile photo — auto-places it under
+// Employee Documents/<employee>/Profile Photo/ folder
+router.post(
+  '/files/upload-avatar/:employeeId',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { tenantSlug, userId } = getTenantContext(req);
+    const prisma = (req as any).prisma;
+    const { employeeId } = req.params;
+
+    // Resolve (or create) the Profile Photo folder for this employee
+    const avatarFolderId = await folderInitService.getEmployeeAvatarFolderId(prisma, employeeId, userId);
+
+    let uploadedFile: any = null;
+    let uploadError: string | null = null;
+
+    const busboy = Busboy({
+      headers: req.headers,
+      limits: { fileSize: config.file.maxSizeBytes, files: 1 },
+    });
+
+    const filePromise = new Promise<void>((resolve) => {
+      busboy.on('file', (_fieldname, file, info) => {
+        const { filename, mimeType } = info;
+        const chunks: Buffer[] = [];
+        file.on('data', (chunk) => chunks.push(chunk));
+        file.on('end', () => {
+          const content = Buffer.concat(chunks);
+          fileService.uploadFile(
+            prisma,
+            {
+              folderId: avatarFolderId || undefined,
+              filename,
+              content,
+              mimeType,
+              entityType: 'employee',
+              entityId: employeeId,
+            },
+            userId,
+            tenantSlug
+          )
+            .then((f) => { uploadedFile = f; resolve(); })
+            .catch((err) => { uploadError = err.message; resolve(); });
+        });
+        file.on('error', (err) => { uploadError = err.message; resolve(); });
+      });
+      busboy.on('finish', () => resolve());
+    });
+
+    req.pipe(busboy);
+    await filePromise;
+
+    if (uploadError) {
+      return res.status(400).json({ success: false, error: uploadError });
+    }
+
+    res.status(201).json({
+      success: true,
+      data: { uploaded: [uploadedFile], errors: [] },
+    });
+  })
+);
+
 // Create folder
 router.post(
   '/folders',

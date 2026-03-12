@@ -99,6 +99,11 @@ const CANDIDATE_ONBOARDING_SUBFOLDERS: FolderStructure[] = [
 
 const EMPLOYEE_DOCUMENT_SUBFOLDERS: FolderStructure[] = [
   {
+    name: 'Profile Photo',
+    description: 'Employee profile pictures',
+    color: 'indigo',
+  },
+  {
     name: 'Personal Documents',
     description: 'ID, address proof, and personal certificates',
     color: 'blue',
@@ -789,5 +794,63 @@ export async function moveOnBoardingDocsToEmployee(
   } catch (error) {
     logger.error({ error, candidateId, employeeId }, 'Failed to move on-boarding documents');
     throw error;
+  }
+}
+
+/**
+ * Get (or create) the "Profile Photo" subfolder for an employee.
+ * Returns the folder ID so avatar uploads can be placed directly inside it.
+ * If the employee's folder structure doesn't exist yet it will be created first.
+ */
+export async function getEmployeeAvatarFolderId(
+  prisma: PrismaClient,
+  employeeId: string,
+  creatorUserId: string
+): Promise<string | null> {
+  try {
+    // Ensure the employee folder tree exists
+    await createFoldersForEmployeeDirectly(prisma, employeeId, creatorUserId);
+
+    const employee = await prisma.employee.findUnique({
+      where: { id: employeeId },
+      select: { employeeCode: true, firstName: true, lastName: true },
+    });
+    if (!employee) return null;
+
+    const employeeFolderName = `${employee.employeeCode} - ${employee.firstName} ${employee.lastName}`;
+
+    const employeeDocsFolder = await prisma.folder.findFirst({
+      where: { name: 'Employee Documents', parentId: null },
+    });
+    if (!employeeDocsFolder) return null;
+
+    const employeeFolder = await prisma.folder.findFirst({
+      where: { name: employeeFolderName, parentId: employeeDocsFolder.id },
+    });
+    if (!employeeFolder) return null;
+
+    // Find or create the Profile Photo subfolder
+    let profilePhotoFolder = await prisma.folder.findFirst({
+      where: { name: 'Profile Photo', parentId: employeeFolder.id },
+    });
+
+    if (!profilePhotoFolder) {
+      profilePhotoFolder = await prisma.folder.create({
+        data: {
+          name: 'Profile Photo',
+          description: 'Employee profile pictures',
+          color: 'indigo',
+          parentId: employeeFolder.id,
+          path: `${employeeFolder.path}/Profile Photo`,
+          depth: employeeFolder.depth + 1,
+          createdBy: creatorUserId,
+        },
+      });
+    }
+
+    return profilePhotoFolder.id;
+  } catch (error) {
+    logger.error({ error, employeeId }, 'Failed to get/create employee avatar folder');
+    return null;
   }
 }

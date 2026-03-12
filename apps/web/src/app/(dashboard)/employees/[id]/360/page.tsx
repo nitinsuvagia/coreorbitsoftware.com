@@ -668,12 +668,13 @@ export default function Employee360Page() {
 
     setUploadingPhoto(true);
     try {
-      // Upload the file to document service
+      // Upload to document service — avatar endpoint auto-places file under
+      // Employee Documents/<employee>/Profile Photo/ folder
       const formData = new FormData();
       formData.append('file', file);
 
       const uploadRes = await api.post(
-        `/api/documents/files/upload?entityType=employee&entityId=${employee.id}`,
+        `/api/documents/files/upload-avatar/${employee.id}`,
         formData,
         { headers: { 'Content-Type': 'multipart/form-data' } }
       );
