@@ -706,14 +706,26 @@ jobs:
           fi
           
           echo -n "  Nginx: "
-          NGINX_STATUS=$(sudo docker inspect --format='{{.State.Health.Status}}' oms-nginx 2>/dev/null || echo "not found")
-          if [ "$NGINX_STATUS" = "healthy" ]; then
-            echo "✅ Healthy"
-          elif [ "$NGINX_STATUS" = "not found" ]; then
-            echo "❌ Container not running (check SSL certs or config)"
-          else
-            echo "⚠️ Status: $NGINX_STATUS"
+          NGINX_RUNNING=$(sudo docker inspect --format='{{.State.Running}}' oms-nginx 2>/dev/null || echo "false")
+          if [ "$NGINX_RUNNING" != "true" ]; then
+            echo "❌ Container not running"
             sudo docker logs oms-nginx --tail 10 2>&1 | sed 's/^/    /'
+          else
+            # Test actual HTTP connectivity on port 80 (nginx should at least redirect)
+            NGINX_HTTP=$(sudo docker exec oms-nginx wget -q --spider --timeout=5 http://localhost:80 2>&1; echo $?)
+            if [ "$NGINX_HTTP" = "0" ] || sudo docker exec oms-nginx wget -q --spider --timeout=5 http://localhost:80 2>/dev/null; then
+              echo "✅ Running and serving HTTP"
+            else
+              # Fallback: check if port 80 is bound
+              NGINX_PORT=$(sudo docker exec oms-nginx ss -tlnp 2>/dev/null | grep ':80' || sudo docker exec oms-nginx netstat -tlnp 2>/dev/null | grep ':80' || echo "")
+              if [ -n "$NGINX_PORT" ]; then
+                echo "✅ Running (port 80 bound)"
+              else
+                NGINX_STATUS=$(sudo docker inspect --format='{{.State.Health.Status}}' oms-nginx 2>/dev/null || echo "unknown")
+                echo "⚠️ Running but may not be serving (health: $NGINX_STATUS)"
+                sudo docker logs oms-nginx --tail 10 2>&1 | sed 's/^/    /'
+              fi
+            fi
           fi
           
           # Test login endpoint via docker network (bypass nginx SSL redirect)

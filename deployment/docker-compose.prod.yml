@@ -39,10 +39,11 @@ services:
     networks:
       - oms-network
     healthcheck:
-      test: ["CMD", "nginx", "-t"]
+      test: ["CMD", "wget", "-q", "--spider", "--no-check-certificate", "http://localhost/health", "||" , "wget", "-q", "--spider", "http://localhost:80"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 15s
 
   # ===========================================
   # INFRASTRUCTURE SERVICES
