@@ -1202,7 +1202,90 @@ router.get('/dashboard/admin-360', async (req: TenantRequest, res: Response, nex
     });
     // Re-sort after adding missing departments (alphabetical)
     departmentSalaries = departmentSalaries.sort((a, b) => a.name.localeCompare(b.name));
-    
+
+    // ========== SKILL MATRIX ==========
+    let skillMatrix: Array<{ category: string; beginner: number; intermediate: number; advanced: number; expert: number; total: number }> = [];
+    let employeeSkillMatrix: Array<{ id: string; name: string; department: string; skills: Array<{ name: string; category: string; level: string; isPrimary: boolean }> }> = [];
+    try {
+      const skillCategoryRows = await tenantPrisma.$queryRaw<Array<{
+        category: string;
+        level: string;
+        count: number;
+      }>>`
+        SELECT
+          COALESCE(category, 'General') AS category,
+          level,
+          COUNT(*)::int AS count
+        FROM employee_skills
+        GROUP BY category, level
+        ORDER BY category, level
+      `;
+
+      const matrixMap: { [category: string]: { beginner: number; intermediate: number; advanced: number; expert: number } } = {};
+      skillCategoryRows.forEach(row => {
+        if (!matrixMap[row.category]) {
+          matrixMap[row.category] = { beginner: 0, intermediate: 0, advanced: 0, expert: 0 };
+        }
+        const level = row.level.toLowerCase() as 'beginner' | 'intermediate' | 'advanced' | 'expert';
+        if (level in matrixMap[row.category]) {
+          matrixMap[row.category][level] = Number(row.count);
+        }
+      });
+
+      skillMatrix = Object.entries(matrixMap).map(([category, levels]) => ({
+        category,
+        ...levels,
+        total: levels.beginner + levels.intermediate + levels.advanced + levels.expert,
+      })).sort((a, b) => b.total - a.total);
+
+      const empSkillRows = await tenantPrisma.$queryRaw<Array<{
+        employee_id: string;
+        first_name: string;
+        last_name: string;
+        department_name: string | null;
+        skill_name: string;
+        category: string;
+        level: string;
+        is_primary: boolean;
+      }>>`
+        SELECT
+          e.id AS employee_id,
+          e.first_name,
+          e.last_name,
+          d.name AS department_name,
+          es.name AS skill_name,
+          COALESCE(es.category, 'General') AS category,
+          es.level,
+          es.is_primary
+        FROM employee_skills es
+        JOIN employees e ON es.employee_id = e.id
+        LEFT JOIN departments d ON e.department_id = d.id
+        WHERE e.status = 'ACTIVE'
+        ORDER BY e.first_name, e.last_name, es.category, es.name
+      `;
+
+      const empMap: { [id: string]: { name: string; department: string; skills: Array<{ name: string; category: string; level: string; isPrimary: boolean }> } } = {};
+      empSkillRows.forEach(row => {
+        if (!empMap[row.employee_id]) {
+          empMap[row.employee_id] = {
+            name: `${row.first_name} ${row.last_name}`,
+            department: row.department_name || 'Unknown',
+            skills: [],
+          };
+        }
+        empMap[row.employee_id].skills.push({
+          name: row.skill_name,
+          category: row.category,
+          level: row.level,
+          isPrimary: row.is_primary,
+        });
+      });
+
+      employeeSkillMatrix = Object.entries(empMap).map(([id, data]) => ({ id, ...data }));
+    } catch (e) {
+      // employee_skills table might not exist
+    }
+
     // ========== RECENT ACTIVITIES ==========
     let recentActivities: Array<{
       id: string;
@@ -1387,6 +1470,8 @@ router.get('/dashboard/admin-360', async (req: TenantRequest, res: Response, nex
           needsImprovementList,
           departmentScores,
         },
+        skillMatrix,
+        employeeSkillMatrix,
         employeesByDepartment,
         recentActivities,
         alerts,

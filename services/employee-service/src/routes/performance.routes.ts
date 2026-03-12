@@ -241,11 +241,12 @@ router.get('/employee/:employeeId', async (req: Request, res: Response) => {
     const { employeeId } = req.params;
     const reviews = await prisma.$queryRawUnsafe(
       `SELECT pr.*,
-              r.first_name AS reviewer_first_name,
-              r.last_name AS reviewer_last_name,
-              r.email AS reviewer_email
+              COALESCE(r.first_name, ur.first_name) AS reviewer_first_name,
+              COALESCE(r.last_name, ur.last_name) AS reviewer_last_name,
+              COALESCE(r.email, ur.email) AS reviewer_email
        FROM performance_reviews pr
        LEFT JOIN employees r ON pr.reviewer_id = r.id
+       LEFT JOIN users ur ON (r.id IS NULL AND pr.reviewer_id = ur.id)
        WHERE pr.employee_id = $1
        ORDER BY pr.created_at DESC`,
       employeeId
@@ -267,12 +268,13 @@ router.get('/:id', async (req: Request, res: Response) => {
     const reviews = await prisma.$queryRawUnsafe(
       `SELECT pr.*,
               e.first_name AS employee_first_name, e.last_name AS employee_last_name, e.email AS employee_email, e.employee_code,
-              r.first_name AS reviewer_first_name,
-              r.last_name AS reviewer_last_name,
-              r.email AS reviewer_email
+              COALESCE(r.first_name, ur.first_name) AS reviewer_first_name,
+              COALESCE(r.last_name, ur.last_name) AS reviewer_last_name,
+              COALESCE(r.email, ur.email) AS reviewer_email
        FROM performance_reviews pr
        LEFT JOIN employees e ON pr.employee_id = e.id
        LEFT JOIN employees r ON pr.reviewer_id = r.id
+       LEFT JOIN users ur ON (r.id IS NULL AND pr.reviewer_id = ur.id)
        WHERE pr.id = $1`,
       id
     ) as any[];
@@ -324,12 +326,13 @@ router.get('/', async (req: Request, res: Response) => {
 
     const dataQuery = `SELECT pr.*,
       e.first_name AS employee_first_name, e.last_name AS employee_last_name, e.email AS employee_email, e.employee_code,
-      r.first_name AS reviewer_first_name,
-      r.last_name AS reviewer_last_name,
-      r.email AS reviewer_email
+      COALESCE(r.first_name, ur.first_name) AS reviewer_first_name,
+      COALESCE(r.last_name, ur.last_name) AS reviewer_last_name,
+      COALESCE(r.email, ur.email) AS reviewer_email
       FROM performance_reviews pr
       LEFT JOIN employees e ON pr.employee_id = e.id
       LEFT JOIN employees r ON pr.reviewer_id = r.id
+      LEFT JOIN users ur ON (r.id IS NULL AND pr.reviewer_id = ur.id)
       WHERE ${whereClause}
       ORDER BY pr.created_at DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`;
     const countQuery = 'SELECT COUNT(*)::int AS count FROM performance_reviews pr WHERE ' + whereClause;
@@ -381,9 +384,10 @@ router.post('/', async (req: Request, res: Response) => {
       reviewerId = empResult.length > 0 ? empResult[0].id : null;
     }
     
-    // Fallback: use the employee being reviewed as reviewer (self-assessment scenario)
-    if (!reviewerId) {
-      reviewerId = validatedData.employeeId;
+    // Fallback: use the logged-in user's own ID from the users table
+    // (handles admins/managers who don't have an employee record)
+    if (!reviewerId && authUserId) {
+      reviewerId = authUserId;
     }
 
     let overallRating = validatedData.overallRating ?? null;

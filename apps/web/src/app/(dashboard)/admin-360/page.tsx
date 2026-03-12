@@ -44,6 +44,8 @@ import {
   Loader2,
   Sparkles,
   Mail,
+  Layers,
+  Grid3X3,
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -137,6 +139,22 @@ interface DepartmentEmployeeCount {
   count: number;
 }
 
+interface SkillMatrixRow {
+  category: string;
+  beginner: number;
+  intermediate: number;
+  advanced: number;
+  expert: number;
+  total: number;
+}
+
+interface EmployeeSkillEntry {
+  id: string;
+  name: string;
+  department: string;
+  skills: { name: string; category: string; level: string; isPrimary: boolean }[];
+}
+
 interface DashboardData {
   organization: OrganizationStats;
   attendance: AttendanceMetrics;
@@ -144,6 +162,8 @@ interface DashboardData {
   projects: ProjectMetrics;
   tasks: TaskMetrics;
   performance: PerformanceMetrics;
+  skillMatrix?: SkillMatrixRow[];
+  employeeSkillMatrix?: EmployeeSkillEntry[];
   employeesByDepartment: DepartmentEmployeeCount[];
   recentActivities: Activity[];
   alerts: Alert[];
@@ -661,6 +681,8 @@ export default function TenantAdmin360Page() {
   const projects = data.projects;
   const tasks = data.tasks;
   const performance = data.performance;
+  const skillMatrix = data.skillMatrix || [];
+  const employeeSkillMatrix = data.employeeSkillMatrix || [];
 
   return (
     <div className="space-y-6 pb-8" ref={pageRef}>
@@ -866,6 +888,119 @@ export default function TenantAdmin360Page() {
                 color: ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ec4899', '#06b6d4'][idx],
               }))}
             />
+          </div>
+
+          {/* Skill Matrix Cards */}
+          <div className="grid gap-4 md:grid-cols-2">
+            {/* Skill Matrix */}
+            <Card className="flex flex-col">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Layers className="h-5 w-5 text-purple-600" />
+                  Skill Matrix
+                </CardTitle>
+                <CardDescription>Skills distribution by category and proficiency level</CardDescription>
+              </CardHeader>
+              <CardContent className="flex-1 p-0">
+                <ScrollArea className="h-[380px] px-6 pb-4">
+                  {skillMatrix.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full py-16 text-muted-foreground">
+                      <Layers className="h-12 w-12 mb-3 opacity-30" />
+                      <p className="text-sm font-medium">No skills data available</p>
+                      <p className="text-xs mt-1 text-center max-w-[200px]">Add skills to employees to populate this matrix</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="grid grid-cols-6 text-xs font-semibold text-muted-foreground py-2 border-b sticky top-0 bg-background z-10">
+                        <span className="col-span-2">Category</span>
+                        <span className="text-center text-blue-500">Beginner</span>
+                        <span className="text-center text-green-500">Intermediate</span>
+                        <span className="text-center text-orange-500">Advanced</span>
+                        <span className="text-center text-purple-500">Expert</span>
+                      </div>
+                      {skillMatrix.map((row) => (
+                        <div key={row.category} className="grid grid-cols-6 text-sm py-2.5 border-b last:border-0 hover:bg-muted/40 rounded-sm items-center">
+                          <span className="col-span-2 font-medium capitalize truncate pr-2">{row.category}</span>
+                          {[
+                            { val: row.beginner, color: 'text-blue-600 bg-blue-500/10' },
+                            { val: row.intermediate, color: 'text-green-600 bg-green-500/10' },
+                            { val: row.advanced, color: 'text-orange-600 bg-orange-500/10' },
+                            { val: row.expert, color: 'text-purple-600 bg-purple-500/10' },
+                          ].map(({ val, color }, i) => (
+                            <div key={i} className="text-center">
+                              {val > 0 ? (
+                                <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold ${color}`}>
+                                  {val}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground text-xs">—</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </ScrollArea>
+              </CardContent>
+            </Card>
+
+            {/* Employee Skill Matrix */}
+            <Card className="flex flex-col">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Grid3X3 className="h-5 w-5 text-blue-600" />
+                  Employee Skill Matrix
+                </CardTitle>
+                <CardDescription>Skills and proficiency per employee</CardDescription>
+              </CardHeader>
+              <CardContent className="flex-1 p-0">
+                <ScrollArea className="h-[380px] px-6 pb-4">
+                  {employeeSkillMatrix.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full py-16 text-muted-foreground">
+                      <Grid3X3 className="h-12 w-12 mb-3 opacity-30" />
+                      <p className="text-sm font-medium">No employee skills available</p>
+                      <p className="text-xs mt-1 text-center max-w-[200px]">Assign skills to employees to populate this matrix</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 pt-1">
+                      {employeeSkillMatrix.map((emp) => (
+                        <div key={emp.id} className="border rounded-lg p-3 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Avatar className="h-7 w-7 flex-shrink-0">
+                              <AvatarFallback className="text-xs bg-primary/10 text-primary">
+                                {emp.name.split(' ').map((n: string) => n[0]).join('')}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold leading-none truncate">{emp.name}</p>
+                              <p className="text-xs text-muted-foreground truncate">{emp.department}</p>
+                            </div>
+                            <Badge variant="secondary" className="text-xs flex-shrink-0">{emp.skills.length} skill{emp.skills.length !== 1 ? 's' : ''}</Badge>
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {emp.skills.map((skill: { name: string; level: string; isPrimary: boolean }, i: number) => {
+                              const levelColors: Record<string, string> = {
+                                expert: 'bg-purple-500/10 text-purple-700 border-purple-200 dark:text-purple-300 dark:border-purple-800',
+                                advanced: 'bg-orange-500/10 text-orange-700 border-orange-200 dark:text-orange-300 dark:border-orange-800',
+                                intermediate: 'bg-green-500/10 text-green-700 border-green-200 dark:text-green-300 dark:border-green-800',
+                                beginner: 'bg-blue-500/10 text-blue-700 border-blue-200 dark:text-blue-300 dark:border-blue-800',
+                              };
+                              return (
+                                <span key={i} className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${levelColors[skill.level] || 'bg-muted text-muted-foreground border-border'}`}>
+                                  {skill.isPrimary && <Star className="h-2.5 w-2.5 mr-1 fill-current" />}
+                                  {skill.name}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </ScrollArea>
+              </CardContent>
+            </Card>
           </div>
         </TabsContent>
 
