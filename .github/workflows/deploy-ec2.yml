@@ -641,12 +641,19 @@ jobs:
           echo ""
           echo "🔍 Checking service health..."
           
-          # Check all services
+          # Check all services (scope to this compose project to avoid counting unrelated/no-healthcheck containers)
+          COMPOSE_CONTAINERS=$(sudo docker compose -f docker-compose.prod.yml ps -q 2>/dev/null)
           UNHEALTHY=$(sudo docker ps --filter "health=unhealthy" --format "{{.Names}}" 2>/dev/null)
-          HEALTHY_COUNT=$(sudo docker ps --filter "health=healthy" --format "{{.Names}}" 2>/dev/null | wc -l)
-          TOTAL_COUNT=$(sudo docker ps --format "{{.Names}}" 2>/dev/null | wc -l)
+          HEALTHY_COUNT=$(sudo docker ps --filter "health=healthy" --format "{{.Names}}" 2>/dev/null | wc -l | tr -d ' ')
+          # Total = healthy + unhealthy (only containers that have a healthcheck defined)
+          UNHEALTHY_COUNT=$(sudo docker ps --filter "health=unhealthy" --format "{{.Names}}" 2>/dev/null | wc -l | tr -d ' ')
+          NOHEALTHCHECK_COUNT=$(sudo docker inspect $(sudo docker compose -f docker-compose.prod.yml ps -q 2>/dev/null) --format '{{.Name}} {{.State.Health.Status}}' 2>/dev/null | grep -c 'none' || echo 0)
+          TOTAL_COUNT=$(sudo docker compose -f docker-compose.prod.yml ps -q 2>/dev/null | wc -l | tr -d ' ')
           
           echo "✅ Healthy services: $HEALTHY_COUNT / $TOTAL_COUNT"
+          if [ "$NOHEALTHCHECK_COUNT" -gt 0 ] 2>/dev/null; then
+            echo "ℹ️ Containers without healthcheck: $NOHEALTHCHECK_COUNT (not counted as healthy)"
+          fi
           
           if [ -n "$UNHEALTHY" ]; then
             echo ""
@@ -696,6 +703,17 @@ jobs:
             echo "✅ Healthy"
           else
             echo "❌ Unhealthy"
+          fi
+          
+          echo -n "  Nginx: "
+          NGINX_STATUS=$(sudo docker inspect --format='{{.State.Health.Status}}' oms-nginx 2>/dev/null || echo "not found")
+          if [ "$NGINX_STATUS" = "healthy" ]; then
+            echo "✅ Healthy"
+          elif [ "$NGINX_STATUS" = "not found" ]; then
+            echo "❌ Container not running (check SSL certs or config)"
+          else
+            echo "⚠️ Status: $NGINX_STATUS"
+            sudo docker logs oms-nginx --tail 10 2>&1 | sed 's/^/    /'
           fi
           
           # Test login endpoint via docker network (bypass nginx SSL redirect)
