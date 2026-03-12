@@ -687,7 +687,9 @@ CREATE TABLE "performance_reviews" (
     "review_date" DATE,
     "acknowledged_at" TIMESTAMPTZ,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "review_type" VARCHAR(50) NOT NULL DEFAULT 'periodic',
+    UNIQUE ("employee_id", "review_period", "review_type")
 );
 
 -- Project Members
@@ -1235,6 +1237,20 @@ CREATE INDEX "idx_performance_reviews_reviewer_id" ON "performance_reviews"("rev
 CREATE INDEX "idx_performance_reviews_review_period" ON "performance_reviews"("review_period");
 CREATE INDEX "idx_performance_reviews_status" ON "performance_reviews"("status");
 
+-- Employee Skills
+CREATE INDEX "idx_employee_skills_employee_id" ON "employee_skills"("employee_id");
+CREATE INDEX "idx_employee_skills_category" ON "employee_skills"("category");
+CREATE INDEX "idx_employee_skills_level" ON "employee_skills"("level");
+
+-- Badges
+CREATE INDEX "idx_badges_category" ON "badges"("category");
+CREATE INDEX "idx_badges_is_active" ON "badges"("is_active");
+
+-- Employee Badges
+CREATE INDEX "idx_employee_badges_employee_id" ON "employee_badges"("employee_id");
+CREATE INDEX "idx_employee_badges_badge_id" ON "employee_badges"("badge_id");
+CREATE INDEX "idx_employee_badges_given_at" ON "employee_badges"("given_at");
+
 -- Notifications
 CREATE INDEX "idx_notifications_user_id" ON "notifications"("user_id");
 CREATE INDEX "idx_notifications_is_read" ON "notifications"("is_read");
@@ -1496,6 +1512,82 @@ ALTER TABLE "assessment_results" ADD CONSTRAINT "fk_assessment_results_invitatio
 -- Assessment Answers
 ALTER TABLE "assessment_answers" ADD CONSTRAINT "fk_assessment_answers_result" FOREIGN KEY ("result_id") REFERENCES "assessment_results"("id") ON DELETE CASCADE;
 ALTER TABLE "assessment_answers" ADD CONSTRAINT "fk_assessment_answers_question" FOREIGN KEY ("question_id") REFERENCES "assessment_questions"("id") ON DELETE CASCADE;
+
+-- =============================================================================
+-- EMPLOYEE SKILLS
+-- =============================================================================
+CREATE TABLE "employee_skills" (
+    "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    "employee_id" UUID NOT NULL,
+    "name" VARCHAR(100) NOT NULL,
+    "category" VARCHAR(50) NOT NULL DEFAULT 'general',
+    "level" VARCHAR(20) NOT NULL DEFAULT 'intermediate',
+    "years_experience" DECIMAL(4,1),
+    "is_primary" BOOLEAN NOT NULL DEFAULT false,
+    "endorsed_by" TEXT[] DEFAULT '{}',
+    "notes" VARCHAR(500),
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE ("employee_id", "name")
+);
+
+ALTER TABLE "employee_skills" ADD CONSTRAINT "fk_employee_skills_employee"
+    FOREIGN KEY ("employee_id") REFERENCES "employees"("id") ON DELETE CASCADE;
+
+-- =============================================================================
+-- BADGES
+-- =============================================================================
+DO $$ BEGIN
+    CREATE TYPE "BadgeCategory" AS ENUM (
+        'PERFORMANCE', 'ATTENDANCE', 'TEAMWORK', 'LEADERSHIP',
+        'INNOVATION', 'LEARNING', 'MILESTONE', 'SPECIAL'
+    );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+CREATE TABLE "badges" (
+    "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    "name" VARCHAR(100) NOT NULL,
+    "description" TEXT,
+    "icon" VARCHAR(50) NOT NULL DEFAULT 'Award',
+    "color" VARCHAR(50) NOT NULL DEFAULT 'bg-blue-500',
+    "category" "BadgeCategory" NOT NULL DEFAULT 'SPECIAL',
+    "points" INTEGER NOT NULL DEFAULT 10,
+    "is_active" BOOLEAN NOT NULL DEFAULT true,
+    "created_by" UUID,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO "badges" ("name", "description", "icon", "color", "category", "points") VALUES
+    ('Early Bird', 'Consistently arrives on time', 'Clock', 'bg-blue-500', 'ATTENDANCE', 10),
+    ('Team Player', 'Excellent collaboration with teammates', 'Users', 'bg-green-500', 'TEAMWORK', 15),
+    ('Problem Solver', 'Resolved critical issues effectively', 'Lightbulb', 'bg-purple-500', 'INNOVATION', 20),
+    ('Mentor', 'Helped onboard and guide new team members', 'Heart', 'bg-pink-500', 'LEADERSHIP', 25),
+    ('Star Performer', 'Outstanding performance in the quarter', 'Star', 'bg-amber-500', 'PERFORMANCE', 30),
+    ('Quick Learner', 'Rapidly acquired new skills or certifications', 'GraduationCap', 'bg-cyan-500', 'LEARNING', 15),
+    ('Innovation Champion', 'Introduced a creative solution or process improvement', 'Zap', 'bg-orange-500', 'INNOVATION', 25),
+    ('Reliable Rock', 'Consistently delivers on commitments', 'Shield', 'bg-slate-500', 'PERFORMANCE', 20),
+    ('1 Year Milestone', 'Completed 1 year with the organization', 'Trophy', 'bg-yellow-500', 'MILESTONE', 50),
+    ('5 Year Milestone', 'Completed 5 years with the organization', 'Trophy', 'bg-yellow-600', 'MILESTONE', 100),
+    ('Customer Hero', 'Received outstanding customer/client feedback', 'ThumbsUp', 'bg-emerald-500', 'SPECIAL', 20),
+    ('Code Ninja', 'Exceptional code quality and technical skills', 'Code', 'bg-indigo-500', 'INNOVATION', 20)
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE "employee_badges" (
+    "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    "employee_id" UUID NOT NULL,
+    "badge_id" UUID NOT NULL,
+    "given_by" UUID NOT NULL,
+    "given_by_name" VARCHAR(200),
+    "reason" TEXT,
+    "given_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE ("employee_id", "badge_id", "given_by", "given_at")
+);
+
+ALTER TABLE "employee_badges" ADD CONSTRAINT "fk_employee_badges_badge"
+    FOREIGN KEY ("badge_id") REFERENCES "badges"("id") ON DELETE CASCADE;
 
 -- =============================================================================
 -- PRISMA MIGRATIONS TABLE (for Prisma compatibility)
