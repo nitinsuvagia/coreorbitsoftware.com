@@ -491,6 +491,14 @@ export function TodoList({ loading: externalLoading }: TodoListProps) {
   const [completedTodos, setCompletedTodos] = useState<Todo[]>([]);
   const [loadingCompleted, setLoadingCompleted] = useState(false);
 
+  // @mention assignee state for quick-add
+  const [quickAddAssignee, setQuickAddAssignee] = useState<EmployeeSearchResult | null>(null);
+  const [mentionSuggestions, setMentionSuggestions] = useState<EmployeeSearchResult[]>([]);
+  const [showMentionDropdown, setShowMentionDropdown] = useState(false);
+  const [loadingMention, setLoadingMention] = useState(false);
+  const mentionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const quickAddRef = useRef<HTMLInputElement>(null);
+
   const fetchTodos = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -563,16 +571,109 @@ export function TodoList({ loading: externalLoading }: TodoListProps) {
     fetchTodos();
   };
 
-  const handleQuickAdd = async (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && quickAddValue.trim()) {
-      try {
-        await createTodo({ title: quickAddValue.trim() });
-        setQuickAddValue('');
-        fetchTodos();
-        toast.success('Todo added');
-      } catch (error) {
-        toast.error('Failed to add todo');
+  // Handle quick-add input change — detect @mention trigger
+  const handleQuickAddChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setQuickAddValue(val);
+
+    // If assignee already resolved, verify @Name is still in the text
+    if (quickAddAssignee) {
+      const name = quickAddAssignee.displayName || `${quickAddAssignee.firstName} ${quickAddAssignee.lastName}`;
+      if (!val.includes(`@${name}`)) {
+        setQuickAddAssignee(null);
       }
+      // Don't re-trigger dropdown once resolved
+      setShowMentionDropdown(false);
+      return;
+    }
+
+    // Detect an unresolved @query at or near the end of what the user is typing
+    // Match @ followed by non-whitespace characters at the end of the string
+    const mentionMatch = val.match(/@(\S*)$/);
+    if (mentionMatch) {
+      const query = mentionMatch[1];
+      if (mentionDebounceRef.current) clearTimeout(mentionDebounceRef.current);
+      if (!query) {
+        // Just @ typed — keep dropdown open, wait for more chars
+        setShowMentionDropdown(true);
+        setMentionSuggestions([]);
+        return;
+      }
+      setShowMentionDropdown(true);
+      mentionDebounceRef.current = setTimeout(async () => {
+        setLoadingMention(true);
+        try {
+          const results = await searchEmployees(query);
+          setMentionSuggestions(results);
+        } finally {
+          setLoadingMention(false);
+        }
+      }, 250);
+    } else {
+      setShowMentionDropdown(false);
+      setMentionSuggestions([]);
+    }
+  };
+
+  // When user picks an employee from the @mention dropdown
+  const selectMentionEmployee = (emp: EmployeeSearchResult) => {
+    const displayName = emp.displayName || `${emp.firstName} ${emp.lastName}`;
+    // Replace the trailing @query with @FullName + space
+    const resolved = quickAddValue.replace(/@(\S*)$/, `@${displayName} `);
+    setQuickAddValue(resolved);
+    setQuickAddAssignee(emp);
+    setShowMentionDropdown(false);
+    setMentionSuggestions([]);
+    setTimeout(() => quickAddRef.current?.focus(), 0);
+  };
+
+  const clearQuickAddAssignee = () => {
+    if (quickAddAssignee) {
+      const name = quickAddAssignee.displayName || `${quickAddAssignee.firstName} ${quickAddAssignee.lastName}`;
+      setQuickAddValue((v) => v.replace(`@${name}`, '').trim());
+      setQuickAddAssignee(null);
+    }
+  };
+
+  const handleQuickAdd = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter') return;
+    const raw = quickAddValue.trim();
+    if (!raw) return;
+
+    // Strip @Name token from the title
+    let title = raw;
+    if (quickAddAssignee) {
+      const name = quickAddAssignee.displayName || `${quickAddAssignee.firstName} ${quickAddAssignee.lastName}`;
+      title = raw.replace(`@${name}`, '').trim();
+    } else {
+      // Strip any unresolved @word tokens too
+      title = raw.replace(/@\S+/g, '').trim();
+    }
+
+    if (!title) {
+      toast.error('Task title is required');
+      return;
+    }
+
+    try {
+      await createTodo({
+        title,
+        assigneeId: quickAddAssignee?.userId || undefined,
+      });
+      setQuickAddValue('');
+      setQuickAddAssignee(null);
+      setMentionSuggestions([]);
+      fetchTodos();
+      toast.success(
+        quickAddAssignee
+          ? `Task assigned to ${
+              quickAddAssignee.displayName ||
+              `${quickAddAssignee.firstName} ${quickAddAssignee.lastName}`
+            }`
+          : 'Todo added'
+      );
+    } catch (error) {
+      toast.error('Failed to add todo');
     }
   };
 
@@ -627,17 +728,90 @@ export function TodoList({ loading: externalLoading }: TodoListProps) {
         </CardHeader>
         <CardContent>
           {/* Quick Add */}
-          <div className="flex items-center gap-2 mb-4">
-            <div className="relative flex-1">
-              <Plus className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <div className="mb-4">
+            <div className="relative">
+              <Plus className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
               <Input
+                ref={quickAddRef}
                 value={quickAddValue}
-                onChange={(e) => setQuickAddValue(e.target.value)}
+                onChange={handleQuickAddChange}
                 onKeyDown={handleQuickAdd}
-                placeholder="Add a task... (press Enter)"
-                className="pl-9"
+                onBlur={() => setTimeout(() => setShowMentionDropdown(false), 200)}
+                placeholder="Add a task… type @ to assign to someone"
+                className={cn(
+                  'pl-9 pr-3',
+                  quickAddAssignee && 'border-purple-300 dark:border-purple-700 ring-1 ring-purple-200 dark:ring-purple-800'
+                )}
+                autoComplete="off"
               />
+
+              {/* @mention employee dropdown */}
+              {showMentionDropdown && (
+                <div className="absolute z-50 left-0 right-0 top-full mt-1 rounded-md border bg-popover shadow-lg max-h-48 overflow-y-auto">
+                  {loadingMention ? (
+                    <div className="flex items-center gap-2 px-3 py-2.5 text-sm text-muted-foreground">
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      Searching employees…
+                    </div>
+                  ) : mentionSuggestions.length === 0 ? (
+                    <div className="px-3 py-2.5 text-sm text-muted-foreground">
+                      {quickAddValue.match(/@(\S+)$/)?.[1]
+                        ? 'No employees found'
+                        : 'Type a name after @'}
+                    </div>
+                  ) : (
+                    mentionSuggestions.map((emp) => {
+                      const name = emp.displayName || `${emp.firstName} ${emp.lastName}`;
+                      return (
+                        <button
+                          key={emp.id}
+                          type="button"
+                          onMouseDown={() => selectMentionEmployee(emp)}
+                          className="w-full text-left px-3 py-2 hover:bg-accent transition-colors flex items-center gap-2.5"
+                        >
+                          <div className="h-7 w-7 rounded-full bg-purple-100 dark:bg-purple-900 flex items-center justify-center shrink-0">
+                            <span className="text-xs font-semibold text-purple-700 dark:text-purple-300">
+                              {name.charAt(0).toUpperCase()}
+                            </span>
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium leading-tight truncate">{name}</p>
+                            {((emp.designation as any)?.name || (emp.department as any)?.name) && (
+                              <p className="text-xs text-muted-foreground leading-tight">
+                                {(emp.designation as any)?.name}
+                                {(emp.department as any)?.name
+                                  ? ` · ${(emp.department as any).name}`
+                                  : ''}
+                              </p>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              )}
             </div>
+
+            {/* Resolved assignee chip */}
+            {quickAddAssignee && (
+              <div className="flex items-center gap-1.5 mt-1.5 px-1">
+                <span className="text-xs text-muted-foreground">Assign to:</span>
+                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 border border-purple-200 dark:border-purple-700">
+                  <User className="h-3 w-3" />
+                  {quickAddAssignee.displayName ||
+                    `${quickAddAssignee.firstName} ${quickAddAssignee.lastName}`}
+                  <button
+                    type="button"
+                    onClick={clearQuickAddAssignee}
+                    className="ml-0.5 hover:text-purple-900 dark:hover:text-white transition-colors"
+                    tabIndex={-1}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              </div>
+            )}
           </div>
 
           {isLoading ? (
