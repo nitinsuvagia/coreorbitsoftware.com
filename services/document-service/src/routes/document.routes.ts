@@ -216,7 +216,10 @@ router.post(
     });
 
     const filePromise = new Promise<void>((resolve) => {
+      let fileProcessing = false;
+
       busboy.on('file', (_fieldname, file, info) => {
+        fileProcessing = true;
         const { filename, mimeType } = info;
         const chunks: Buffer[] = [];
         file.on('data', (chunk) => chunks.push(chunk));
@@ -240,7 +243,8 @@ router.post(
         });
         file.on('error', (err) => { uploadError = err.message; resolve(); });
       });
-      busboy.on('finish', () => resolve());
+      // Only resolve on finish if no file was found in the multipart payload
+      busboy.on('finish', () => { if (!fileProcessing) resolve(); });
     });
 
     req.pipe(busboy);
