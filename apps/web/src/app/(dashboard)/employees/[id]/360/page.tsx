@@ -744,7 +744,6 @@ export default function Employee360Page() {
 
   const tenure = calculateTenure(employee.joinDate);
   
-  // Mock data for demonstration - these would come from API in production
   const performanceScores = performanceSummary?.scores || {
     communication: 0,
     technicalSkills: 0,

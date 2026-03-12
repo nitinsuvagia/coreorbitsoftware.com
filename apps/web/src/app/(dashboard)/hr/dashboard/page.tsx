@@ -148,821 +148,6 @@ import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 
 // ============================================================================
-// TYPES
-// ============================================================================
-
-interface HRDashboardData {
-  // Quick Stats
-  overview: {
-    totalEmployees: number;
-    totalEmployeesTrend: number;
-    activeEmployees: number;
-    activeEmployeesTrend: number;
-    newHiresThisMonth: number;
-    newHiresTrend: number;
-    avgTenure: number;
-    avgTenureTrend: number;
-    onProbation: number;
-    contractExpiring: number;
-    remoteworkers: number;
-    departmentCount: number;
-  };
-
-  // Today's Overview
-  todayOverview: {
-    presentToday: number;
-    absentToday: number;
-    onLeave: number;
-    workFromHome: number;
-    lateArrivals: number;
-    interviewsToday: Array<{
-      id: string;
-      candidateName: string;
-      position: string;
-      time: string;
-      interviewer: string;
-      status: 'scheduled' | 'in-progress' | 'completed' | 'cancelled';
-    }>;
-    birthdaysToday: Array<{
-      id: string;
-      name: string;
-      department: string;
-      avatar?: string;
-    }>;
-    anniversariesToday: Array<{
-      id: string;
-      name: string;
-      department: string;
-      years: number;
-      avatar?: string;
-    }>;
-    probationEnding: Array<{
-      id: string;
-      name: string;
-      department: string;
-      endDate: string;
-      daysRemaining: number;
-    }>;
-  };
-
-  // Upcoming Events
-  upcomingEvents: {
-    birthdays: Array<{
-      id: string;
-      name: string;
-      department: string;
-      date: string;
-      daysUntil: number;
-      avatar?: string;
-    }>;
-    workAnniversaries: Array<{
-      id: string;
-      name: string;
-      department: string;
-      date: string;
-      years: number;
-      daysUntil: number;
-    }>;
-    holidays: Array<{
-      name: string;
-      date: string;
-      daysUntil: number;
-      type: 'national' | 'company' | 'optional';
-    }>;
-  };
-
-  // Department Overview
-  departments: Array<{
-    name: string;
-    icon: string;
-    headcount: number;
-    activeProjects: number;
-    avgPerformance: number;
-    openPositions: number;
-    onLeaveToday: number;
-  }>;
-
-  // Recruitment
-  recruitment: {
-    openPositions: number;
-    totalCandidates: number;
-    interviewsScheduled: number;
-    offersExtended: number;
-    offerAcceptanceRate: number;
-    avgTimeToHire: number;
-    recruitmentPipeline: {
-      applied: number;
-      screening: number;
-      interview: number;
-      offer: number;
-      hired: number;
-    };
-    urgentPositions: Array<{
-      title: string;
-      department: string;
-      daysOpen: number;
-      applicants: number;
-      priority: 'critical' | 'high' | 'medium' | 'low';
-    }>;
-    hiringTrend: Array<{
-      month: string;
-      hired: number;
-      target: number;
-    }>;
-  };
-
-  // Attendance
-  attendance: {
-    presentToday: number;
-    presentRate: number;
-    onLeave: number;
-    lateArrivals: number;
-    earlyDepartures: number;
-    workFromHome: number;
-    avgWorkHours: number;
-    overtimeHours: number;
-    leaveRequests: {
-      pending: number;
-      approved: number;
-      rejected: number;
-    };
-    leaveBalance: {
-      casual: number;
-      sick: number;
-      annual: number;
-      maternity: number;
-      paternity: number;
-    };
-    attendanceTrend: Array<{
-      day: string;
-      present: number;
-      absent: number;
-    }>;
-  };
-
-  // Performance
-  performance: {
-    avgPerformanceScore: number;
-    reviewsCompleted: number;
-    reviewsPending: number;
-    reviewsDue: number;
-    goalsAchieved: number;
-    totalGoals: number;
-    topPerformers: Array<{
-      id: string;
-      name: string;
-      department: string;
-      score: number;
-      avatar?: string;
-    }>;
-    needsImprovement: Array<{
-      id: string;
-      name: string;
-      department: string;
-      score: number;
-      areas: string[];
-    }>;
-    departmentScores: Array<{
-      department: string;
-      score: number;
-      improvement: number;
-    }>;
-  };
-
-  // Onboarding
-  onboarding: {
-    newHiresThisMonth: number;
-    onboardingInProgress: number;
-    onboardingCompleted: number;
-    avgCompletionTime: number;
-    completionRate: number;
-    pendingTasks: Array<{
-      id: string;
-      employee: string;
-      joinDate: string;
-      daysElapsed: number;
-      tasksCompleted: number;
-      totalTasks: number;
-      avatar?: string;
-    }>;
-    checklistSummary: {
-      documentsSubmitted: number;
-      itSetupComplete: number;
-      trainingAssigned: number;
-      mentorAssigned: number;
-      total: number;
-    };
-  };
-
-  // Exits & Attrition
-  exits: {
-    resignationsThisMonth: number;
-    terminationsThisMonth: number;
-    totalExits: number;
-    turnoverRate: number;
-    avgNoticePeriod: number;
-    exitInterviewsCompleted: number;
-    exitInterviewsPending: number;
-    retentionRate: number;
-    topExitReasons: Array<{
-      reason: string;
-      count: number;
-      percentage: number;
-    }>;
-    exitsByDepartment: Array<{
-      department: string;
-      exits: number;
-      rate: number;
-    }>;
-    attritionTrend: Array<{
-      month: string;
-      exits: number;
-      hires: number;
-    }>;
-  };
-
-  // Compensation & Benefits
-  compensation: {
-    totalPayroll: number;
-    avgSalary: number;
-    salaryIncreasesBudget: number;
-    salaryIncreasesUsed: number;
-    pendingIncrements: number;
-    bonusesPaid: number;
-    benefitsEnrollment: number;
-    expenseClaimsPending: number;
-    expenseClaimsAmount: number;
-    topBenefits: Array<{
-      benefit: string;
-      enrolled: number;
-      cost: number;
-      icon: string;
-    }>;
-    salaryBands: Array<{
-      band: string;
-      count: number;
-      percentage: number;
-    }>;
-  };
-
-  // Diversity & Inclusion
-  diversity: {
-    genderRatio: {
-      male: number;
-      female: number;
-      other: number;
-    };
-    ageDistribution: Array<{
-      range: string;
-      count: number;
-      percentage: number;
-    }>;
-    tenureDistribution: Array<{
-      range: string;
-      count: number;
-    }>;
-    departmentDiversity: Array<{
-      department: string;
-      diversityScore: number;
-      malePercentage: number;
-      femalePercentage: number;
-    }>;
-    locationDistribution: Array<{
-      location: string;
-      count: number;
-    }>;
-  };
-
-  // Employee Engagement
-  engagement: {
-    satisfactionScore: number;
-    engagementScore: number;
-    eNPS: number;
-    surveyResponseRate: number;
-    recognitionsThisMonth: number;
-    feedbackSubmitted: number;
-    oneOnOnesMeetings: number;
-    teamEvents: number;
-    pendingSurveys: number;
-    recentRecognitions: Array<{
-      from: string;
-      to: string;
-      message: string;
-      timestamp: string;
-    }>;
-  };
-
-  // Compliance & Documents
-  compliance: {
-    documentsExpiring: number;
-    documentsPending: number;
-    complianceRate: number;
-    bgVerificationsPending: number;
-    bgVerificationsCompleted: number;
-    mandatoryTrainingOverdue: number;
-    policiesAcknowledged: number;
-    totalPolicies: number;
-    expiringDocuments: Array<{
-      id: string;
-      employeeName: string;
-      documentType: string;
-      expiryDate: string;
-      daysUntil: number;
-      status: 'expired' | 'expiring-soon' | 'valid';
-    }>;
-    pendingVerifications: Array<{
-      id: string;
-      employeeName: string;
-      verificationType: string;
-      submittedDate: string;
-      status: 'pending' | 'in-progress' | 'completed' | 'failed';
-    }>;
-  };
-
-  // Skills & Certifications
-  skills: {
-    totalSkills: number;
-    totalCertifications: number;
-    skillGaps: number;
-    certificationsDue: number;
-    topSkills: Array<{
-      skill: string;
-      count: number;
-      level: 'beginner' | 'intermediate' | 'advanced' | 'expert';
-    }>;
-    skillsByDepartment: Array<{
-      department: string;
-      primarySkills: string[];
-      gapAreas: string[];
-    }>;
-    upcomingCertifications: Array<{
-      id: string;
-      employeeName: string;
-      certification: string;
-      expiryDate: string;
-      daysUntil: number;
-    }>;
-  };
-
-  // Asset Management
-  assets: {
-    totalAssetsAssigned: number;
-    pendingReturns: number;
-    pendingIssues: number;
-    assetsByCategory: Array<{
-      category: string;
-      icon: string;
-      assigned: number;
-      available: number;
-      maintenance: number;
-    }>;
-    recentAssignments: Array<{
-      id: string;
-      employeeName: string;
-      assetType: string;
-      assetName: string;
-      assignedDate: string;
-      status: 'assigned' | 'pending-return' | 'returned' | 'lost';
-    }>;
-  };
-
-  // Employee Lifecycle Pipeline
-  employeeLifecycle: {
-    recruitment: number;
-    onboarding: number;
-    active: number;
-    offboarding: number;
-    alumni: number;
-  };
-
-  // Alerts
-  alerts: Array<{
-    id: string;
-    type: 'critical' | 'warning' | 'info' | 'success';
-    title: string;
-    description: string;
-    timestamp: string;
-    action?: string;
-    actionUrl?: string;
-  }>;
-
-  // Recent Activity
-  recentActivity: Array<{
-    id: string;
-    action: string;
-    employee: string;
-    timestamp: string;
-    type: 'hire' | 'exit' | 'promotion' | 'training' | 'leave' | 'performance' | 'document' | 'grievance';
-    details?: string;
-  }>;
-
-  // Quick Actions
-  quickActions: Array<{
-    id: string;
-    label: string;
-    icon: string;
-    url: string;
-    count?: number;
-    color: string;
-  }>;
-}
-
-// ============================================================================
-// MOCK DATA GENERATOR
-// ============================================================================
-
-const generateMockData = (): HRDashboardData => ({
-  overview: {
-    totalEmployees: 247,
-    totalEmployeesTrend: 8.3,
-    activeEmployees: 235,
-    activeEmployeesTrend: 6.2,
-    newHiresThisMonth: 12,
-    newHiresTrend: 15.5,
-    avgTenure: 3.4,
-    avgTenureTrend: -2.1,
-    onProbation: 18,
-    contractExpiring: 5,
-    remoteworkers: 42,
-    departmentCount: 8,
-  },
-
-  todayOverview: {
-    presentToday: 218,
-    absentToday: 17,
-    onLeave: 14,
-    workFromHome: 31,
-    lateArrivals: 6,
-    interviewsToday: [
-      { id: '1', candidateName: 'John Smith', position: 'Senior Developer', time: '10:00 AM', interviewer: 'Sarah Johnson', status: 'scheduled' },
-      { id: '2', candidateName: 'Emily Chen', position: 'Product Manager', time: '11:30 AM', interviewer: 'Michael Brown', status: 'in-progress' },
-      { id: '3', candidateName: 'Alex Kumar', position: 'UX Designer', time: '02:00 PM', interviewer: 'Lisa Anderson', status: 'scheduled' },
-      { id: '4', candidateName: 'Maria Garcia', position: 'DevOps Engineer', time: '04:00 PM', interviewer: 'James Wilson', status: 'scheduled' },
-    ],
-    birthdaysToday: [
-      { id: '1', name: 'David Kim', department: 'Engineering' },
-      { id: '2', name: 'Rachel Green', department: 'Marketing' },
-    ],
-    anniversariesToday: [
-      { id: '1', name: 'Michael Scott', department: 'Sales', years: 5 },
-    ],
-    probationEnding: [
-      { id: '1', name: 'Tom Hardy', department: 'Engineering', endDate: '2026-02-01', daysRemaining: 4 },
-      { id: '2', name: 'Emma Watson', department: 'Design', endDate: '2026-02-05', daysRemaining: 8 },
-    ],
-  },
-
-  upcomingEvents: {
-    birthdays: [
-      { id: '1', name: 'Jessica Alba', department: 'HR', date: '2026-01-30', daysUntil: 2 },
-      { id: '2', name: 'Chris Evans', department: 'Engineering', date: '2026-02-02', daysUntil: 5 },
-      { id: '3', name: 'Natalie Portman', department: 'Finance', date: '2026-02-05', daysUntil: 8 },
-      { id: '4', name: 'Robert Downey', department: 'Sales', date: '2026-02-10', daysUntil: 13 },
-    ],
-    workAnniversaries: [
-      { id: '1', name: 'Mark Johnson', department: 'Engineering', date: '2026-01-31', years: 3, daysUntil: 3 },
-      { id: '2', name: 'Sophie Turner', department: 'Marketing', date: '2026-02-03', years: 2, daysUntil: 6 },
-      { id: '3', name: 'Daniel Craig', department: 'Operations', date: '2026-02-07', years: 5, daysUntil: 10 },
-    ],
-    holidays: [
-      { name: 'Republic Day', date: '2026-01-26', daysUntil: 0, type: 'national' },
-      { name: 'Company Foundation Day', date: '2026-02-15', daysUntil: 18, type: 'company' },
-      { name: 'Holi', date: '2026-03-10', daysUntil: 41, type: 'optional' },
-    ],
-  },
-
-  departments: [
-    { name: 'Engineering', icon: 'Code', headcount: 85, activeProjects: 12, avgPerformance: 8.7, openPositions: 8, onLeaveToday: 3 },
-    { name: 'Product', icon: 'Package', headcount: 24, activeProjects: 6, avgPerformance: 8.5, openPositions: 2, onLeaveToday: 1 },
-    { name: 'Design', icon: 'Palette', headcount: 18, activeProjects: 8, avgPerformance: 8.4, openPositions: 2, onLeaveToday: 0 },
-    { name: 'Sales', icon: 'TrendingUp', headcount: 32, activeProjects: 4, avgPerformance: 8.1, openPositions: 3, onLeaveToday: 2 },
-    { name: 'Marketing', icon: 'Megaphone', headcount: 22, activeProjects: 5, avgPerformance: 7.9, openPositions: 1, onLeaveToday: 1 },
-    { name: 'HR', icon: 'Users', headcount: 12, activeProjects: 3, avgPerformance: 8.3, openPositions: 1, onLeaveToday: 0 },
-    { name: 'Finance', icon: 'DollarSign', headcount: 15, activeProjects: 2, avgPerformance: 8.2, openPositions: 0, onLeaveToday: 1 },
-    { name: 'Operations', icon: 'Settings', headcount: 39, activeProjects: 7, avgPerformance: 7.8, openPositions: 1, onLeaveToday: 2 },
-  ],
-
-  recruitment: {
-    openPositions: 18,
-    totalCandidates: 142,
-    interviewsScheduled: 24,
-    offersExtended: 8,
-    offerAcceptanceRate: 87.5,
-    avgTimeToHire: 28,
-    recruitmentPipeline: {
-      applied: 142,
-      screening: 68,
-      interview: 34,
-      offer: 12,
-      hired: 8,
-    },
-    urgentPositions: [
-      { title: 'Senior Full Stack Developer', department: 'Engineering', daysOpen: 45, applicants: 28, priority: 'critical' },
-      { title: 'Product Manager', department: 'Product', daysOpen: 38, applicants: 19, priority: 'high' },
-      { title: 'DevOps Engineer', department: 'Engineering', daysOpen: 32, applicants: 22, priority: 'high' },
-      { title: 'UX Designer', department: 'Design', daysOpen: 28, applicants: 15, priority: 'medium' },
-      { title: 'Sales Executive', department: 'Sales', daysOpen: 21, applicants: 34, priority: 'medium' },
-    ],
-    hiringTrend: [
-      { month: 'Aug', hired: 8, target: 10 },
-      { month: 'Sep', hired: 11, target: 10 },
-      { month: 'Oct', hired: 9, target: 12 },
-      { month: 'Nov', hired: 14, target: 12 },
-      { month: 'Dec', hired: 6, target: 8 },
-      { month: 'Jan', hired: 12, target: 15 },
-    ],
-  },
-
-  attendance: {
-    presentToday: 218,
-    presentRate: 92.8,
-    onLeave: 14,
-    lateArrivals: 6,
-    earlyDepartures: 3,
-    workFromHome: 31,
-    avgWorkHours: 8.3,
-    overtimeHours: 156,
-    leaveRequests: {
-      pending: 8,
-      approved: 42,
-      rejected: 3,
-    },
-    leaveBalance: {
-      casual: 156,
-      sick: 234,
-      annual: 892,
-      maternity: 60,
-      paternity: 30,
-    },
-    attendanceTrend: [
-      { day: 'Mon', present: 228, absent: 7 },
-      { day: 'Tue', present: 225, absent: 10 },
-      { day: 'Wed', present: 218, absent: 17 },
-      { day: 'Thu', present: 0, absent: 0 },
-      { day: 'Fri', present: 0, absent: 0 },
-    ],
-  },
-
-  performance: {
-    avgPerformanceScore: 8.2,
-    reviewsCompleted: 198,
-    reviewsPending: 35,
-    reviewsDue: 14,
-    goalsAchieved: 456,
-    totalGoals: 580,
-    topPerformers: [
-      { id: '1', name: 'Sarah Johnson', department: 'Engineering', score: 9.5 },
-      { id: '2', name: 'Michael Chen', department: 'Product', score: 9.3 },
-      { id: '3', name: 'Emily Davis', department: 'Design', score: 9.2 },
-      { id: '4', name: 'James Wilson', department: 'Engineering', score: 9.1 },
-      { id: '5', name: 'Lisa Anderson', department: 'Sales', score: 9.0 },
-    ],
-    needsImprovement: [
-      { id: '1', name: 'John Doe', department: 'Support', score: 6.2, areas: ['Communication', 'Time Management'] },
-      { id: '2', name: 'Jane Smith', department: 'Operations', score: 6.5, areas: ['Technical Skills', 'Leadership'] },
-    ],
-    departmentScores: [
-      { department: 'Engineering', score: 8.7, improvement: 5.2 },
-      { department: 'Product', score: 8.5, improvement: 3.8 },
-      { department: 'Design', score: 8.4, improvement: 4.1 },
-      { department: 'Sales', score: 8.1, improvement: 6.5 },
-      { department: 'Marketing', score: 7.9, improvement: 2.3 },
-      { department: 'Support', score: 7.6, improvement: -1.2 },
-    ],
-  },
-
-  onboarding: {
-    newHiresThisMonth: 12,
-    onboardingInProgress: 8,
-    onboardingCompleted: 4,
-    avgCompletionTime: 14,
-    completionRate: 85.3,
-    pendingTasks: [
-      { id: '1', employee: 'Alex Thompson', joinDate: '2026-01-15', daysElapsed: 13, tasksCompleted: 18, totalTasks: 25 },
-      { id: '2', employee: 'Maria Garcia', joinDate: '2026-01-19', daysElapsed: 9, tasksCompleted: 12, totalTasks: 25 },
-      { id: '3', employee: 'David Kim', joinDate: '2026-01-22', daysElapsed: 6, tasksCompleted: 8, totalTasks: 25 },
-    ],
-    checklistSummary: {
-      documentsSubmitted: 10,
-      itSetupComplete: 8,
-      trainingAssigned: 12,
-      mentorAssigned: 11,
-      total: 12,
-    },
-  },
-
-  exits: {
-    resignationsThisMonth: 5,
-    terminationsThisMonth: 1,
-    totalExits: 6,
-    turnoverRate: 2.4,
-    avgNoticePeriod: 28,
-    exitInterviewsCompleted: 4,
-    exitInterviewsPending: 2,
-    retentionRate: 94.5,
-    topExitReasons: [
-      { reason: 'Better Opportunity', count: 15, percentage: 42.8 },
-      { reason: 'Career Growth', count: 9, percentage: 25.7 },
-      { reason: 'Relocation', count: 6, percentage: 17.1 },
-      { reason: 'Work-Life Balance', count: 3, percentage: 8.6 },
-      { reason: 'Compensation', count: 2, percentage: 5.8 },
-    ],
-    exitsByDepartment: [
-      { department: 'Engineering', exits: 2, rate: 2.1 },
-      { department: 'Sales', exits: 2, rate: 4.5 },
-      { department: 'Support', exits: 1, rate: 3.8 },
-      { department: 'Operations', exits: 1, rate: 2.9 },
-    ],
-    attritionTrend: [
-      { month: 'Aug', exits: 4, hires: 8 },
-      { month: 'Sep', exits: 3, hires: 11 },
-      { month: 'Oct', exits: 5, hires: 9 },
-      { month: 'Nov', exits: 2, hires: 14 },
-      { month: 'Dec', exits: 4, hires: 6 },
-      { month: 'Jan', exits: 6, hires: 12 },
-    ],
-  },
-
-  compensation: {
-    totalPayroll: 2450000,
-    avgSalary: 85200,
-    salaryIncreasesBudget: 245000,
-    salaryIncreasesUsed: 156000,
-    pendingIncrements: 18,
-    bonusesPaid: 328000,
-    benefitsEnrollment: 94.5,
-    expenseClaimsPending: 23,
-    expenseClaimsAmount: 45600,
-    topBenefits: [
-      { benefit: 'Health Insurance', enrolled: 235, cost: 45000, icon: 'Heart' },
-      { benefit: 'Retirement Plan', enrolled: 198, cost: 89000, icon: 'Target' },
-      { benefit: 'Flexible Hours', enrolled: 214, cost: 0, icon: 'Clock' },
-      { benefit: 'Remote Work', enrolled: 156, cost: 0, icon: 'Building2' },
-      { benefit: 'Gym Membership', enrolled: 89, cost: 12000, icon: 'Activity' },
-    ],
-    salaryBands: [
-      { band: '< $50K', count: 28, percentage: 11.3 },
-      { band: '$50K - $75K', count: 65, percentage: 26.3 },
-      { band: '$75K - $100K', count: 89, percentage: 36.0 },
-      { band: '$100K - $150K', count: 52, percentage: 21.1 },
-      { band: '> $150K', count: 13, percentage: 5.3 },
-    ],
-  },
-
-  diversity: {
-    genderRatio: {
-      male: 145,
-      female: 98,
-      other: 4,
-    },
-    ageDistribution: [
-      { range: '18-25', count: 32, percentage: 13.0 },
-      { range: '26-35', count: 128, percentage: 51.8 },
-      { range: '36-45', count: 65, percentage: 26.3 },
-      { range: '46-55', count: 18, percentage: 7.3 },
-      { range: '56+', count: 4, percentage: 1.6 },
-    ],
-    tenureDistribution: [
-      { range: '< 1 year', count: 45 },
-      { range: '1-2 years', count: 78 },
-      { range: '2-5 years', count: 89 },
-      { range: '5-10 years', count: 28 },
-      { range: '> 10 years', count: 7 },
-    ],
-    departmentDiversity: [
-      { department: 'Engineering', diversityScore: 72, malePercentage: 68, femalePercentage: 32 },
-      { department: 'Product', diversityScore: 85, malePercentage: 52, femalePercentage: 48 },
-      { department: 'Design', diversityScore: 78, malePercentage: 44, femalePercentage: 56 },
-      { department: 'Sales', diversityScore: 68, malePercentage: 62, femalePercentage: 38 },
-      { department: 'Marketing', diversityScore: 82, malePercentage: 45, femalePercentage: 55 },
-    ],
-    locationDistribution: [
-      { location: 'New York', count: 85 },
-      { location: 'San Francisco', count: 62 },
-      { location: 'London', count: 45 },
-      { location: 'Singapore', count: 32 },
-      { location: 'Remote', count: 23 },
-    ],
-  },
-
-  engagement: {
-    satisfactionScore: 8.4,
-    engagementScore: 8.1,
-    eNPS: 42,
-    surveyResponseRate: 87.5,
-    recognitionsThisMonth: 45,
-    feedbackSubmitted: 128,
-    oneOnOnesMeetings: 189,
-    teamEvents: 8,
-    pendingSurveys: 3,
-    recentRecognitions: [
-      { from: 'Sarah Johnson', to: 'Michael Chen', message: 'Great work on the product launch!', timestamp: '2 hours ago' },
-      { from: 'James Wilson', to: 'Emily Davis', message: 'Amazing design work on the new UI!', timestamp: '5 hours ago' },
-      { from: 'Lisa Anderson', to: 'Team Alpha', message: 'Excellent Q4 performance!', timestamp: '1 day ago' },
-    ],
-  },
-
-  compliance: {
-    documentsExpiring: 12,
-    documentsPending: 8,
-    complianceRate: 96.5,
-    bgVerificationsPending: 5,
-    bgVerificationsCompleted: 7,
-    mandatoryTrainingOverdue: 15,
-    policiesAcknowledged: 228,
-    totalPolicies: 235,
-    expiringDocuments: [
-      { id: '1', employeeName: 'John Smith', documentType: 'Work Visa', expiryDate: '2026-02-15', daysUntil: 18, status: 'expiring-soon' },
-      { id: '2', employeeName: 'Maria Garcia', documentType: 'ID Card', expiryDate: '2026-02-01', daysUntil: 4, status: 'expiring-soon' },
-      { id: '3', employeeName: 'David Kim', documentType: 'Health Certificate', expiryDate: '2026-01-25', daysUntil: -3, status: 'expired' },
-      { id: '4', employeeName: 'Emily Chen', documentType: 'Driver License', expiryDate: '2026-03-10', daysUntil: 41, status: 'valid' },
-    ],
-    pendingVerifications: [
-      { id: '1', employeeName: 'Alex Thompson', verificationType: 'Background Check', submittedDate: '2026-01-15', status: 'in-progress' },
-      { id: '2', employeeName: 'Jennifer Lee', verificationType: 'Education', submittedDate: '2026-01-18', status: 'pending' },
-      { id: '3', employeeName: 'Robert Brown', verificationType: 'Employment History', submittedDate: '2026-01-20', status: 'pending' },
-    ],
-  },
-
-  skills: {
-    totalSkills: 156,
-    totalCertifications: 342,
-    skillGaps: 24,
-    certificationsDue: 12,
-    topSkills: [
-      { skill: 'JavaScript/TypeScript', count: 82, level: 'advanced' },
-      { skill: 'React', count: 78, level: 'advanced' },
-      { skill: 'Python', count: 45, level: 'intermediate' },
-      { skill: 'AWS', count: 38, level: 'intermediate' },
-      { skill: 'Node.js', count: 65, level: 'advanced' },
-      { skill: 'SQL', count: 92, level: 'advanced' },
-      { skill: 'Project Management', count: 34, level: 'intermediate' },
-      { skill: 'UI/UX Design', count: 22, level: 'advanced' },
-    ],
-    skillsByDepartment: [
-      { department: 'Engineering', primarySkills: ['JavaScript', 'React', 'Node.js', 'AWS'], gapAreas: ['Kubernetes', 'AI/ML'] },
-      { department: 'Product', primarySkills: ['Product Strategy', 'Agile', 'Analytics'], gapAreas: ['Technical Writing'] },
-      { department: 'Design', primarySkills: ['Figma', 'Adobe Suite', 'UX Research'], gapAreas: ['Motion Design'] },
-    ],
-    upcomingCertifications: [
-      { id: '1', employeeName: 'John Smith', certification: 'AWS Solutions Architect', expiryDate: '2026-02-15', daysUntil: 18 },
-      { id: '2', employeeName: 'Sarah Johnson', certification: 'PMP', expiryDate: '2026-02-20', daysUntil: 23 },
-      { id: '3', employeeName: 'Michael Chen', certification: 'Scrum Master', expiryDate: '2026-03-01', daysUntil: 32 },
-    ],
-  },
-
-  assets: {
-    totalAssetsAssigned: 512,
-    pendingReturns: 8,
-    pendingIssues: 12,
-    assetsByCategory: [
-      { category: 'Laptops', icon: 'Laptop', assigned: 235, available: 15, maintenance: 5 },
-      { category: 'Monitors', icon: 'Monitor', assigned: 312, available: 28, maintenance: 3 },
-      { category: 'Mobile Devices', icon: 'Smartphone', assigned: 156, available: 22, maintenance: 2 },
-      { category: 'Headsets', icon: 'Headphones', assigned: 189, available: 35, maintenance: 8 },
-      { category: 'Access Cards', icon: 'Key', assigned: 247, available: 12, maintenance: 0 },
-    ],
-    recentAssignments: [
-      { id: '1', employeeName: 'Alex Thompson', assetType: 'Laptop', assetName: 'MacBook Pro 16"', assignedDate: '2026-01-15', status: 'assigned' },
-      { id: '2', employeeName: 'Maria Garcia', assetType: 'Monitor', assetName: 'Dell UltraSharp 27"', assignedDate: '2026-01-18', status: 'assigned' },
-      { id: '3', employeeName: 'Robert Johnson', assetType: 'Laptop', assetName: 'MacBook Pro 14"', assignedDate: '2026-01-10', status: 'pending-return' },
-    ],
-  },
-
-  employeeLifecycle: {
-    recruitment: 142,
-    onboarding: 12,
-    active: 235,
-    offboarding: 6,
-    alumni: 89,
-  },
-
-  alerts: [
-    { id: '1', type: 'critical', title: 'Compliance Training Overdue', description: '15 employees have overdue mandatory compliance training', timestamp: '2 hours ago', action: 'View Details', actionUrl: '/hr/training' },
-    { id: '2', type: 'warning', title: 'High Turnover in Sales', description: 'Sales department showing 4.5% turnover rate this quarter', timestamp: '5 hours ago', action: 'Analyze', actionUrl: '/hr/reports' },
-    { id: '3', type: 'warning', title: 'Documents Expiring Soon', description: '3 employee documents will expire within 7 days', timestamp: '1 day ago', action: 'Review', actionUrl: '/hr/compliance' },
-    { id: '4', type: 'info', title: 'Performance Reviews Due', description: '14 performance reviews are due this week', timestamp: '1 day ago', action: 'View List', actionUrl: '/hr/performance' },
-    { id: '5', type: 'success', title: 'Onboarding Milestone', description: '4 new hires completed onboarding successfully', timestamp: '2 days ago' },
-  ],
-
-  recentActivity: [
-    { id: '1', action: 'New hire onboarded', employee: 'John Smith', timestamp: '2 hours ago', type: 'hire', details: 'Engineering Department' },
-    { id: '2', action: 'Exit interview completed', employee: 'Jane Doe', timestamp: '5 hours ago', type: 'exit', details: 'Marketing Department' },
-    { id: '3', action: 'Promotion approved', employee: 'Mike Johnson', timestamp: '1 day ago', type: 'promotion', details: 'Senior Developer' },
-    { id: '4', action: 'Training completed', employee: 'Sarah Wilson', timestamp: '2 days ago', type: 'training', details: 'Leadership Program' },
-    { id: '5', action: 'Leave approved', employee: 'Tom Brown', timestamp: '3 days ago', type: 'leave', details: 'Annual Leave - 5 days' },
-  ],
-
-  quickActions: [
-    { id: '1', label: 'Add Employee', icon: 'UserPlus', url: '/employees/new', color: 'bg-blue-500' },
-    { id: '2', label: 'Post Job', icon: 'Briefcase', url: '/hr/jobs', color: 'bg-green-500' },
-    { id: '3', label: 'Approve Leaves', icon: 'Calendar', url: '/hr/leave-management', count: 8, color: 'bg-orange-500' },
-    { id: '4', label: 'Schedule Interview', icon: 'CalendarDays', url: '/hr/interviews', color: 'bg-purple-500' },
-    { id: '5', label: 'Notifications', icon: 'Bell', url: '/notifications', color: 'bg-pink-500' },
-  ],
-});
-
-// ============================================================================
 // HELPER COMPONENTS
 // ============================================================================
 
@@ -1216,7 +401,6 @@ interface DepartmentOverviewItem {
 
 export default function HRDashboardPage() {
   const router = useRouter();
-  const [data] = useState<HRDashboardData>(generateMockData()); // Initial structure for fallbacks
   const [isDownloading, setIsDownloading] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const pageRef = useRef<HTMLDivElement>(null);
@@ -1708,39 +892,6 @@ export default function HRDashboardPage() {
     // Refresh today's interviews data
     loadTodaysInterviews();
   };
-
-  if (!data) {
-    return (
-      <div className="space-y-6 pb-8">
-        <div className="flex items-start justify-between">
-          <div className="space-y-2">
-            <Skeleton className="h-9 w-80" />
-            <Skeleton className="h-4 w-96" />
-          </div>
-          <div className="flex gap-2">
-            <Skeleton className="h-9 w-28" />
-            <Skeleton className="h-9 w-28" />
-          </div>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {[...Array(8)].map((_, i) => (
-            <Card key={i}>
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <Skeleton className="h-4 w-28 mb-2" />
-                    <Skeleton className="h-8 w-24 mb-1" />
-                    <Skeleton className="h-3 w-36" />
-                  </div>
-                  <Skeleton className="h-14 w-14 rounded-full" />
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div ref={pageRef} className="space-y-6 pb-8">
@@ -2560,7 +1711,7 @@ export default function HRDashboardPage() {
                           <Clock className="h-4 w-4 text-amber-500" />
                         </div>
                         <p className="text-2xl font-bold">
-                          {leaveRequestsSummary?.leaveRequests.pending ?? data.attendance.leaveRequests.pending}
+                          {leaveRequestsSummary?.leaveRequests.pending ?? 0}
                         </p>
                         <p className="text-[10px] font-medium text-muted-foreground">Pending</p>
                       </div>
@@ -2569,7 +1720,7 @@ export default function HRDashboardPage() {
                           <CheckCircle className="h-4 w-4 text-green-500" />
                         </div>
                         <p className="text-2xl font-bold">
-                          {leaveRequestsSummary?.leaveRequests.approved ?? data.attendance.leaveRequests.approved}
+                          {leaveRequestsSummary?.leaveRequests.approved ?? 0}
                         </p>
                         <p className="text-[10px] font-medium text-muted-foreground">Approved</p>
                       </div>
@@ -2578,7 +1729,7 @@ export default function HRDashboardPage() {
                           <XCircle className="h-4 w-4 text-red-500" />
                         </div>
                         <p className="text-2xl font-bold">
-                          {leaveRequestsSummary?.leaveRequests.rejected ?? data.attendance.leaveRequests.rejected}
+                          {leaveRequestsSummary?.leaveRequests.rejected ?? 0}
                         </p>
                         <p className="text-[10px] font-medium text-muted-foreground">Rejected</p>
                       </div>
@@ -2649,12 +1800,12 @@ export default function HRDashboardPage() {
                           <Cake className="h-3.5 w-3.5 text-pink-500" />
                           <p className="text-sm font-medium">Birthdays</p>
                           <Badge variant="secondary" className="ml-auto text-xs h-5">
-                            {(upcomingEvents?.birthdays ?? data.upcomingEvents.birthdays).length}
+                            {(upcomingEvents?.birthdays ?? []).length}
                           </Badge>
                         </div>
-                        {(upcomingEvents?.birthdays ?? data.upcomingEvents.birthdays).slice(0, 3).length > 0 ? (
+                        {(upcomingEvents?.birthdays ?? []).slice(0, 3).length > 0 ? (
                           <div className="space-y-2">
-                            {(upcomingEvents?.birthdays ?? data.upcomingEvents.birthdays).slice(0, 3).map((person) => (
+                            {(upcomingEvents?.birthdays ?? []).slice(0, 3).map((person) => (
                               <div key={person.id} className="flex items-center gap-3 p-2 rounded-lg border hover:bg-muted/50 transition-colors">
                                 <Avatar className="h-8 w-8">
                                   <AvatarImage src={(person as any).avatar || undefined} alt={person.name || ''} />
@@ -2689,12 +1840,12 @@ export default function HRDashboardPage() {
                           <Award className="h-3.5 w-3.5 text-amber-500" />
                           <p className="text-sm font-medium">Work Anniversaries</p>
                           <Badge variant="secondary" className="ml-auto text-xs h-5">
-                            {(upcomingEvents?.workAnniversaries ?? data.upcomingEvents.workAnniversaries).length}
+                            {(upcomingEvents?.workAnniversaries ?? []).length}
                           </Badge>
                         </div>
-                        {(upcomingEvents?.workAnniversaries ?? data.upcomingEvents.workAnniversaries).slice(0, 3).length > 0 ? (
+                        {(upcomingEvents?.workAnniversaries ?? []).slice(0, 3).length > 0 ? (
                           <div className="space-y-2">
-                            {(upcomingEvents?.workAnniversaries ?? data.upcomingEvents.workAnniversaries).slice(0, 3).map((person) => (
+                            {(upcomingEvents?.workAnniversaries ?? []).slice(0, 3).map((person) => (
                               <div key={person.id} className="flex items-center gap-3 p-2 rounded-lg border hover:bg-muted/50 transition-colors">
                                 <Avatar className="h-8 w-8">
                                   <AvatarImage src={(person as any).avatar || undefined} alt={person.name || ''} />
@@ -2729,12 +1880,12 @@ export default function HRDashboardPage() {
                           <Calendar className="h-3.5 w-3.5 text-blue-500" />
                           <p className="text-sm font-medium">Holidays</p>
                           <Badge variant="secondary" className="ml-auto text-xs h-5">
-                            {(upcomingEvents?.holidays ?? data.upcomingEvents.holidays).length}
+                            {(upcomingEvents?.holidays ?? []).length}
                           </Badge>
                         </div>
-                        {(upcomingEvents?.holidays ?? data.upcomingEvents.holidays).length > 0 ? (
+                        {(upcomingEvents?.holidays ?? []).length > 0 ? (
                           <div className="space-y-2">
-                            {(upcomingEvents?.holidays ?? data.upcomingEvents.holidays).slice(0, 3).map((holiday, i) => (
+                            {(upcomingEvents?.holidays ?? []).slice(0, 3).map((holiday, i) => (
                               <div key={i} className="flex items-center gap-3 p-2 rounded-lg border hover:bg-muted/50 transition-colors">
                                 <div className="h-8 w-8 rounded-md bg-blue-100 dark:bg-blue-900/30 flex flex-col items-center justify-center text-blue-700 dark:text-blue-400">
                                   <span className="text-[9px] font-medium leading-none">{new Date(holiday.date).toLocaleDateString('en-US', { month: 'short' }).toUpperCase()}</span>
@@ -2858,10 +2009,10 @@ export default function HRDashboardPage() {
         {/* Recruitment Tab */}
         <TabsContent value="recruitment" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <MetricCard title="Open Positions" value={recruitmentStats?.openPositions ?? data.recruitment.openPositions} icon={Briefcase} compact />
-            <MetricCard title="Total Candidates" value={recruitmentStats?.totalCandidates ?? data.recruitment.totalCandidates} icon={Users} compact />
-            <MetricCard title="Interviews Scheduled" value={recruitmentStats?.interviewsScheduled ?? data.recruitment.interviewsScheduled} icon={Calendar} compact />
-            <MetricCard title="Offers Extended" value={recruitmentStats?.offersExtended ?? data.recruitment.offersExtended} icon={FileText} compact />
+            <MetricCard title="Open Positions" value={recruitmentStats?.openPositions ?? 0} icon={Briefcase} compact />
+            <MetricCard title="Total Candidates" value={recruitmentStats?.totalCandidates ?? 0} icon={Users} compact />
+            <MetricCard title="Interviews Scheduled" value={recruitmentStats?.interviewsScheduled ?? 0} icon={Calendar} compact />
+            <MetricCard title="Offers Extended" value={recruitmentStats?.offersExtended ?? 0} icon={FileText} compact />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
@@ -2871,13 +2022,13 @@ export default function HRDashboardPage() {
                 <CardDescription>Candidate progression through stages</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                {Object.entries(recruitmentStats?.recruitmentPipeline ?? data.recruitment.recruitmentPipeline).map(([stage, count]) => (
+                {Object.entries(recruitmentStats?.recruitmentPipeline ?? { applied: 0, screening: 0, interview: 0, offer: 0, hired: 0 }).map(([stage, count]) => (
                   <div key={stage} className="space-y-1">
                     <div className="flex items-center justify-between text-sm">
                       <span className="capitalize font-medium">{stage}</span>
                       <span className="text-muted-foreground">{count}</span>
                     </div>
-                    <Progress value={(count / Math.max((recruitmentStats?.totalCandidates ?? data.recruitment.totalCandidates), 1)) * 100} className="h-2" />
+                    <Progress value={(count / Math.max((recruitmentStats?.totalCandidates ?? 0), 1)) * 100} className="h-2" />
                   </div>
                 ))}
               </CardContent>
@@ -2892,14 +2043,14 @@ export default function HRDashboardPage() {
                 <div className="flex items-center justify-between p-3 rounded-lg border">
                   <div>
                     <p className="text-sm font-medium">Offer Acceptance Rate</p>
-                    <p className="text-2xl font-bold">{recruitmentStats?.offerAcceptanceRate ?? data.recruitment.offerAcceptanceRate}%</p>
+                    <p className="text-2xl font-bold">{recruitmentStats?.offerAcceptanceRate ?? 0}%</p>
                   </div>
                   <Award className="h-8 w-8 text-muted-foreground" />
                 </div>
                 <div className="flex items-center justify-between p-3 rounded-lg border">
                   <div>
                     <p className="text-sm font-medium">Avg Time to Hire</p>
-                    <p className="text-2xl font-bold">{recruitmentStats?.avgTimeToHire ?? data.recruitment.avgTimeToHire} days</p>
+                    <p className="text-2xl font-bold">{recruitmentStats?.avgTimeToHire ?? 0} days</p>
                   </div>
                   <Clock className="h-8 w-8 text-muted-foreground" />
                 </div>
@@ -2914,7 +2065,7 @@ export default function HRDashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {(recruitmentStats?.urgentPositions ?? data.recruitment.urgentPositions).map((position, index) => (
+                {(recruitmentStats?.urgentPositions ?? []).map((position, index) => (
                   <div key={index} className="flex items-center justify-between p-3 rounded-lg border">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
@@ -2951,9 +2102,9 @@ export default function HRDashboardPage() {
         {/* Performance Tab */}
         <TabsContent value="performance" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <MetricCard title="Avg Performance Score" value={performanceStats?.avgScore ?? data.performance.avgPerformanceScore} suffix="/10" icon={Target} compact />
-            <MetricCard title="Reviews Completed" value={performanceStats?.reviewsCompleted ?? data.performance.reviewsCompleted} icon={CheckCircle} iconColor="green" compact />
-            <MetricCard title="Reviews Pending" value={performanceStats?.reviewsPending ?? data.performance.reviewsPending} icon={Clock} iconColor="orange" compact />
+            <MetricCard title="Avg Performance Score" value={performanceStats?.avgScore ?? 0} suffix="/10" icon={Target} compact />
+            <MetricCard title="Reviews Completed" value={performanceStats?.reviewsCompleted ?? 0} icon={CheckCircle} iconColor="green" compact />
+            <MetricCard title="Reviews Pending" value={performanceStats?.reviewsPending ?? 0} icon={Clock} iconColor="orange" compact />
             <MetricCard title="Needs Improvement" value={performanceStats?.needsImprovement ?? 0} icon={AlertTriangle} iconColor="red" compact />
           </div>
 
@@ -3027,10 +2178,10 @@ export default function HRDashboardPage() {
         {/* Onboarding Tab */}
         <TabsContent value="onboarding" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <MetricCard title="New Hires (MTD)" value={onboardingStats?.newHiresThisMonth ?? data.onboarding.newHiresThisMonth} icon={UserPlus} compact />
-            <MetricCard title="In Progress" value={onboardingStats?.onboardingInProgress ?? data.onboarding.onboardingInProgress} icon={Activity} iconColor="blue" compact />
-            <MetricCard title="Completed" value={onboardingStats?.onboardingCompleted ?? data.onboarding.onboardingCompleted} icon={CheckCircle} iconColor="green" compact />
-            <MetricCard title="Avg Completion" value={onboardingStats?.avgCompletionTime ?? data.onboarding.avgCompletionTime} suffix=" days" icon={Clock} compact />
+            <MetricCard title="New Hires (MTD)" value={onboardingStats?.newHiresThisMonth ?? 0} icon={UserPlus} compact />
+            <MetricCard title="In Progress" value={onboardingStats?.onboardingInProgress ?? 0} icon={Activity} iconColor="blue" compact />
+            <MetricCard title="Completed" value={onboardingStats?.onboardingCompleted ?? 0} icon={CheckCircle} iconColor="green" compact />
+            <MetricCard title="Avg Completion" value={onboardingStats?.avgCompletionTime ?? 0} suffix=" days" icon={Clock} compact />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
@@ -3041,10 +2192,10 @@ export default function HRDashboardPage() {
               <CardContent>
                 <div className="space-y-3">
                   {[
-                    { label: 'Documents Submitted', value: onboardingStats?.checklistSummary.documentsSubmitted ?? data.onboarding.checklistSummary.documentsSubmitted, total: onboardingStats?.checklistSummary.total ?? data.onboarding.checklistSummary.total, icon: FileCheck },
-                    { label: 'IT Setup Complete', value: onboardingStats?.checklistSummary.itSetupComplete ?? data.onboarding.checklistSummary.itSetupComplete, total: onboardingStats?.checklistSummary.total ?? data.onboarding.checklistSummary.total, icon: Laptop },
-                    { label: 'Training Assigned', value: onboardingStats?.checklistSummary.trainingAssigned ?? data.onboarding.checklistSummary.trainingAssigned, total: onboardingStats?.checklistSummary.total ?? data.onboarding.checklistSummary.total, icon: BookOpen },
-                    { label: 'Mentor Assigned', value: onboardingStats?.checklistSummary.mentorAssigned ?? data.onboarding.checklistSummary.mentorAssigned, total: onboardingStats?.checklistSummary.total ?? data.onboarding.checklistSummary.total, icon: Users },
+                    { label: 'Documents Submitted', value: onboardingStats?.checklistSummary.documentsSubmitted ?? 0, total: onboardingStats?.checklistSummary.total ?? 0, icon: FileCheck },
+                    { label: 'IT Setup Complete', value: onboardingStats?.checklistSummary.itSetupComplete ?? 0, total: onboardingStats?.checklistSummary.total ?? 0, icon: Laptop },
+                    { label: 'Training Assigned', value: onboardingStats?.checklistSummary.trainingAssigned ?? 0, total: onboardingStats?.checklistSummary.total ?? 0, icon: BookOpen },
+                    { label: 'Mentor Assigned', value: onboardingStats?.checklistSummary.mentorAssigned ?? 0, total: onboardingStats?.checklistSummary.total ?? 0, icon: Users },
                   ].map((item) => (
                     <div key={item.label} className="space-y-1">
                       <div className="flex items-center justify-between text-sm">
@@ -3103,10 +2254,10 @@ export default function HRDashboardPage() {
         {/* Exits Tab */}
         <TabsContent value="exits" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <MetricCard title="Resignations (MTD)" value={exitsStats?.resignationsThisMonth ?? data.exits.resignationsThisMonth} icon={UserMinus} iconColor="red" compact />
-            <MetricCard title="Turnover Rate" value={exitsStats?.turnoverRate ?? data.exits.turnoverRate} suffix="%" icon={TrendingDown} iconColor="orange" compact />
-            <MetricCard title="Retention Rate" value={exitsStats?.retentionRate ?? data.exits.retentionRate} suffix="%" icon={UserCheck} iconColor="green" compact />
-            <MetricCard title="Exit Interviews Pending" value={exitsStats?.exitInterviewsPending ?? data.exits.exitInterviewsPending} icon={ClipboardCheck} compact />
+            <MetricCard title="Resignations (MTD)" value={exitsStats?.resignationsThisMonth ?? 0} icon={UserMinus} iconColor="red" compact />
+            <MetricCard title="Turnover Rate" value={exitsStats?.turnoverRate ?? 0} suffix="%" icon={TrendingDown} iconColor="orange" compact />
+            <MetricCard title="Retention Rate" value={exitsStats?.retentionRate ?? 0} suffix="%" icon={UserCheck} iconColor="green" compact />
+            <MetricCard title="Exit Interviews Pending" value={exitsStats?.exitInterviewsPending ?? 0} icon={ClipboardCheck} compact />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
@@ -3171,9 +2322,9 @@ export default function HRDashboardPage() {
         {/* Compensation Tab */}
         <TabsContent value="compensation" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <MetricCard title="Total Payroll" value={compensationStats ? `${(compensationStats.totalPayroll / 100000).toFixed(1)}L` : `${(data.compensation.totalPayroll / 1000000).toFixed(1)}M`} prefix={compensationStats?.currency ?? '$'} icon={DollarSign} compact />
-            <MetricCard title="Avg Salary" value={compensationStats ? `${(compensationStats.avgSalary / 1000).toFixed(0)}K` : `${(data.compensation.avgSalary / 1000).toFixed(0)}K`} prefix={compensationStats?.currency ?? '$'} icon={DollarSign} compact />
-            <MetricCard title="Employees with Salary" value={compensationStats?.employeesWithSalary ?? data.compensation.expenseClaimsPending} icon={Users} iconColor="green" compact />
+            <MetricCard title="Total Payroll" value={compensationStats ? `${(compensationStats.totalPayroll / 100000).toFixed(1)}L` : `${(0 / 1000000).toFixed(1)}M`} prefix={compensationStats?.currency ?? '$'} icon={DollarSign} compact />
+            <MetricCard title="Avg Salary" value={compensationStats ? `${(compensationStats.avgSalary / 1000).toFixed(0)}K` : `${(0 / 1000).toFixed(0)}K`} prefix={compensationStats?.currency ?? '$'} icon={DollarSign} compact />
+            <MetricCard title="Employees with Salary" value={compensationStats?.employeesWithSalary ?? 0} icon={Users} iconColor="green" compact />
             <MetricCard title="No Salary Data" value={compensationStats?.employeesWithoutSalary ?? 0} icon={AlertCircle} iconColor="orange" compact />
           </div>
 
@@ -3288,11 +2439,11 @@ export default function HRDashboardPage() {
               <CardContent>
                 <div className="space-y-4">
                   {[
-                    { label: 'Male', value: diversityStats?.genderRatio.male ?? data.diversity.genderRatio.male, color: 'bg-blue-500' },
-                    { label: 'Female', value: diversityStats?.genderRatio.female ?? data.diversity.genderRatio.female, color: 'bg-pink-500' },
-                    { label: 'Other', value: diversityStats?.genderRatio.other ?? data.diversity.genderRatio.other, color: 'bg-purple-500' },
+                    { label: 'Male', value: diversityStats?.genderRatio.male ?? 0, color: 'bg-blue-500' },
+                    { label: 'Female', value: diversityStats?.genderRatio.female ?? 0, color: 'bg-pink-500' },
+                    { label: 'Other', value: diversityStats?.genderRatio.other ?? 0, color: 'bg-purple-500' },
                   ].map((item) => {
-                    const totalEmps = (diversityStats?.genderRatio.male ?? 0) + (diversityStats?.genderRatio.female ?? 0) + (diversityStats?.genderRatio.other ?? 0) || data.overview.totalEmployees;
+                    const totalEmps = (diversityStats?.genderRatio.male ?? 0) + (diversityStats?.genderRatio.female ?? 0) + (diversityStats?.genderRatio.other ?? 0) || 0;
                     return (
                     <div key={item.label} className="space-y-2">
                       <div className="flex items-center justify-between text-sm">
@@ -3369,10 +2520,10 @@ export default function HRDashboardPage() {
         {/* Engagement Tab */}
         <TabsContent value="engagement" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <MetricCard title="Satisfaction Score" value={engagementStats?.satisfactionScore ?? data.engagement.satisfactionScore} suffix="/10" icon={ThumbsUp} iconColor="green" compact />
-            <MetricCard title="Engagement Score" value={engagementStats?.engagementScore ?? data.engagement.engagementScore} suffix="/10" icon={Heart} iconColor="red" compact />
-            <MetricCard title="eNPS" value={engagementStats?.eNPS ?? data.engagement.eNPS} icon={Target} iconColor="blue" compact />
-            <MetricCard title="Recognitions" value={engagementStats?.recognitionsThisMonth ?? data.engagement.recognitionsThisMonth} icon={Award} iconColor="yellow" compact />
+            <MetricCard title="Satisfaction Score" value={engagementStats?.satisfactionScore ?? 0} suffix="/10" icon={ThumbsUp} iconColor="green" compact />
+            <MetricCard title="Engagement Score" value={engagementStats?.engagementScore ?? 0} suffix="/10" icon={Heart} iconColor="red" compact />
+            <MetricCard title="eNPS" value={engagementStats?.eNPS ?? 0} icon={Target} iconColor="blue" compact />
+            <MetricCard title="Recognitions" value={engagementStats?.recognitionsThisMonth ?? 0} icon={Award} iconColor="yellow" compact />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
@@ -3382,10 +2533,10 @@ export default function HRDashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 gap-4">
-                  <MiniStatCard title="Recognitions" value={engagementStats?.recognitionsThisMonth ?? data.engagement.recognitionsThisMonth} icon={Award} iconColor="yellow" />
-                  <MiniStatCard title="Feedback" value={engagementStats?.feedbackSubmitted ?? data.engagement.feedbackSubmitted} icon={MessageSquareWarning} iconColor="blue" />
-                  <MiniStatCard title="1-on-1s" value={engagementStats?.oneOnOnesMeetings ?? data.engagement.oneOnOnesMeetings} icon={Users} iconColor="green" />
-                  <MiniStatCard title="Team Events" value={engagementStats?.teamEvents ?? data.engagement.teamEvents} icon={PartyPopper} iconColor="pink" />
+                  <MiniStatCard title="Recognitions" value={engagementStats?.recognitionsThisMonth ?? 0} icon={Award} iconColor="yellow" />
+                  <MiniStatCard title="Feedback" value={engagementStats?.feedbackSubmitted ?? 0} icon={MessageSquareWarning} iconColor="blue" />
+                  <MiniStatCard title="1-on-1s" value={engagementStats?.oneOnOnesMeetings ?? 0} icon={Users} iconColor="green" />
+                  <MiniStatCard title="Team Events" value={engagementStats?.teamEvents ?? 0} icon={PartyPopper} iconColor="pink" />
                 </div>
               </CardContent>
             </Card>
@@ -3425,7 +2576,7 @@ export default function HRDashboardPage() {
         {/* Skills Tab */}
         <TabsContent value="skills" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <MetricCard title="Unique Skills" value={skillsStats?.totalUniqueSkills ?? data.skills.totalSkills} icon={Code} compact />
+            <MetricCard title="Unique Skills" value={skillsStats?.totalUniqueSkills ?? 0} icon={Code} compact />
             <MetricCard title="Employees with Skills" value={skillsStats?.employeesWithSkills ?? 0} icon={Users} iconColor="green" compact />
             <MetricCard title="Avg Skills/Employee" value={skillsStats?.avgSkillsPerEmployee?.toFixed(1) ?? '0'} icon={Target} iconColor="blue" compact />
             <MetricCard title="Most Common Skills" value={skillsStats?.topSkills.length ?? 0} icon={BadgeCheck} iconColor="purple" compact />
@@ -3439,8 +2590,8 @@ export default function HRDashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="flex flex-wrap gap-2">
-                  {(skillsStats?.topSkills ?? data.skills.topSkills).length > 0 ? (
-                    (skillsStats?.topSkills ?? data.skills.topSkills).map((skill) => (
+                  {(skillsStats?.topSkills ?? []).length > 0 ? (
+                    (skillsStats?.topSkills ?? []).map((skill) => (
                       <Badge key={skill.skill} variant="outline" className="text-sm py-1.5 px-3">
                         {skill.skill}
                         <span className="ml-2 text-xs text-muted-foreground">{skill.count}</span>
