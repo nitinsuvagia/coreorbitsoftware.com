@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { UserAvatar } from '@/components/user-avatar';
 import {
   ChevronLeft,
   ChevronRight,
@@ -127,10 +127,13 @@ function SessionPopup({ employee, dateStr, sessions, isToday, onClose }: Session
 
         {/* Employee + date */}
         <div className="flex items-center gap-3 pb-2 border-b">
-          <Avatar className="h-9 w-9">
-            <AvatarImage src={employee.avatar || ''} />
-            <AvatarFallback>{employee.firstName[0]}{employee.lastName[0]}</AvatarFallback>
-          </Avatar>
+          <UserAvatar
+            id={employee.employeeId}
+            firstName={employee.firstName}
+            lastName={employee.lastName}
+            avatar={employee.avatar || undefined}
+            size="sm"
+          />
           <div>
             <p className="font-semibold text-sm">{employee.firstName} {employee.lastName}</p>
             <p className="text-xs text-muted-foreground">{dateLabel}</p>
@@ -493,12 +496,14 @@ export default function AttendanceMonitorPage() {
                 {/* Employee info – sticky */}
                 <td className={`sticky left-0 z-10 px-4 py-3 ${idx % 2 === 1 ? 'bg-muted/10' : 'bg-card'} hover:bg-muted/30`}>
                   <div className="flex items-center gap-3">
-                    <Avatar className="h-8 w-8 flex-shrink-0">
-                      <AvatarImage src={emp.avatar || ''} />
-                      <AvatarFallback className="text-xs">
-                        {emp.firstName[0]}{emp.lastName[0]}
-                      </AvatarFallback>
-                    </Avatar>
+                    <UserAvatar
+                      id={emp.employeeId}
+                      firstName={emp.firstName}
+                      lastName={emp.lastName}
+                      avatar={emp.avatar || undefined}
+                      size="sm"
+                      className="flex-shrink-0"
+                    />
                     <div className="min-w-0">
                       <p className="font-medium truncate">
                         {emp.firstName} {emp.lastName}
