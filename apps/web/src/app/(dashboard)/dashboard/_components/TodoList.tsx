@@ -327,14 +327,19 @@ function TodoDialog({ open, onOpenChange, todo, onSave }: TodoDialogProps) {
 
     setSaving(true);
     try {
+      // When editing: send null to explicitly clear assignee; when creating: omit if none selected
+      const assigneeId = selectedAssignee?.userId
+        ? selectedAssignee.userId
+        : todo
+          ? null       // editing with no assignee = clear it
+          : undefined; // creating with no assignee = leave unset
       await onSave({
         title: title.trim(),
         description: description.trim() || undefined,
         dueDate: dueDate || undefined,
         priority,
         category: category.trim() || undefined,
-        // Always send assigneeId: a UUID when assigned, null to explicitly clear
-        assigneeId: selectedAssignee?.userId ?? null,
+        assigneeId,
       });
       onOpenChange(false);
     } catch (error) {

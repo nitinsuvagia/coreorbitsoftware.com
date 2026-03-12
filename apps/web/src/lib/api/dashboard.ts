@@ -79,8 +79,8 @@ export interface CreateTodoInput {
   category?: string;
   tags?: string[];
   reminder?: string;
-  // Optional assignee (userId of the employee to assign this task to)
-  assigneeId?: string;
+  // Optional assignee (userId of the employee to assign this task to); null clears the assignee
+  assigneeId?: string | null;
 }
 
 export interface UpdateTodoInput extends Partial<CreateTodoInput> {
