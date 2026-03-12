@@ -41,7 +41,6 @@ function getRedisClient(): Redis {
     redisClient = new Redis(config.redisUrl, {
       maxRetriesPerRequest: 3,
       enableReadyCheck: true,
-      lazyConnect: true,
     });
     
     redisClient.on('error', (error) => {
@@ -76,7 +75,6 @@ export async function queueEmail(
   } = {}
 ): Promise<string> {
   const redis = getRedisClient();
-  await redis.connect();
   
   const jobId = `email:${Date.now()}:${Math.random().toString(36).substring(7)}`;
   
@@ -111,7 +109,6 @@ export async function queueEmail(
  */
 export async function processEmailQueue(): Promise<void> {
   const redis = getRedisClient();
-  await redis.connect();
   
   try {
     // Move scheduled emails to queue if their time has come
@@ -206,7 +203,6 @@ export async function processEmailQueue(): Promise<void> {
  */
 export async function getEmailJobStatus(jobId: string): Promise<EmailJobResult | null> {
   const redis = getRedisClient();
-  await redis.connect();
   
   // Check completed
   const completed = await redis.get(`${COMPLETED_KEY}:${jobId}`);
@@ -249,7 +245,6 @@ export async function getQueueStats(): Promise<{
   failed: number;
 }> {
   const redis = getRedisClient();
-  await redis.connect();
   
   const [queued, processing, scheduled] = await Promise.all([
     redis.llen(QUEUE_KEY),
@@ -292,7 +287,6 @@ export function startEmailQueueProcessor(intervalMs: number = 5000): NodeJS.Time
  */
 export async function clearAllQueues(): Promise<void> {
   const redis = getRedisClient();
-  await redis.connect();
   
   await Promise.all([
     redis.del(QUEUE_KEY),
