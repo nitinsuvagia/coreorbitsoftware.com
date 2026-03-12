@@ -204,17 +204,47 @@ export async function checkIn(
     throw new Error('Employee not found or inactive');
   }
   
-  // Check if there's an open (not checked-out) session today
+  // Check for ANY open (not checked-out) session across all dates.
+  // This prevents a second active session when the employee forgot to
+  // check out on a previous day (the old code only checked today's date,
+  // allowing two simultaneous open sessions on different dates).
   const openSession = await prisma.attendance.findFirst({
     where: {
       employeeId: input.employeeId,
-      date: today,
       checkOutTime: null,
+      checkInTime: { not: null },
     },
+    orderBy: { checkInTime: 'desc' },
   });
-  
-  if (openSession?.checkInTime) {
-    throw new Error('Already checked in. Please check out first.');
+
+  if (openSession) {
+    if (openSession.date.toDateString() === today.toDateString()) {
+      // Same day — employee is already checked in today
+      throw new Error('Already checked in. Please check out first.');
+    }
+    // Different day — employee forgot to check out yesterday (or earlier).
+    // Auto-close the dangling session at end-of-day (23:59:59) of its own date
+    // so it doesn't block today's check-in and the record stays meaningful.
+    const endOfSessionDay = new Date(openSession.date);
+    endOfSessionDay.setHours(23, 59, 59, 999);
+    const checkInMs = openSession.checkInTime ? new Date(openSession.checkInTime).getTime() : endOfSessionDay.getTime();
+    const workMinutes = Math.round((endOfSessionDay.getTime() - checkInMs) / 60000);
+    await prisma.attendance.update({
+      where: { id: openSession.id },
+      data: {
+        checkOutTime: endOfSessionDay,
+        workMinutes: Math.max(0, workMinutes),
+        status: 'present',
+        notes: openSession.notes
+          ? `${openSession.notes} [Auto closed — no checkout]`
+          : '[Auto closed — no checkout]',
+        updatedBy: input.employeeId,
+      },
+    });
+    logger.warn(
+      { attendanceId: openSession.id, employeeId: input.employeeId, date: openSession.date },
+      'Auto-closed dangling attendance session from previous day before new check-in'
+    );
   }
   
   // Only the first session of the day determines if the employee is late.
