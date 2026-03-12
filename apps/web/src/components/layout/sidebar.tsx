@@ -32,6 +32,7 @@ import {
   Cpu,
   User,
   CalendarClock,
+  MonitorCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState, useMemo } from 'react';
@@ -65,6 +66,7 @@ const standaloneItems: NavItem[] = [
   { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, permission: 'dashboard:view' },
   { title: 'My 360°', href: '/my-360', icon: User, employeeOnly: true },
   { title: 'Attendance', href: '/attendance', icon: Clock, employeeOnly: true },
+  { title: 'Attendance Monitor', href: '/attendance/monitor', icon: MonitorCheck, adminOnly: true },
   { title: 'Admin 360°', href: '/admin-360', icon: Sparkles, permission: 'admin_360:view', adminOnly: true },
 ];
 

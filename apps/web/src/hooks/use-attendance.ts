@@ -1,6 +1,38 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { get, post, put, del } from '@/lib/api/client';
 
+// Admin weekly attendance types
+export interface WeeklyAttendanceSession {
+  id: string;
+  checkIn: string | null;
+  checkOut: string | null;
+  workMinutes: number;
+  status: string;
+  isLate: boolean;
+  isEarlyLeave: boolean;
+  isRemote: boolean;
+  notes?: string;
+}
+
+export interface WeeklyAttendanceLeave {
+  leaveName: string;
+  leaveCode: string;
+  halfDay: boolean;
+}
+
+export interface WeeklyAttendanceEmployee {
+  employeeId: string;
+  employeeCode: string;
+  firstName: string;
+  lastName: string;
+  avatar: string | null;
+  department: string;
+  designation: string;
+  status: string;
+  attendance: Record<string, WeeklyAttendanceSession[]>;
+  leaves: Record<string, WeeklyAttendanceLeave>;
+}
+
 // Attendance types
 export interface AttendanceRecord {
   id: string;
@@ -26,6 +58,19 @@ export interface AttendanceFilters {
 }
 
 // Attendance
+export function useAdminWeeklyAttendance(dateFrom: string, dateTo: string) {
+  return useQuery({
+    queryKey: ['admin-weekly-attendance', dateFrom, dateTo],
+    queryFn: () =>
+      get<{ success: boolean; data: WeeklyAttendanceEmployee[] }>(
+        '/api/v1/attendance/admin/weekly',
+        { dateFrom, dateTo }
+      ),
+    enabled: !!dateFrom && !!dateTo,
+    refetchInterval: 30000, // refresh every 30s for live data
+  });
+}
+
 export function useAttendance(filters: AttendanceFilters = {}) {
   // Map frontend param names to backend param names
   const backendParams: Record<string, any> = { ...filters };
