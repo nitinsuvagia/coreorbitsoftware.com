@@ -277,10 +277,10 @@ function AttendanceCell({ employee, dateStr, isToday, sessions, leave, tick, onC
       <div className="flex items-center gap-1.5">
         <div
           className={`w-2 h-2 rounded-full flex-shrink-0 ${
-            hasOpen ? 'bg-green-500 animate-pulse' : 'bg-slate-400'
+            hasOpen ? 'bg-green-500 animate-pulse' : 'bg-orange-400'
           }`}
         />
-        <span className={`text-xs font-medium ${hasOpen ? 'text-green-700' : 'text-slate-600'}`}>
+        <span className={`text-xs font-medium ${hasOpen ? 'text-green-700' : 'text-orange-600'}`}>
           {hasOpen ? 'Online' : 'Done'}
         </span>
       </div>
