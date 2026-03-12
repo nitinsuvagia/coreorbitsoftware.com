@@ -18,16 +18,24 @@ import {
   FileText, 
   Briefcase, 
   CheckSquare, 
-  Calendar, 
+  Calendar,
+  CalendarClock,
+  CalendarDays,
   DollarSign,
   Clock,
+  MonitorCheck,
   Settings,
   Home,
   Users,
+  BarChart3,
+  Building2,
+  CreditCard,
+  ClipboardList,
+  Bell,
   Loader2
 } from 'lucide-react';
 import { useDebounce } from '@/hooks/use-debounce';
-import { apiClient } from '@/lib/api/client';
+import { api } from '@/lib/api/client';
 
 interface SearchResult {
   id: string;
@@ -37,26 +45,48 @@ interface SearchResult {
   url: string;
 }
 
-interface SearchResponse {
-  results: SearchResult[];
-  total: number;
-}
-
 interface SearchCommandProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-const quickLinks = [
-  { name: 'Dashboard', href: '/dashboard', icon: Home },
-  { name: 'Employees', href: '/employees', icon: Users },
-  { name: 'Projects', href: '/projects', icon: Briefcase },
-  { name: 'Tasks', href: '/tasks', icon: CheckSquare },
-  { name: 'Documents', href: '/documents', icon: FileText },
-  { name: 'Attendance', href: '/attendance', icon: Clock },
-  { name: 'Leave Requests', href: '/leave', icon: Calendar },
-  { name: 'Invoices', href: '/billing', icon: DollarSign },
-  { name: 'Settings', href: '/settings', icon: Settings },
+const quickLinks: { group: string; items: { name: string; href: string; icon: any }[] }[] = [
+  {
+    group: 'General',
+    items: [
+      { name: 'Dashboard', href: '/dashboard', icon: Home },
+      { name: 'My 360°', href: '/my-360', icon: User },
+      { name: 'Attendance', href: '/attendance', icon: Clock },
+      { name: 'Notifications', href: '/notifications', icon: Bell },
+    ],
+  },
+  {
+    group: 'HR',
+    items: [
+      { name: 'Employees', href: '/employees', icon: Users },
+      { name: 'Leave Management', href: '/hr/leave-management', icon: CalendarClock },
+      { name: 'Performance Reviews', href: '/hr/performance-reviews', icon: ClipboardList },
+      { name: 'Holidays', href: '/hr/holidays', icon: CalendarDays },
+      { name: 'Documents', href: '/documents', icon: FileText },
+    ],
+  },
+  {
+    group: 'Work',
+    items: [
+      { name: 'Projects', href: '/projects', icon: Briefcase },
+      { name: 'Tasks', href: '/tasks', icon: CheckSquare },
+      { name: 'Reports', href: '/reports', icon: BarChart3 },
+    ],
+  },
+  {
+    group: 'Admin',
+    items: [
+      { name: 'Attendance Monitor', href: '/attendance/monitor', icon: MonitorCheck },
+      { name: 'Organization', href: '/organization', icon: Building2 },
+      { name: 'Billing', href: '/billing', icon: CreditCard },
+      { name: 'Settings', href: '/settings', icon: Settings },
+    ],
+  },
 ];
 
 const getIconForType = (type: SearchResult['type']) => {
@@ -118,9 +148,10 @@ export function SearchCommand({ open, onOpenChange }: SearchCommandProps) {
 
       setIsLoading(true);
       try {
-        const response = await apiClient.get<SearchResponse>('/search', {
-          params: { q: debouncedQuery, limit: 20 }
-        });
+        const response = await api.get<{ results: SearchResult[]; total: number }>(
+          '/api/v1/search',
+          { params: { q: debouncedQuery, limit: 20 } }
+        );
         setResults(response.data?.results || []);
       } catch (error) {
         console.error('Search failed:', error);
@@ -197,20 +228,25 @@ export function SearchCommand({ open, onOpenChange }: SearchCommandProps) {
             </>
           ) : (
             <>
-              <CommandEmpty>Start typing to search...</CommandEmpty>
-              <CommandGroup heading="Quick Links">
-                {quickLinks.map((link) => (
-                  <CommandItem
-                    key={link.href}
-                    value={link.name}
-                    onSelect={() => handleSelect(link.href)}
-                    className="cursor-pointer"
-                  >
-                    <link.icon className="mr-2 h-4 w-4" />
-                    <span>{link.name}</span>
-                  </CommandItem>
-                ))}
-              </CommandGroup>
+              <CommandEmpty>Type to search employees, projects, tasks…</CommandEmpty>
+              {quickLinks.map((group, gi) => (
+                <React.Fragment key={group.group}>
+                  {gi > 0 && <CommandSeparator />}
+                  <CommandGroup heading={group.group}>
+                    {group.items.map((link) => (
+                      <CommandItem
+                        key={link.href}
+                        value={link.name}
+                        onSelect={() => handleSelect(link.href)}
+                        className="cursor-pointer"
+                      >
+                        <link.icon className="mr-2 h-4 w-4" />
+                        <span>{link.name}</span>
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </React.Fragment>
+              ))}
             </>
           )}
         </CommandList>
