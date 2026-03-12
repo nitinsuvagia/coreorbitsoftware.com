@@ -928,7 +928,7 @@ function FolderCard({
             </td>
             <td className="p-3 text-sm text-muted-foreground">{folder.createdBy?.firstName} {folder.createdBy?.lastName}</td>
             <td className="p-3 text-sm text-muted-foreground">{safeFormatDistanceToNow(folder.updatedAt)}</td>
-            <td className="p-3 text-sm text-muted-foreground">{folder.fileCount || 0} items</td>
+            <td className="p-3 text-sm text-muted-foreground">{(folder.fileCount || 0) + (folder.subfolderCount || 0)} items</td>
             <td className="p-3">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
@@ -1090,7 +1090,7 @@ function FolderCard({
               <h4 className="font-semibold text-sm truncate" title={folder.name}>{folder.name}</h4>
             )}
             <p className="text-xs text-muted-foreground mt-1">
-              {folder.fileCount || 0} items
+              {(folder.fileCount || 0) + (folder.subfolderCount || 0)} items
             </p>
           </CardContent>
         </Card>
