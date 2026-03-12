@@ -62,7 +62,7 @@ export function useAdminWeeklyAttendance(dateFrom: string, dateTo: string) {
   return useQuery({
     queryKey: ['admin-weekly-attendance', dateFrom, dateTo],
     queryFn: () =>
-      get<{ success: boolean; data: WeeklyAttendanceEmployee[] }>(
+      get<WeeklyAttendanceEmployee[]>(
         '/api/v1/attendance/admin/weekly',
         { dateFrom, dateTo }
       ),

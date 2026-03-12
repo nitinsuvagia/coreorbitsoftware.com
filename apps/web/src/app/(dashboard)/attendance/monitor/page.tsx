@@ -356,7 +356,7 @@ export default function AttendanceMonitorPage() {
     sessions: WeeklyAttendanceSession[];
   } | null>(null);
 
-  const employees: WeeklyAttendanceEmployee[] = data?.data ?? [];
+  const employees: WeeklyAttendanceEmployee[] = data ?? [];
 
   function prevWeek() {
     setWeekStart((w) => shiftDate(w, -7));
