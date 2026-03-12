@@ -417,6 +417,130 @@ router.post(
 );
 
 /**
+ * GET /attendance/admin/weekly
+ * Get all employees' attendance for a date range (admin weekly monitor view)
+ * Query params: dateFrom (YYYY-MM-DD), dateTo (YYYY-MM-DD)
+ */
+router.get(
+  '/admin/weekly',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
+
+      const dateFrom = req.query.dateFrom as string;
+      const dateTo = req.query.dateTo as string;
+
+      if (!dateFrom || !dateTo) {
+        return res.status(400).json({ error: 'dateFrom and dateTo are required' });
+      }
+
+      const [fy, fm, fd] = dateFrom.split('-').map(Number);
+      const [ty, tm, td] = dateTo.split('-').map(Number);
+      const fromDate = new Date(Date.UTC(fy, fm - 1, fd));
+      const toDate = new Date(Date.UTC(ty, tm - 1, td));
+
+      // Fetch all active employees
+      const employees = await prisma.employee.findMany({
+        where: { status: { in: ['ACTIVE', 'ON_LEAVE', 'PROBATION', 'NOTICE_PERIOD'] } },
+        include: {
+          department: { select: { name: true, code: true } },
+          designation: { select: { name: true } },
+        },
+        orderBy: [{ firstName: 'asc' }],
+      });
+
+      // Fetch all attendance records for all employees in range
+      const attendanceRecords = await prisma.attendance.findMany({
+        where: {
+          date: { gte: fromDate, lte: toDate },
+        },
+        orderBy: [{ employeeId: 'asc' }, { date: 'asc' }, { checkInTime: 'asc' }],
+      });
+
+      // Fetch approved leaves in range
+      const leaveRecords = await prisma.leaveRequest.findMany({
+        where: {
+          status: 'APPROVED',
+          fromDate: { lte: toDate },
+          toDate: { gte: fromDate },
+        },
+        include: {
+          leaveType: { select: { name: true, code: true } },
+        },
+      });
+
+      // Build lookup: employeeId -> date (YYYY-MM-DD) -> sessions[]
+      const attendanceMap: Record<string, Record<string, any[]>> = {};
+      for (const rec of attendanceRecords) {
+        const empId = rec.employeeId;
+        const dateKey = rec.date instanceof Date
+          ? rec.date.toISOString().slice(0, 10)
+          : String(rec.date).slice(0, 10);
+        if (!attendanceMap[empId]) attendanceMap[empId] = {};
+        if (!attendanceMap[empId][dateKey]) attendanceMap[empId][dateKey] = [];
+        attendanceMap[empId][dateKey].push({
+          id: rec.id,
+          checkIn: rec.checkInTime,
+          checkOut: rec.checkOutTime,
+          workMinutes: rec.workMinutes,
+          status: rec.status,
+          isLate: rec.isLate,
+          isEarlyLeave: rec.isEarlyLeave,
+          isRemote: rec.isRemote,
+          notes: rec.notes,
+        });
+      }
+
+      // Build lookup: employeeId -> date (YYYY-MM-DD) -> leave info
+      const leaveMap: Record<string, Record<string, { leaveName: string; leaveCode: string; halfDay: boolean }>> = {};
+      for (const leave of leaveRecords) {
+        const empId = leave.employeeId;
+        const from = new Date(leave.fromDate);
+        const to = new Date(leave.toDate);
+        const halfDay = (leave as any).isHalfDay ?? false;
+        // Iterate days of leave
+        const cur = new Date(from);
+        while (cur <= to) {
+          const dk = cur.toISOString().slice(0, 10);
+          if (!leaveMap[empId]) leaveMap[empId] = {};
+          leaveMap[empId][dk] = {
+            leaveName: (leave.leaveType as any)?.name ?? 'Leave',
+            leaveCode: (leave.leaveType as any)?.code ?? 'LV',
+            halfDay,
+          };
+          cur.setDate(cur.getDate() + 1);
+        }
+      }
+
+      // Build result
+      const result = employees.map((emp: any) => {
+        const attByDate = attendanceMap[emp.id] || {};
+        const leaveByDate = leaveMap[emp.id] || {};
+
+        return {
+          employeeId: emp.id,
+          employeeCode: emp.employeeCode,
+          firstName: emp.firstName ?? '',
+          lastName: emp.lastName ?? '',
+          avatar: emp.avatar ?? null,
+          department: emp.department?.name ?? '',
+          designation: emp.designation?.name ?? '',
+          status: emp.status,
+          attendance: attByDate,
+          leaves: leaveByDate,
+        };
+      });
+
+      res.json({ success: true, data: result });
+    } catch (error) {
+      logger.error({ error: (error as Error).message }, 'Failed to get admin weekly attendance');
+      next(error);
+    }
+  }
+);
+
+/**
  * GET /attendance/overview/today
  * Get today's attendance overview for the entire company
  */
