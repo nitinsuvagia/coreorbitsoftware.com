@@ -1320,9 +1320,14 @@ export default function HRDashboardPage() {
                     </div>
                   )}
                   {celebrations.birthdaysToday.length === 0 && celebrations.anniversariesToday.length === 0 && (
-                    <div className="flex flex-col items-center justify-center h-full text-center py-8">
-                      <PartyPopper className="h-8 w-8 text-muted-foreground mb-2" />
-                      <p className="text-sm text-muted-foreground">No celebrations today</p>
+                    <div className="flex items-center gap-3 p-3 rounded-lg border border-dashed">
+                      <div className="h-9 w-9 rounded-full bg-muted flex items-center justify-center shrink-0">
+                        <PartyPopper className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">No celebrations today</p>
+                        <p className="text-xs text-muted-foreground/60">Birthdays &amp; anniversaries will appear here</p>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1827,14 +1832,19 @@ export default function HRDashboardPage() {
                             ))}
                           </div>
                         ) : (
-                          <div className="flex flex-col items-center justify-center py-4 text-center rounded-lg border border-dashed">
-                            <Cake className="h-6 w-6 text-muted-foreground/50 mb-2" />
-                            <p className="text-xs text-muted-foreground">No upcoming birthdays in the next 30 days</p>
+                          <div className="flex items-center gap-3 p-2 rounded-lg border border-dashed">
+                            <div className="h-8 w-8 rounded-full bg-pink-100 dark:bg-pink-900/30 flex items-center justify-center shrink-0">
+                              <Cake className="h-4 w-4 text-pink-400" />
+                            </div>
+                            <div>
+                              <p className="text-xs font-medium text-muted-foreground">No upcoming birthdays</p>
+                              <p className="text-xs text-muted-foreground/60">None in the next 30 days</p>
+                            </div>
                           </div>
                         )}
                       </div>
 
-                      {/* Work Anniversaries Section */}
+                      {/* Work Anniversaries Section */
                       <div className="space-y-2">
                         <div className="flex items-center gap-2 mb-2">
                           <Award className="h-3.5 w-3.5 text-amber-500" />
@@ -1867,14 +1877,19 @@ export default function HRDashboardPage() {
                             ))}
                           </div>
                         ) : (
-                          <div className="flex flex-col items-center justify-center py-4 text-center rounded-lg border border-dashed">
-                            <Award className="h-6 w-6 text-muted-foreground/50 mb-2" />
-                            <p className="text-xs text-muted-foreground">No upcoming anniversaries in the next 30 days</p>
+                          <div className="flex items-center gap-3 p-2 rounded-lg border border-dashed">
+                            <div className="h-8 w-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
+                              <Award className="h-4 w-4 text-amber-400" />
+                            </div>
+                            <div>
+                              <p className="text-xs font-medium text-muted-foreground">No upcoming anniversaries</p>
+                              <p className="text-xs text-muted-foreground/60">None in the next 30 days</p>
+                            </div>
                           </div>
                         )}
                       </div>
 
-                      {/* Holidays Section */}
+                      {/* Holidays Section */
                       <div className="space-y-2">
                         <div className="flex items-center gap-2 mb-2">
                           <Calendar className="h-3.5 w-3.5 text-blue-500" />
@@ -1905,9 +1920,14 @@ export default function HRDashboardPage() {
                             ))}
                           </div>
                         ) : (
-                          <div className="flex flex-col items-center justify-center py-4 text-center rounded-lg border border-dashed">
-                            <Calendar className="h-6 w-6 text-muted-foreground/50 mb-2" />
-                            <p className="text-xs text-muted-foreground">No upcoming holidays in the next 30 days</p>
+                          <div className="flex items-center gap-3 p-2 rounded-lg border border-dashed">
+                            <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
+                              <Calendar className="h-4 w-4 text-blue-400" />
+                            </div>
+                            <div>
+                              <p className="text-xs font-medium text-muted-foreground">No upcoming holidays</p>
+                              <p className="text-xs text-muted-foreground/60">None in the next 30 days</p>
+                            </div>
                           </div>
                         )}
                       </div>
