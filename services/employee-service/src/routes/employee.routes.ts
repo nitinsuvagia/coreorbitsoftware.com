@@ -2522,7 +2522,7 @@ router.get('/performance-stats', async (req: Request, res: Response) => {
         pr.id,
         pr.employee_id,
         pr.status,
-        pr.overall_rating,
+        pr.performance_score AS overall_rating,
         pr.areas_for_improvement,
         e.id as emp_id,
         e.display_name,
@@ -2531,7 +2531,7 @@ router.get('/performance-stats', async (req: Request, res: Response) => {
       FROM performance_reviews pr
       JOIN employees e ON e.id = pr.employee_id
       LEFT JOIN departments d ON d.id = e.department_id
-      WHERE LOWER(pr.status) IN ('submitted', 'acknowledged', 'completed')
+      WHERE LOWER(pr.status::text) IN ('submitted', 'acknowledged', 'completed')
     `;
 
     // Calculate avg score
@@ -2550,8 +2550,8 @@ router.get('/performance-stats', async (req: Request, res: Response) => {
       const status = (r.status || '').toLowerCase();
       return status === 'completed' || status === 'acknowledged' || status === 'submitted';
     }).length;
-    const pendingCount = await prisma.$queryRaw<[{count: bigint}]>`SELECT COUNT(*) as count FROM performance_reviews WHERE LOWER(status) = 'draft'`;
-    const dueCount = await prisma.$queryRaw<[{count: bigint}]>`SELECT COUNT(*) as count FROM performance_reviews WHERE LOWER(status) = 'submitted'`;
+    const pendingCount = await prisma.$queryRaw<[{count: bigint}]>`SELECT COUNT(*) as count FROM performance_reviews WHERE LOWER(status::text) = 'draft'`;
+    const dueCount = await prisma.$queryRaw<[{count: bigint}]>`SELECT COUNT(*) as count FROM performance_reviews WHERE LOWER(status::text) = 'submitted'`;
     const reviewsPending = Number(pendingCount[0]?.count || 0);
     const reviewsDue = Number(dueCount[0]?.count || 0);
 
@@ -2591,8 +2591,14 @@ router.get('/performance-stats', async (req: Request, res: Response) => {
     // Needs improvement - employees with avg score < 5
     const needsImprovement = Object.values(employeeScores).filter(e => e.avgScore < 5).length;
 
-    // Department scores
+    // Fetch all departments so every dept appears even with no reviews
+    const allDepartments = await prisma.$queryRaw<{ name: string }[]>`
+      SELECT name FROM departments WHERE name IS NOT NULL ORDER BY name ASC
+    `;
+
+    // Department scores - seed with all known departments first
     const deptScores: Record<string, { total: number; count: number }> = {};
+    allDepartments.forEach(d => { deptScores[d.name] = { total: 0, count: 0 }; });
     reviews.forEach(r => {
       const dept = r.department_name || 'Other';
       if (!deptScores[dept]) deptScores[dept] = { total: 0, count: 0 };
@@ -2601,14 +2607,13 @@ router.get('/performance-stats', async (req: Request, res: Response) => {
         deptScores[dept].count++;
       }
     });
-    
+
     const departmentScores = Object.entries(deptScores)
       .map(([dept, data]) => ({
         department: dept,
         score: data.count > 0 ? parseFloat((data.total / data.count).toFixed(1)) : 0,
       }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 6);
+      .sort((a, b) => a.department.localeCompare(b.department));
 
     res.json({
       success: true,
@@ -2692,8 +2697,15 @@ router.get('/compensation-stats', async (req: Request, res: Response) => {
       };
     });
 
-    // Department-wise salary distribution
+    // Department-wise salary distribution - include ALL departments (even with 0 salary)
+    const allDepts = await prisma.department.findMany({
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+
     const departmentSalaryMap: Record<string, { total: number; count: number; name: string }> = {};
+    // Seed all departments with 0
+    allDepts.forEach(d => { departmentSalaryMap[d.id] = { total: 0, count: 0, name: d.name }; });
     employeesWithSalary.forEach(e => {
       const deptId = e.departmentId || 'unassigned';
       const deptName = e.department?.name || 'Unassigned';
@@ -2710,9 +2722,9 @@ router.get('/compensation-stats', async (req: Request, res: Response) => {
         department: data.name,
         totalSalary: data.total,
         employeeCount: data.count,
-        avgSalary: Math.round(data.total / data.count),
+        avgSalary: data.count > 0 ? Math.round(data.total / data.count) : 0,
       }))
-      .sort((a, b) => b.totalSalary - a.totalSalary);
+      .sort((a, b) => a.department.localeCompare(b.department));
 
     res.json({
       success: true,

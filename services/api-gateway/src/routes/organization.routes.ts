@@ -1050,7 +1050,7 @@ router.get('/dashboard/admin-360', async (req: TenantRequest, res: Response, nex
         department_name: string | null;
       }>>`
         SELECT 
-          pr.overall_rating,
+          pr.performance_score AS overall_rating,
           pr.employee_id,
           e.first_name,
           e.last_name,
@@ -1061,7 +1061,7 @@ router.get('/dashboard/admin-360', async (req: TenantRequest, res: Response, nex
         FROM performance_reviews pr
         JOIN employees e ON pr.employee_id = e.id
         LEFT JOIN departments d ON e.department_id = d.id
-        WHERE LOWER(pr.status) IN ('submitted', 'completed')
+        WHERE LOWER(pr.status::text) IN ('submitted', 'completed')
       `;
       
       if (performanceReviews.length > 0) {
@@ -1135,7 +1135,7 @@ router.get('/dashboard/admin-360', async (req: TenantRequest, res: Response, nex
         departmentScores = Object.entries(deptScoreMap).map(([dept, data]) => ({
           dept,
           score: Number((data.total / data.count).toFixed(1))
-        })).sort((a, b) => b.score - a.score);
+        })).sort((a, b) => a.dept.localeCompare(b.dept));
       }
     } catch (e) {
       // Performance reviews table might not exist, use defaults
@@ -1152,6 +1152,7 @@ router.get('/dashboard/admin-360', async (req: TenantRequest, res: Response, nex
         departmentScores.push({ dept: dept.name, score: 0 });
       }
     });
+    departmentScores = departmentScores.sort((a, b) => a.dept.localeCompare(b.dept));
     
     // ========== FINANCIAL METRICS ==========
     // Get salary data per department
@@ -1183,14 +1184,14 @@ router.get('/dashboard/admin-360', async (req: TenantRequest, res: Response, nex
       }
     });
     
-    // Convert to array sorted by salary (descending)
+    // Convert to array sorted alphabetically by department name
     let departmentSalaries = Object.entries(salaryByDepartment)
       .map(([name, annualSalary]) => ({
         name,
         annualSalary,
         monthlySalary: Math.round(annualSalary / 12),
       }))
-      .sort((a, b) => b.annualSalary - a.annualSalary);
+      .sort((a, b) => a.name.localeCompare(b.name));
     
     // Fill in missing departments with $0 salary (show ALL departments)
     const deptNamesWithSalary = departmentSalaries.map(d => d.name);
@@ -1199,8 +1200,8 @@ router.get('/dashboard/admin-360', async (req: TenantRequest, res: Response, nex
         departmentSalaries.push({ name: dept.name, annualSalary: 0, monthlySalary: 0 });
       }
     });
-    // Re-sort after adding missing departments
-    departmentSalaries = departmentSalaries.sort((a, b) => b.annualSalary - a.annualSalary);
+    // Re-sort after adding missing departments (alphabetical)
+    departmentSalaries = departmentSalaries.sort((a, b) => a.name.localeCompare(b.name));
     
     // ========== RECENT ACTIVITIES ==========
     let recentActivities: Array<{
