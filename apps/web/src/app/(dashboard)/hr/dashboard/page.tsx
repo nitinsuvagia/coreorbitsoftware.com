@@ -1889,7 +1889,7 @@ export default function HRDashboardPage() {
                         )}
                       </div>
 
-                      {/* Holidays Section */
+                      {/* Holidays Section */}
                       <div className="space-y-2">
                         <div className="flex items-center gap-2 mb-2">
                           <Calendar className="h-3.5 w-3.5 text-blue-500" />
