@@ -288,63 +288,72 @@ interface ChartCardProps {
   type: 'bar' | 'pie';
   maxValue?: number; // Optional: if provided, bars scale relative to this value
   formatValue?: (value: number) => string; // Optional: custom value formatter
+  scrollHeight?: number; // Optional: enables internal scroll at this pixel height
 }
 
-function ChartCard({ title, data, type, maxValue: propMaxValue, formatValue }: ChartCardProps) {
+function ChartCard({ title, data, type, maxValue: propMaxValue, formatValue, scrollHeight }: ChartCardProps) {
   const maxValue = propMaxValue || Math.max(...data.map(d => d.value), 1); // Ensure at least 1 to avoid division by zero
 
+  const barContent = data.length === 0 ? (
+    <div className="text-center py-8 text-muted-foreground">
+      <BarChart3 className="h-12 w-12 mx-auto mb-3 opacity-50" />
+      <p>No data available</p>
+    </div>
+  ) : type === 'bar' ? (
+    <div className="space-y-4">
+      {data.map((item, index) => {
+        const isZero = item.value === 0;
+        const displayValue = formatValue ? formatValue(item.value) : item.value;
+        return (
+          <div key={index} className="space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="font-medium truncate flex-1">{item.label}</span>
+              <span className="text-muted-foreground ml-2">{displayValue}</span>
+            </div>
+            <div className={`w-full rounded-full h-2 ${isZero ? 'bg-gray-200 dark:bg-gray-700' : 'bg-muted'}`}>
+              {!isZero && (
+                <div
+                  className="h-2 rounded-full transition-all"
+                  style={{
+                    width: `${(item.value / maxValue) * 100}%`,
+                    backgroundColor: item.color || 'hsl(var(--primary))',
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  ) : (
+    <div className="space-y-3">
+      {data.map((item, index) => (
+        <div key={index} className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div
+              className="w-3 h-3 rounded-full"
+              style={{ backgroundColor: item.color || 'hsl(var(--primary))' }}
+            />
+            <span className="text-sm font-medium">{item.label}</span>
+          </div>
+          <span className="text-sm text-muted-foreground">{item.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+
   return (
-    <Card>
+    <Card className="flex flex-col">
       <CardHeader>
         <CardTitle className="text-lg">{title}</CardTitle>
       </CardHeader>
-      <CardContent>
-        {data.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <BarChart3 className="h-12 w-12 mx-auto mb-3 opacity-50" />
-            <p>No data available</p>
-          </div>
-        ) : type === 'bar' ? (
-          <div className="space-y-4">
-            {data.map((item, index) => {
-              const isZero = item.value === 0;
-              const displayValue = formatValue ? formatValue(item.value) : item.value;
-              return (
-                <div key={index} className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium truncate flex-1">{item.label}</span>
-                    <span className="text-muted-foreground ml-2">{displayValue}</span>
-                  </div>
-                  <div className={`w-full rounded-full h-2 ${isZero ? 'bg-gray-200 dark:bg-gray-700' : 'bg-muted'}`}>
-                    {!isZero && (
-                      <div
-                        className="h-2 rounded-full transition-all"
-                        style={{
-                          width: `${(item.value / maxValue) * 100}%`,
-                          backgroundColor: item.color || 'hsl(var(--primary))',
-                        }}
-                      />
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+      <CardContent className="flex-1 p-0">
+        {scrollHeight ? (
+          <ScrollArea style={{ height: scrollHeight }} className="px-6 pb-4">
+            {barContent}
+          </ScrollArea>
         ) : (
-          <div className="space-y-3">
-            {data.map((item, index) => (
-              <div key={index} className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div
-                    className="w-3 h-3 rounded-full"
-                    style={{ backgroundColor: item.color || 'hsl(var(--primary))' }}
-                  />
-                  <span className="text-sm font-medium">{item.label}</span>
-                </div>
-                <span className="text-sm text-muted-foreground">{item.value}</span>
-              </div>
-            ))}
-          </div>
+          <div className="px-6 pb-4">{barContent}</div>
         )}
       </CardContent>
     </Card>
@@ -801,7 +810,8 @@ export default function TenantAdmin360Page() {
               title="Employees by Department"
               type="bar"
               maxValue={org.activeEmployees}
-              data={(data.employeesByDepartment || []).slice(0, 7).map((dept, index) => {
+              scrollHeight={320}
+              data={(data.employeesByDepartment || []).map((dept, index) => {
                 const colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
                 return {
                   label: dept.name,
@@ -871,6 +881,7 @@ export default function TenantAdmin360Page() {
             <ChartCard
               title={`Salaries by Department (Annual) - ${currencyCode}`}
               type="bar"
+              scrollHeight={320}
               data={(financial.departmentSalaries || []).map((dept, idx) => ({
                 label: dept.name,
                 value: dept.annualSalary,
@@ -882,6 +893,7 @@ export default function TenantAdmin360Page() {
             <ChartCard
               title="Department Performance Scores"
               type="bar"
+              scrollHeight={320}
               data={performance.departmentScores.map((dept, idx) => ({
                 label: dept.dept,
                 value: dept.score,
@@ -1181,32 +1193,34 @@ export default function TenantAdmin360Page() {
                 <CardTitle>Payroll by Department</CardTitle>
                 <CardDescription>Monthly salary distribution across departments</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="p-0">
                 {(financial.departmentSalaries && financial.departmentSalaries.length > 0) ? (
-                  <div className="space-y-4">
-                    {financial.departmentSalaries.slice(0, 6).map((dept, idx) => {
-                      const maxSalary = Math.max(...(financial.departmentSalaries || []).map(d => d.monthlySalary));
-                      const percent = maxSalary > 0 ? (dept.monthlySalary / maxSalary) * 100 : 0;
-                      return (
-                        <div key={idx} className="space-y-2">
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="font-medium">{dept.name}</span>
-                            <span className="text-muted-foreground">
-                              {formatCurrency(dept.monthlySalary)}/mo
-                            </span>
+                  <ScrollArea className="h-[320px] px-6 pb-4">
+                    <div className="space-y-4 pt-1">
+                      {financial.departmentSalaries.map((dept, idx) => {
+                        const maxSalary = Math.max(...(financial.departmentSalaries || []).map(d => d.monthlySalary));
+                        const percent = maxSalary > 0 ? (dept.monthlySalary / maxSalary) * 100 : 0;
+                        return (
+                          <div key={idx} className="space-y-2">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="font-medium">{dept.name}</span>
+                              <span className="text-muted-foreground">
+                                {formatCurrency(dept.monthlySalary)}/mo
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Progress value={percent} className={percent === 0 ? "h-2 flex-1 bg-muted" : "h-2 flex-1"} />
+                              <span className="text-xs text-muted-foreground w-24 text-right">
+                                {formatCurrency(dept.annualSalary)}/yr
+                              </span>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <Progress value={percent} className={percent === 0 ? "h-2 flex-1 bg-muted" : "h-2 flex-1"} />
-                            <span className="text-xs text-muted-foreground w-24 text-right">
-                              {formatCurrency(dept.annualSalary)}/yr
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  </ScrollArea>
                 ) : (
-                  <div className="flex flex-col items-center justify-center py-8 text-center">
+                  <div className="flex flex-col items-center justify-center py-8 px-6 text-center">
                     <DollarSign className="h-12 w-12 text-muted-foreground/50 mb-4" />
                     <p className="text-muted-foreground">No salary data available</p>
                     <p className="text-xs text-muted-foreground mt-1">Add employee salaries to see payroll breakdown</p>
@@ -1235,7 +1249,7 @@ export default function TenantAdmin360Page() {
                   />
                   <FinancialSummaryRow
                     label="Departments with Payroll"
-                    value={financial.departmentSalaries?.length || 0}
+                    value={financial.departmentSalaries?.filter(d => d.annualSalary > 0).length || 0}
                     color="purple"
                   />
                   <FinancialSummaryRow
