@@ -18,10 +18,11 @@ interface ToolContext {
 // ---------------------------------------------------------------------------
 // Service URLs
 // ---------------------------------------------------------------------------
-const EMPLOYEE_SERVICE = process.env.EMPLOYEE_SERVICE_URL || 'http://localhost:3002';
-const ATTENDANCE_SERVICE = process.env.ATTENDANCE_SERVICE_URL || 'http://localhost:3003';
-const PROJECT_SERVICE = process.env.PROJECT_SERVICE_URL || 'http://localhost:3004';
-const DOCUMENT_SERVICE = process.env.DOCUMENT_SERVICE_URL || 'http://localhost:3007';
+const EMPLOYEE_SERVICE    = process.env.EMPLOYEE_SERVICE_URL    || 'http://localhost:3002';
+const ATTENDANCE_SERVICE  = process.env.ATTENDANCE_SERVICE_URL  || 'http://localhost:3003';
+const PROJECT_SERVICE     = process.env.PROJECT_SERVICE_URL     || 'http://localhost:3004';
+const TASK_SERVICE        = process.env.TASK_SERVICE_URL        || 'http://localhost:3005';
+const DOCUMENT_SERVICE    = process.env.DOCUMENT_SERVICE_URL    || 'http://localhost:3007';
 const NOTIFICATION_SERVICE = process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:3008';
 
 // ---------------------------------------------------------------------------
@@ -793,22 +794,22 @@ export async function executeTool(
       case 'get_my_tasks': {
         const params = new URLSearchParams();
         if (args.status) params.set('status', args.status);
-        params.set('limit', '20');
         const data = await callService(
-          `${PROJECT_SERVICE}/api/v1/projects/my?${params.toString()}`,
+          `${TASK_SERVICE}/api/v1/my-tasks?${params.toString()}`,
           ctx
         );
-        const projects = data?.data || data?.projects || [];
-        if (!projects.length) return 'No projects or tasks found assigned to you. Tasks can be created in the **Projects** module.';
-        const tasks: string[] = [];
-        for (const p of projects) {
-          const projectTasks = p.tasks || [];
-          for (const t of projectTasks) {
-            tasks.push(`- [**${t.status}**] ${t.title} (Project: ${p.name}) | Priority: ${t.priority || 'N/A'} | Due: ${formatDate(t.dueDate)}`);
-          }
+        const tasks = data?.data || [];
+        if (!Array.isArray(tasks) || !tasks.length) {
+          return 'No pending tasks found assigned to you. Tasks can be created in the **Tasks** module.';
         }
-        if (!tasks.length) return `You have ${projects.length} project(s) but no tasks assigned directly. Tasks can be assigned in the project board.`;
-        return `Your tasks (${tasks.length}):\n${tasks.join('\n')}`;
+        const list = tasks.map((t: any) => {
+          const projectName = t.project?.name || 'N/A';
+          const priority = t.priority || 'N/A';
+          const due = t.dueDate ? formatDate(t.dueDate) : 'No due date';
+          const subCount = t._count?.subtasks ?? 0;
+          return `- [**${t.status}**] ${t.title} | Project: ${projectName} | Priority: ${priority} | Due: ${due}${subCount > 0 ? ` | ${subCount} subtask(s)` : ''}`;
+        }).join('\n');
+        return `Your pending tasks (${tasks.length}):\n${list}`;
       }
 
       // ====================================================================

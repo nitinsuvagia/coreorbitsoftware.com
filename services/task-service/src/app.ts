@@ -12,6 +12,7 @@ import { ZodError } from 'zod';
 import { logger } from './utils/logger';
 import { config } from './config';
 import taskRoutes from './routes/task.routes';
+import { tenantContextMiddleware } from './middleware/tenant-context';
 
 const app = express();
 
@@ -75,8 +76,12 @@ app.get('/ready', (req: Request, res: Response) => {
   });
 });
 
+// Tenant context middleware — must come before API routes
+app.use('/api/v1', tenantContextMiddleware);
+
 // API routes
-app.use('/api/tasks', taskRoutes);
+// Gateway rewrites /api/v1/tasks/* → /api/v1/* so routes are mounted at /api/v1
+app.use('/api/v1', taskRoutes);
 
 // ============================================================================
 // ERROR HANDLING

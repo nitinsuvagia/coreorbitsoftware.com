@@ -6,6 +6,7 @@
  */
 
 import { createServer } from 'http';
+import { initializeTenantDbManager, shutdownTenantDbManager } from '@oms/tenant-db-manager';
 import { initializeEventBus, shutdownEventBus } from '@oms/event-bus';
 import app from './app';
 import { config } from './config';
@@ -15,6 +16,14 @@ const server = createServer(app);
 
 async function start(): Promise<void> {
   try {
+    // Initialize tenant database manager
+    await initializeTenantDbManager({
+      masterDatabaseUrl: config.masterDatabaseUrl,
+      maxConnections: 100,
+      connectionTimeout: 30000,
+    });
+    logger.info('Tenant database manager initialized');
+
     // Initialize event bus
     await initializeEventBus({
       serviceName: 'task-service',
@@ -47,6 +56,9 @@ async function shutdown(): Promise<void> {
   
   // Shutdown event bus
   await shutdownEventBus();
+
+  // Shutdown tenant DB manager
+  await shutdownTenantDbManager();
   
   // Wait for graceful shutdown
   await new Promise(resolve => setTimeout(resolve, 5000));

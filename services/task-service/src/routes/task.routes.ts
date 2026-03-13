@@ -146,17 +146,27 @@ router.get(
 router.get(
   '/my-tasks',
   asyncHandler(async (req: Request, res: Response) => {
-    const { tenantSlug, employeeId } = getTenantContext(req);
-    
-    if (!employeeId) {
+    const { tenantSlug, employeeId, userId } = getTenantContext(req);
+
+    const prisma = getTenantPrisma();
+
+    // Resolve employeeId: prefer explicit header, fall back to user's linked employee
+    let resolvedEmployeeId = employeeId;
+    if (!resolvedEmployeeId && userId) {
+      const user = await (prisma as any).user.findUnique({
+        where: { id: userId },
+        select: { employeeId: true },
+      });
+      resolvedEmployeeId = user?.employeeId;
+    }
+
+    if (!resolvedEmployeeId) {
       return res.status(400).json({ success: false, error: 'Employee context required' });
     }
-    
-    const prisma = getTenantPrisma();
+
     const status = req.query.status as string | undefined;
-    
-    const tasks = await taskService.getMyTasks(prisma, employeeId, status);
-    
+    const tasks = await taskService.getMyTasks(prisma, resolvedEmployeeId, status);
+
     res.json({ success: true, data: tasks });
   })
 );
