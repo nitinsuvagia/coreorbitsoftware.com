@@ -636,7 +636,7 @@ router.get(
       
       const result = await listAttendance(prisma, req.query as any);
       
-      res.json(result);
+      res.json({ success: true, data: result });
     } catch (error) {
       next(error);
     }
