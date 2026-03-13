@@ -929,7 +929,10 @@ export function TodoList({ loading: externalLoading }: TodoListProps) {
               </div>
             ) : (
               <div className="space-y-2 py-4">
-                {completedTodos.map((todo) => (
+                {completedTodos.map((todo) => {
+                  const isAssignedByMe = !!todo.assigneeId && todo.userId === currentUserId;
+                  const isAssignedToMe = !!todo.assigneeId && todo.assigneeId === currentUserId && todo.userId !== currentUserId;
+                  return (
                   <div 
                     key={todo.id} 
                     className="flex items-start gap-3 p-3 rounded-lg bg-muted/30"
@@ -944,14 +947,31 @@ export function TodoList({ loading: externalLoading }: TodoListProps) {
                           {todo.description}
                         </p>
                       )}
-                      {todo.completedAt && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Completed {format(parseISO(todo.completedAt), 'MMM d, yyyy h:mm a')}
-                        </p>
-                      )}
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        {/* Creator side: show who this was assigned to */}
+                        {isAssignedByMe && todo.assigneeName && (
+                          <Badge variant="outline" className="text-xs text-purple-600 border-purple-200 bg-purple-50 flex items-center gap-1">
+                            <User className="h-3 w-3" />
+                            → {todo.assigneeName}
+                          </Badge>
+                        )}
+                        {/* Assignee side: show who assigned this */}
+                        {isAssignedToMe && todo.creatorName && (
+                          <Badge variant="outline" className="text-xs text-indigo-600 border-indigo-200 bg-indigo-50 flex items-center gap-1">
+                            <UserPlus className="h-3 w-3" />
+                            by {todo.creatorName}
+                          </Badge>
+                        )}
+                        {todo.completedAt && (
+                          <span className="text-xs text-muted-foreground">
+                            Completed {format(parseISO(todo.completedAt), 'MMM d, yyyy h:mm a')}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </ScrollArea>
