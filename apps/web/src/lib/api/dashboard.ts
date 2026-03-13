@@ -270,6 +270,7 @@ export async function searchEmployees(query: string): Promise<EmployeeSearchResu
       search: query.trim(),
       status: 'ACTIVE',
       limit: '10',
+      hasUser: 'true',  // only employees with a system user account (required for assignment)
     });
     // api.get returns { data: { success, data: { items, ... } } } (Axios shape)
     const response = await api.get<{ success: boolean; data: { items: EmployeeSearchResult[] } }>(

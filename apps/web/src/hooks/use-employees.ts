@@ -62,6 +62,8 @@ export interface EmployeeFilters {
   statuses?: string;  // comma-separated list of statuses to include
   excludeStatuses?: string;  // comma-separated list of statuses to exclude
   employmentType?: string;
+  onProbation?: string;  // 'true' = probationEndDate >= today
+  onRelieving?: string;  // 'true' = exitDate >= today
   page?: number;
   limit?: number;
 }

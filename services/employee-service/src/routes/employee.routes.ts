@@ -132,6 +132,9 @@ const listSchema = z.object({
   statuses: z.string().optional(),  // comma-separated list of statuses to include
   excludeStatuses: z.string().optional(),  // comma-separated list of statuses to exclude
   employmentType: z.string().optional(),
+  onProbation: z.string().optional(),   // 'true' = probationEndDate >= today
+  onRelieving: z.string().optional(),   // 'true' = exitDate >= today
+  hasUser: z.string().optional(),        // 'true' = only employees with a linked system user account
   page: z.coerce.number().min(1).default(1),
   limit: z.coerce.number().min(1).max(1000).default(20),
 });
@@ -440,6 +443,21 @@ router.get('/', async (req: Request, res: Response) => {
       where.status = { notIn: excludeList };
     }
 
+    // Probation: employees whose probation period has not yet ended
+    if (filters.onProbation === 'true') {
+      where.probationEndDate = { gte: new Date() };
+    }
+
+    // Relieving: employees with a future scheduled exit date
+    if (filters.onRelieving === 'true') {
+      where.exitDate = { gte: new Date() };
+    }
+
+    // Only employees with a linked system user account (needed for todo assignment)
+    if (filters.hasUser === 'true') {
+      where.user = { isNot: null };
+    }
+
     if (filters.employmentType) {
       where.employmentType = filters.employmentType;
     }
@@ -560,26 +578,29 @@ router.get('/status-counts', async (req: Request, res: Response) => {
   try {
     const prisma = getPrismaFromRequest(req);
 
+    const now = new Date();
     const [current, probation, relieving, exEmployees] = await Promise.all([
-      // Current: Active + On Leave (excludes terminated, resigned, retired, probation, notice_period)
+      // Current: Active + On Leave — exclude terminated/resigned/retired and those still on probation or pending exit
       prisma.employee.count({
         where: {
           deletedAt: null,
           status: { notIn: ['TERMINATED', 'RESIGNED', 'RETIRED', 'PROBATION', 'NOTICE_PERIOD'] },
+          probationEndDate: { not: { gte: now } },
+          exitDate: { not: { gte: now } },
         },
       }),
-      // Probation
+      // Probation: employees whose probation end date is in the future
       prisma.employee.count({
         where: {
           deletedAt: null,
-          status: 'PROBATION',
+          probationEndDate: { gte: now },
         },
       }),
-      // Relieving (Notice Period)
+      // Relieving: employees with a future scheduled exit date
       prisma.employee.count({
         where: {
           deletedAt: null,
-          status: 'NOTICE_PERIOD',
+          exitDate: { gte: now },
         },
       }),
       // Ex-Employees: Terminated + Resigned + Retired

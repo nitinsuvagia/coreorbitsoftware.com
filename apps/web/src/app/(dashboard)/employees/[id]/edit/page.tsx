@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useEmployee, useUpdateEmployee } from '@/hooks/use-employees';
+import { useEmployee, useUpdateEmployee, useDepartments, useDesignations } from '@/hooks/use-employees';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -74,6 +74,8 @@ export default function EditEmployeePage() {
 
   const { data: employee, isLoading, error } = useEmployee(employeeId);
   const updateEmployee = useUpdateEmployee();
+  const { data: departments } = useDepartments();
+  const { data: designations, isLoading: designationsLoading } = useDesignations();
 
   // Form state
   const [formData, setFormData] = useState({
@@ -539,6 +541,53 @@ export default function EditEmployeePage() {
               {/* Employment Tab */}
               <TabsContent value="employment" className="space-y-6">
                 <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="departmentId">Department</Label>
+                    <Select
+                      value={formData.departmentId}
+                      onValueChange={(value) =>
+                        handleInputChange('departmentId', value)
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select department" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {departments?.map((dept) => (
+                          <SelectItem key={dept.id} value={dept.id}>
+                            {dept.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="designationId">Designation</Label>
+                    <Select
+                      value={formData.designationId}
+                      onValueChange={(value) =>
+                        handleInputChange('designationId', value)
+                      }
+                      disabled={designationsLoading}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder={designationsLoading ? 'Loading...' : 'Select designation'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {designationsLoading ? (
+                          <SelectItem value="_loading" disabled>Loading...</SelectItem>
+                        ) : designations && designations.length > 0 ? (
+                          designations.map((desig) => (
+                            <SelectItem key={desig.id} value={desig.id}>
+                              {desig.name}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <SelectItem value="_empty" disabled>No designations available</SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <div className="space-y-2">
                     <Label htmlFor="employeeCode">Employee Code *</Label>
                     <Input

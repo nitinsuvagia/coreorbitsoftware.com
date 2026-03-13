@@ -479,6 +479,12 @@ export default function EmployeeDetailPage() {
                   </div>
                   <div>
                     <label className="text-sm font-medium text-muted-foreground">
+                      System Role
+                    </label>
+                    <p className="text-sm">{employee.systemRole?.name || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">
                       Employment Type
                     </label>
                     <p className="text-sm">{employee.employmentType}</p>

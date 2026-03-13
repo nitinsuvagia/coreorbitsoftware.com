@@ -65,18 +65,18 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 type StatusTab = 'current' | 'probation' | 'relieving' | 'ex-employees';
 
 // Status configurations for tabs
-const STATUS_TAB_CONFIG: Record<StatusTab, { label: string; excludeStatuses?: string; statuses?: string }> = {
+const STATUS_TAB_CONFIG: Record<StatusTab, { label: string; excludeStatuses?: string; statuses?: string; onProbation?: string; onRelieving?: string }> = {
   'current': { 
     label: 'Current', 
     excludeStatuses: 'TERMINATED,RESIGNED,RETIRED,PROBATION,NOTICE_PERIOD'  // Active + On Leave
   },
-  'probation': { 
-    label: 'Probation', 
-    statuses: 'PROBATION' 
+  'probation': {
+    label: 'Probation',
+    onProbation: 'true',
   },
-  'relieving': { 
-    label: 'Relieving', 
-    statuses: 'NOTICE_PERIOD' 
+  'relieving': {
+    label: 'Relieving',
+    onRelieving: 'true',
   },
   'ex-employees': { 
     label: 'Ex-Employees', 
@@ -452,6 +452,8 @@ export default function EmployeesPage() {
   };
 
   const { data: employeesData, isLoading, refetch } = useEmployees({
+    onProbation: tabConfig.onProbation,
+    onRelieving: tabConfig.onRelieving,
     search: search || undefined,
     departmentId: department || undefined,
     statuses: tabConfig.statuses,
