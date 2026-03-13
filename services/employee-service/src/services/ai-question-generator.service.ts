@@ -1246,8 +1246,8 @@ Types: ${typeDescriptions}
 Return JSON array with ${count} questions:`;
 
   try {
-    // Calculate tokens: ~300 tokens per question for safety
-    const calculatedTokens = count * 300;
+    // Calculate tokens: ~500 tokens per question to avoid truncation on larger requests
+    const calculatedTokens = count * 500;
     const maxTokens = Math.max(4096, calculatedTokens);
     
     logger.info({ model: settings.model, category, difficulty, count, questionTypes, maxTokens }, 'Calling OpenAI API');
@@ -1306,7 +1306,35 @@ Return JSON array with ${count} questions:`;
     }
     cleanContent = cleanContent.trim();
 
-    const questions: GeneratedQuestion[] = JSON.parse(cleanContent);
+    let questions: GeneratedQuestion[];
+    try {
+      questions = JSON.parse(cleanContent);
+    } catch (parseError: any) {
+      // If the JSON was truncated (finish_reason === 'length'), try to salvage
+      // all complete question objects that were already serialised
+      if (finishReason === 'length') {
+        debugLog(`[AI-QUESTIONS] Attempting to salvage questions from truncated JSON`);
+        // Find the last completely closed object (ends with '}')
+        const lastClose = cleanContent.lastIndexOf('}');
+        if (lastClose !== -1) {
+          const salvaged = cleanContent.substring(0, lastClose + 1);
+          // Wrap in array if it isn't already
+          const wrapped = salvaged.startsWith('[') ? salvaged + ']' : '[' + salvaged + ']';
+          try {
+            questions = JSON.parse(wrapped);
+            logger.warn({ salvaged: questions.length, requested: count }, 'Salvaged partial questions from truncated OpenAI response');
+          } catch {
+            debugLog(`[AI-QUESTIONS] Could not salvage truncated JSON`);
+            throw parseError;
+          }
+        } else {
+          throw parseError;
+        }
+      } else {
+        debugLog(`[AI-QUESTIONS] JSON parse error: ${parseError.message}`);
+        throw parseError;
+      }
+    }
     
     debugLog(`[AI-QUESTIONS] Successfully parsed ${questions.length} questions from OpenAI`);
     logger.info({ count: questions.length }, 'Successfully generated questions with OpenAI');

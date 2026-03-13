@@ -43,6 +43,28 @@ import {
 } from '@/hooks/use-ai-chat';
 
 // ============================================================================
+// TIMESTAMP HELPER
+// ============================================================================
+
+function formatMessageTime(createdAt: string): { label: string; isToday: boolean } {
+  const msgDate = new Date(createdAt);
+  const now = new Date();
+  const isToday =
+    msgDate.getFullYear() === now.getFullYear() &&
+    msgDate.getMonth() === now.getMonth() &&
+    msgDate.getDate() === now.getDate();
+
+  const timeStr = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  if (isToday) {
+    return { label: timeStr, isToday: true };
+  }
+
+  const dateStr = msgDate.toLocaleDateString([], { month: 'short', day: 'numeric', year: msgDate.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
+  return { label: `${dateStr}, ${timeStr}`, isToday: false };
+}
+
+// ============================================================================
 // MARKDOWN RENDERER
 // ============================================================================
 
@@ -441,16 +463,28 @@ function MessageBubble({ message, animate = false }: { message: AiMessage; anima
 
   // User messages: colored gradient bubble on the right
   if (isUser) {
+    const { label, isToday } = formatMessageTime(message.createdAt);
     return (
       <div className="flex gap-2 mb-3 justify-end">
-        <div className="max-w-[80%] rounded-2xl rounded-br-md px-4 py-2.5 text-sm leading-relaxed text-white" style={{ background: 'linear-gradient(to right, #0968e5, #091970)' }}>
-          <div className="whitespace-pre-wrap break-words">{content}</div>
+        <div className="flex flex-col items-end gap-0.5">
+          <div className="max-w-[80%] rounded-2xl rounded-br-md px-4 py-2.5 text-sm leading-relaxed text-white" style={{ background: 'linear-gradient(to right, #0968e5, #091970)' }}>
+            <div className="whitespace-pre-wrap break-words">{content}</div>
+          </div>
+          {message.createdAt && (
+            <span
+              className="text-[10px] leading-none select-none pr-0.5"
+              style={{ color: isToday ? 'rgb(156 163 175)' : 'rgb(209 213 219)' }}
+            >
+              {label}
+            </span>
+          )}
         </div>
       </div>
     );
   }
 
   // AI messages: no bubble/card, flat text with avatar (like Copilot)
+  const { label: aiLabel, isToday: aiIsToday } = formatMessageTime(message.createdAt);
   return (
     <div className="flex gap-2 mb-4 justify-start">
       <div className="flex-shrink-0 w-7 h-7 rounded-full bg-gradient-to-br from-purple-500/15 to-pink-500/15 flex items-center justify-center mt-0.5">
@@ -463,6 +497,14 @@ function MessageBubble({ message, animate = false }: { message: AiMessage; anima
             <span className="inline-block w-1.5 h-4 bg-purple-500/70 animate-pulse ml-0.5 align-middle rounded-sm" />
           )}
         </div>
+        {message.createdAt && !isTyping && (
+          <span
+            className="block text-[10px] leading-none mt-1 select-none"
+            style={{ color: aiIsToday ? 'rgb(156 163 175)' : 'rgb(209 213 219)' }}
+          >
+            {aiLabel}
+          </span>
+        )}
       </div>
     </div>
   );

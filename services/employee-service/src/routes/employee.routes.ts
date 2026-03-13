@@ -580,13 +580,16 @@ router.get('/status-counts', async (req: Request, res: Response) => {
 
     const now = new Date();
     const [current, probation, relieving, exEmployees] = await Promise.all([
-      // Current: Active + On Leave — exclude terminated/resigned/retired and those still on probation or pending exit
+      // Current: Active + On Leave — exclude terminated/resigned/retired and those on probation/pending exit
+      // Use OR [null, { lt: now }] because Prisma's { not: { gte: now } } excludes NULL rows
       prisma.employee.count({
         where: {
           deletedAt: null,
           status: { notIn: ['TERMINATED', 'RESIGNED', 'RETIRED', 'PROBATION', 'NOTICE_PERIOD'] },
-          probationEndDate: { not: { gte: now } },
-          exitDate: { not: { gte: now } },
+          AND: [
+            { OR: [{ probationEndDate: null }, { probationEndDate: { lt: now } }] },
+            { OR: [{ exitDate: null }, { exitDate: { lt: now } }] },
+          ],
         },
       }),
       // Probation: employees whose probation end date is in the future

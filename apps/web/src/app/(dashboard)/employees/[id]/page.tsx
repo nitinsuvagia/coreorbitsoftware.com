@@ -78,6 +78,22 @@ export default function EmployeeDetailPage() {
   const [selectedRoleId, setSelectedRoleId] = useState<string>('');
   const [isChangingRole, setIsChangingRole] = useState(false);
 
+  // Custom fields state
+  const [customFields, setCustomFields] = useState<{ id: string; key: string; value: string }[]>([]);
+
+  // Fetch custom fields when employee loads
+  useEffect(() => {
+    if (employeeId) {
+      apiClient.get<{ id: string; key: string; value: string }[]>(`/api/v1/employees/${employeeId}/custom-fields`)
+        .then(res => {
+          if (res.success && Array.isArray(res.data)) {
+            setCustomFields(res.data);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [employeeId]);
+
   // Get allowed role slugs based on current user's role
   const getAllowedRoleSlugs = (): string[] => {
     if (isTenantAdmin) {
@@ -479,9 +495,11 @@ export default function EmployeeDetailPage() {
                   </div>
                   <div>
                     <label className="text-sm font-medium text-muted-foreground">
-                      System Role
+                      Role
                     </label>
-                    <p className="text-sm">{employee.systemRole?.name || '-'}</p>
+                    <p className="text-sm">
+                      {customFields.find(f => f.key.toLowerCase() === 'role')?.value || '-'}
+                    </p>
                   </div>
                   <div>
                     <label className="text-sm font-medium text-muted-foreground">
