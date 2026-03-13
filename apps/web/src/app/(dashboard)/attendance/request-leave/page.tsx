@@ -154,7 +154,23 @@ export default function RequestLeavePage() {
       toast.success('Leave request submitted successfully!');
       router.push('/attendance');
     } catch (err: any) {
-      toast.error(err?.message || 'Failed to submit leave request.');
+      // Extract server-side message if available
+      const data = err?.response?.data as any;
+      const serverMsg =
+        data?.error?.message ||
+        (typeof data?.error === 'string' ? data.error : undefined) ||
+        data?.message ||
+        err?.message;
+
+      if (serverMsg?.toLowerCase().includes('overlapping')) {
+        toast.error('You already have a leave request for this period. Please choose different dates.', {
+          duration: 6000,
+        });
+      } else if (serverMsg?.toLowerCase().includes('insufficient')) {
+        toast.error(serverMsg, { duration: 6000 });
+      } else {
+        toast.error(serverMsg || 'Failed to submit leave request.');
+      }
     }
   };
   

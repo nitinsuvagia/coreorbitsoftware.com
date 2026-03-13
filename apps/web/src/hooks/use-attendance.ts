@@ -71,7 +71,7 @@ export function useAdminWeeklyAttendance(dateFrom: string, dateTo: string) {
   });
 } 
 
-export function useAttendance(filters: AttendanceFilters = {}) {
+export function useAttendance(filters: AttendanceFilters = {}, options?: { refetchInterval?: number }) {
   // Map frontend param names to backend param names
   const backendParams: Record<string, any> = { ...filters };
   if (filters.startDate) { backendParams.dateFrom = filters.startDate; delete backendParams.startDate; }
@@ -80,6 +80,7 @@ export function useAttendance(filters: AttendanceFilters = {}) {
   return useQuery({
     queryKey: ['attendance', filters],
     queryFn: () => get<any>('/api/v1/attendance', backendParams),
+    refetchInterval: options?.refetchInterval,
   });
 }
 

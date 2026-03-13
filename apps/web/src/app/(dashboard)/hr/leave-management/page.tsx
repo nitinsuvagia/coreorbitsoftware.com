@@ -238,12 +238,17 @@ export default function LeaveManagementPage() {
   });
   const holidays = (holidaysResponse as any)?.data || holidaysResponse || [];
 
-  // Fetch attendance for calendar (all records for the month)
-  const { data: attendanceResponse } = useAttendance({
-    startDate: format(startOfMonth(calendarMonth), 'yyyy-MM-dd'),
-    endDate: format(endOfMonth(calendarMonth), 'yyyy-MM-dd'),
-    limit: 5000,
-  });
+  // Fetch attendance for calendar (all records for the month).
+  // Auto-refresh every 60 s when viewing the current month so today's check-ins appear live.
+  const isCurrentMonth = isSameMonth(calendarMonth, new Date());
+  const { data: attendanceResponse } = useAttendance(
+    {
+      startDate: format(startOfMonth(calendarMonth), 'yyyy-MM-dd'),
+      endDate: format(endOfMonth(calendarMonth), 'yyyy-MM-dd'),
+      limit: 5000,
+    },
+    { refetchInterval: isCurrentMonth ? 60000 : undefined }
+  );
   const attendanceRecords = (attendanceResponse as any)?.data || (attendanceResponse as any)?.items || [];
 
   // Mutations
@@ -1204,11 +1209,22 @@ export default function LeaveManagementPage() {
                           const empLeave = leavesByEmpDate[emp.id]?.[dateKey];
                           const attendance = attendanceByEmpDate[emp.id]?.[dateKey];
                           
-                          // Priority: Weekend > Holiday > Leave > Attendance > Empty
+                          // Priority:
+                          //   Weekend > Holiday
+                          //   > Attendance present/late (beats leave — employee came in)
+                          //   > Attendance half-day (beats leave)
+                          //   > Leave (approved or pending, no check-in)
+                          //   > Attendance absent / on-leave
+                          //   > No data: past day → A, today/future → empty
                           let cellContent = null;
                           let cellClass = 'p-1 text-center border h-8';
                           let title = '';
-                          
+
+                          const todayMidnight = new Date();
+                          todayMidnight.setHours(0, 0, 0, 0);
+                          const isPastDay = day < todayMidnight;
+                          const isTodayDay = isToday(day);
+
                           if (dayIsWeekend) {
                             cellClass += ' bg-gray-100';
                             cellContent = <span className="text-gray-400 text-xs">-</span>;
@@ -1222,20 +1238,8 @@ export default function LeaveManagementPage() {
                               </div>
                             );
                             title = `Holiday: ${holiday.name} (${holiday.type || 'public'})`;
-                          } else if (empLeave) {
-                            const isHalfDayLeave = empLeave.leave.isHalfDay;
-                            const displayCode = isHalfDayLeave ? 'HL' : empLeave.code;
-                            cellContent = (
-                              <div 
-                                className={`w-full h-6 rounded ${isHalfDayLeave ? 'bg-orange-100' : empLeave.colors.bg} flex items-center justify-center text-xs ${isHalfDayLeave ? 'text-orange-700' : empLeave.colors.text} font-bold`}
-                              >
-                                {displayCode}
-                              </div>
-                            );
-                            title = isHalfDayLeave 
-                              ? `Half Day Leave - ${getLeaveTypeName(empLeave.leave)} (${empLeave.leave.status})`
-                              : `${getLeaveTypeName(empLeave.leave)} (${empLeave.leave.status})`;
                           } else if (attendance === 'present' || attendance === 'late') {
+                            // Employee checked in — show P regardless of any leave entry
                             cellContent = (
                               <div className="w-full h-6 rounded bg-green-100 flex items-center justify-center text-xs text-green-700 font-bold">
                                 P
@@ -1243,13 +1247,33 @@ export default function LeaveManagementPage() {
                             );
                             title = attendance === 'late' ? 'Present (Late)' : 'Present';
                           } else if (attendance === 'half-day') {
+                            // Actual half-day attendance — show ½ regardless of leave
                             cellContent = (
                               <div className="w-full h-6 rounded bg-yellow-100 flex items-center justify-center text-xs text-yellow-700 font-bold">
                                 ½
                               </div>
                             );
                             title = 'Half Day';
-                          } else if (attendance === 'absent') {
+                          } else if (empLeave) {
+                            // No check-in recorded — show leave code
+                            const isHalfDayLeave = empLeave.leave.isHalfDay;
+                            const displayCode = isHalfDayLeave ? 'HL' : empLeave.code;
+                            cellContent = (
+                              <div
+                                className={`w-full h-6 rounded ${
+                                  isHalfDayLeave ? 'bg-orange-100' : empLeave.colors.bg
+                                } flex items-center justify-center text-xs ${
+                                  isHalfDayLeave ? 'text-orange-700' : empLeave.colors.text
+                                } font-bold`}
+                              >
+                                {displayCode}
+                              </div>
+                            );
+                            title = isHalfDayLeave
+                              ? `Half Day Leave - ${getLeaveTypeName(empLeave.leave)} (${empLeave.leave.status})`
+                              : `${getLeaveTypeName(empLeave.leave)} (${empLeave.leave.status})`;
+                          } else if (attendance === 'absent' || attendance === 'on-leave' || attendance === 'on_leave') {
+                            // Explicit absent record in DB
                             cellContent = (
                               <div className="w-full h-6 rounded bg-red-100 flex items-center justify-center text-xs text-red-700 font-bold">
                                 A
@@ -1257,17 +1281,20 @@ export default function LeaveManagementPage() {
                             );
                             title = 'Absent';
                           } else {
-                            // No data - show Absent for past working days, empty for future
-                            const today = new Date();
-                            today.setHours(0, 0, 0, 0);
-                            if (day < today) {
+                            // No attendance record at all
+                            if (isPastDay) {
+                              // Past working day with no record and no leave → Absent
                               cellContent = (
                                 <div className="w-full h-6 rounded bg-red-100 flex items-center justify-center text-xs text-red-700 font-bold">
                                   A
                                 </div>
                               );
                               title = 'Absent';
+                            } else if (isTodayDay) {
+                              // Today — employee hasn't checked in yet (or data still loading)
+                              // Leave nothing; they may still arrive
                             }
+                            // Future dates → empty
                           }
 
                           return (

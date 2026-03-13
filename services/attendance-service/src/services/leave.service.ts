@@ -633,46 +633,58 @@ export async function requestLeave(
     },
   });
   
-  // Emit event
-  await eventBus.sendToQueue(
-    SQS_QUEUES.ATTENDANCE_LEAVE_REQUESTED,
-    'leave.requested',
-    {
-      leaveRequestId: leaveRequest.id,
+  // Emit event (non-fatal — leave is already saved)
+  try {
+    await eventBus.sendToQueue(
+      SQS_QUEUES.ATTENDANCE_LEAVE_REQUESTED,
+      'leave.requested',
+      {
+        leaveRequestId: leaveRequest.id,
+        employeeId: input.employeeId,
+        leaveTypeId: input.leaveTypeId,
+        leaveTypeName: leaveType.name,
+        fromDate: input.fromDate,
+        toDate: input.toDate,
+        totalDays: leaveDays,
+        reason: input.reason,
+      },
+      tenantContext
+    );
+  } catch (eventError: any) {
+    logger.warn({ error: eventError.message, leaveRequestId: leaveRequest.id }, 'Failed to emit leave.requested SQS event (non-fatal)');
+  }
+  
+  // Publish to topic for notification service (non-fatal)
+  try {
+    await eventBus.publishToTopic(SNS_TOPICS.EMPLOYEE_EVENTS, 'leave.requested', {
+      leaveId: leaveRequest.id,
       employeeId: input.employeeId,
-      leaveTypeId: input.leaveTypeId,
-      leaveTypeName: leaveType.name,
-      fromDate: input.fromDate,
-      toDate: input.toDate,
+      employeeName: `${leaveRequest.employee?.user?.firstName || ''} ${leaveRequest.employee?.user?.lastName || ''}`.trim(),
+      employeeUserId: (leaveRequest.employee as any)?.userId,
+      leaveType: leaveType.name,
+      startDate: input.fromDate,
+      endDate: input.toDate,
       totalDays: leaveDays,
       reason: input.reason,
-    },
-    tenantContext
-  );
+      managerIds: (employee.reportingManager as any)?.userId ? [(employee.reportingManager as any).userId] : [],
+    }, tenantContext);
+  } catch (topicError: any) {
+    logger.warn({ error: topicError.message, leaveRequestId: leaveRequest.id }, 'Failed to publish leave.requested SNS event (non-fatal)');
+  }
   
-  // Publish to topic for notification service
-  await eventBus.publishToTopic(SNS_TOPICS.EMPLOYEE_EVENTS, 'leave.requested', {
-    leaveId: leaveRequest.id,
-    employeeId: input.employeeId,
-    employeeName: `${leaveRequest.employee?.user?.firstName || ''} ${leaveRequest.employee?.user?.lastName || ''}`.trim(),
-    employeeUserId: (leaveRequest.employee as any)?.userId,
-    leaveType: leaveType.name,
-    startDate: input.fromDate,
-    endDate: input.toDate,
-    totalDays: leaveDays,
-    reason: input.reason,
-    managerIds: (employee.reportingManager as any)?.userId ? [(employee.reportingManager as any).userId] : [],
-  }, tenantContext);
-  
-  // Log activity
-  await logLeaveRequested(
-    prisma,
-    input.employeeId,
-    employee.displayName,
-    leaveType.name,
-    leaveDays,
-    leaveRequest.id
-  );
+  // Log activity (non-fatal)
+  try {
+    await logLeaveRequested(
+      prisma,
+      input.employeeId,
+      employee.displayName,
+      leaveType.name,
+      leaveDays,
+      leaveRequest.id
+    );
+  } catch (activityError: any) {
+    logger.warn({ error: activityError.message, leaveRequestId: leaveRequest.id }, 'Failed to log leave activity (non-fatal)');
+  }
   
   logger.info({
     leaveRequestId: leaveRequest.id,
@@ -782,49 +794,61 @@ export async function approveLeave(
   }
   */
   
-  // Emit event
-  await eventBus.sendToQueue(
-    SQS_QUEUES.ATTENDANCE_LEAVE_APPROVED,
-    'leave.approved',
-    {
-      leaveRequestId: input.leaveRequestId,
+  // Emit event (non-fatal — leave is already approved in DB)
+  try {
+    await eventBus.sendToQueue(
+      SQS_QUEUES.ATTENDANCE_LEAVE_APPROVED,
+      'leave.approved',
+      {
+        leaveRequestId: input.leaveRequestId,
+        employeeId: leaveRequest.employeeId,
+        approvedBy: input.approverId,
+        approvedAt: new Date().toISOString(),
+        comments: input.comments,
+      },
+      tenantContext
+    );
+  } catch (eventError: any) {
+    logger.warn({ error: eventError.message, leaveRequestId: input.leaveRequestId }, 'Failed to emit leave.approved SQS event (non-fatal)');
+  }
+  
+  // Publish to topic for notification service (non-fatal)
+  try {
+    await eventBus.publishToTopic(SNS_TOPICS.EMPLOYEE_EVENTS, 'leave.approved', {
+      leaveId: input.leaveRequestId,
       employeeId: leaveRequest.employeeId,
+      employeeName: leaveRequest.employee?.user
+        ? `${leaveRequest.employee.user.firstName} ${leaveRequest.employee.user.lastName}`.trim()
+        : leaveRequest.employee?.displayName || 'Employee',
+      employeeEmail: updated.employee?.user?.email,
+      leaveType: leaveRequest.leaveType?.name || 'Leave',
+      fromDate: leaveRequest.fromDate.toISOString(),
+      toDate: leaveRequest.toDate.toISOString(),
+      totalDays: Number(leaveRequest.totalDays),
       approvedBy: input.approverId,
-      approvedAt: new Date().toISOString(),
       comments: input.comments,
-    },
-    tenantContext
-  );
+    }, tenantContext);
+  } catch (topicError: any) {
+    logger.warn({ error: topicError.message, leaveRequestId: input.leaveRequestId }, 'Failed to publish leave.approved SNS event (non-fatal)');
+  }
   
-  // Publish to topic for notification service
-  await eventBus.publishToTopic(SNS_TOPICS.EMPLOYEE_EVENTS, 'leave.approved', {
-    leaveId: input.leaveRequestId,
-    employeeId: leaveRequest.employeeId,
-    employeeName: leaveRequest.employee?.user
-      ? `${leaveRequest.employee.user.firstName} ${leaveRequest.employee.user.lastName}`.trim()
-      : leaveRequest.employee?.displayName || 'Employee',
-    employeeEmail: updated.employee?.user?.email,
-    leaveType: leaveRequest.leaveType?.name || 'Leave',
-    fromDate: leaveRequest.fromDate.toISOString(),
-    toDate: leaveRequest.toDate.toISOString(),
-    totalDays: Number(leaveRequest.totalDays),
-    approvedBy: input.approverId,
-    comments: input.comments,
-  }, tenantContext);
-  
-  // Log activity
+  // Log activity (non-fatal)
   const employeeName = leaveRequest.employee?.user
     ? `${leaveRequest.employee.user.firstName} ${leaveRequest.employee.user.lastName}`
     : leaveRequest.employee?.displayName || 'Unknown';
-  await logLeaveApproved(
-    prisma,
-    leaveRequest.employeeId,
-    employeeName,
-    leaveRequest.leaveType?.name || 'Leave',
-    Number(leaveRequest.totalDays),
-    input.leaveRequestId,
-    input.approverId
-  );
+  try {
+    await logLeaveApproved(
+      prisma,
+      leaveRequest.employeeId,
+      employeeName,
+      leaveRequest.leaveType?.name || 'Leave',
+      Number(leaveRequest.totalDays),
+      input.leaveRequestId,
+      input.approverId
+    );
+  } catch (activityError: any) {
+    logger.warn({ error: activityError.message, leaveRequestId: input.leaveRequestId }, 'Failed to log leave approved activity (non-fatal)');
+  }
   
   logger.info({
     leaveRequestId: input.leaveRequestId,
@@ -884,21 +908,25 @@ export async function rejectLeave(
     },
   });
   
-  // Log activity
+  // Log activity (non-fatal)
   const employeeName = updated.employee?.user
     ? `${updated.employee.user.firstName} ${updated.employee.user.lastName}`
     : updated.employee?.displayName || 'Unknown';
-  await logLeaveRejected(
-    prisma,
-    leaveRequest.employeeId,
-    employeeName,
-    updated.leaveType?.name || 'Leave',
-    Number(leaveRequest.totalDays),
-    input.leaveRequestId,
-    input.approverId,
-    undefined,
-    input.reason
-  );
+  try {
+    await logLeaveRejected(
+      prisma,
+      leaveRequest.employeeId,
+      employeeName,
+      updated.leaveType?.name || 'Leave',
+      Number(leaveRequest.totalDays),
+      input.leaveRequestId,
+      input.approverId,
+      undefined,
+      input.reason
+    );
+  } catch (activityError: any) {
+    logger.warn({ error: activityError.message, leaveRequestId: input.leaveRequestId }, 'Failed to log leave rejected activity (non-fatal)');
+  }
   
   logger.info({
     leaveRequestId: input.leaveRequestId,
@@ -906,22 +934,26 @@ export async function rejectLeave(
     reason: input.reason,
   }, 'Leave rejected');
   
-  // Publish to topic for notification service
-  const eventBus = getEventBus('attendance-service');
-  await eventBus.publishToTopic(SNS_TOPICS.EMPLOYEE_EVENTS, 'leave.rejected', {
-    leaveId: input.leaveRequestId,
-    employeeId: leaveRequest.employeeId,
-    employeeName: updated.employee?.user
-      ? `${updated.employee.user.firstName} ${updated.employee.user.lastName}`.trim()
-      : updated.employee?.displayName || 'Employee',
-    employeeEmail: updated.employee?.user?.email,
-    leaveType: updated.leaveType?.name || 'Leave',
-    fromDate: leaveRequest.fromDate.toISOString(),
-    toDate: leaveRequest.toDate.toISOString(),
-    totalDays: Number(leaveRequest.totalDays),
-    rejectedBy: input.approverId,
-    reason: input.reason,
-  }, tenantContext);
+  // Publish to topic for notification service (non-fatal)
+  try {
+    const eventBus = getEventBus('attendance-service');
+    await eventBus.publishToTopic(SNS_TOPICS.EMPLOYEE_EVENTS, 'leave.rejected', {
+      leaveId: input.leaveRequestId,
+      employeeId: leaveRequest.employeeId,
+      employeeName: updated.employee?.user
+        ? `${updated.employee.user.firstName} ${updated.employee.user.lastName}`.trim()
+        : updated.employee?.displayName || 'Employee',
+      employeeEmail: updated.employee?.user?.email,
+      leaveType: updated.leaveType?.name || 'Leave',
+      fromDate: leaveRequest.fromDate.toISOString(),
+      toDate: leaveRequest.toDate.toISOString(),
+      totalDays: Number(leaveRequest.totalDays),
+      rejectedBy: input.approverId,
+      reason: input.reason,
+    }, tenantContext);
+  } catch (topicError: any) {
+    logger.warn({ error: topicError.message, leaveRequestId: input.leaveRequestId }, 'Failed to publish leave.rejected SNS event (non-fatal)');
+  }
   
   return updated;
 }

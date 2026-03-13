@@ -166,6 +166,20 @@ api.interceptors.response.use(
   }
 );
 
+// Extracts a human-readable message from an Axios error response
+export function extractErrorMessage(error: any): string {
+  const data = error?.response?.data as any;
+  if (data) {
+    const msg =
+      data.error?.message ||
+      (typeof data.error === 'string' ? data.error : undefined) ||
+      data.message ||
+      data.detail;
+    if (msg && typeof msg === 'string') return msg;
+  }
+  return error?.message || 'An unexpected error occurred';
+}
+
 // API helper functions
 export async function get<T>(url: string, params?: Record<string, any>): Promise<T> {
   const response = await api.get<{ success: boolean; data: T }>(url, { params });
