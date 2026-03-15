@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useEmployee } from '@/hooks/use-employees';
 import { useOrgFormatters } from '@/hooks/use-org-settings';
@@ -25,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Progress } from '@/components/ui/progress';
 import { getInitials, getStatusColor, getAvatarColor } from '@/lib/utils';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api/client';
@@ -44,6 +45,9 @@ import {
   Sparkles,
   Shield,
   Loader2,
+  CheckCircle2,
+  Circle,
+  ClipboardList,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -386,13 +390,14 @@ export default function EmployeeDetailPage() {
         <Card className="md:col-span-2">
           <Tabs defaultValue="personal" className="w-full">
             <CardHeader>
-              <TabsList className="grid w-full grid-cols-6">
+              <TabsList className="grid w-full grid-cols-7">
                 <TabsTrigger value="personal">Personal</TabsTrigger>
                 <TabsTrigger value="employment">Employment</TabsTrigger>
                 <TabsTrigger value="address">Address</TabsTrigger>
                 <TabsTrigger value="emergency">Emergency</TabsTrigger>
                 <TabsTrigger value="bank">Bank</TabsTrigger>
                 <TabsTrigger value="education">Education</TabsTrigger>
+                <TabsTrigger value="onboarding">Onboarding</TabsTrigger>
               </TabsList>
             </CardHeader>
             <CardContent>
@@ -800,10 +805,159 @@ export default function EmployeeDetailPage() {
                   </div>
                 )}
               </TabsContent>
+
+              {/* Onboarding */}
+              <TabsContent value="onboarding" className="space-y-4">
+                <OnboardingChecklistTab employeeId={employeeId} canEdit={canEdit} />
+              </TabsContent>
             </CardContent>
           </Tabs>
         </Card>
       </div>
+    </div>
+  );
+}
+
+// ── Onboarding Checklist Tab ─────────────────────────────────────────────────
+
+const CATEGORY_LABELS: Record<string, string> = {
+  DOCUMENTATION: 'Documentation',
+  PAYROLL: 'Payroll',
+  IT_SETUP: 'IT Setup',
+  COMPLIANCE: 'Compliance',
+  TRAINING: 'Training',
+  TEAM_INTRO: 'Team Introduction',
+  WORKSPACE: 'Workspace',
+  OTHER: 'Other',
+};
+
+interface ChecklistTask {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  dueDay: number;
+  sortOrder: number;
+  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'SKIPPED';
+  notes?: string;
+  completedAt?: string;
+}
+
+function OnboardingChecklistTab({ employeeId, canEdit }: { employeeId: string; canEdit: boolean }) {
+  const [tasks, setTasks] = useState<ChecklistTask[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+
+  const fetchChecklist = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await apiClient.get<{ tasks: ChecklistTask[]; completedCount: number; totalCount: number; progressPercent: number }>(
+        `/api/v1/employees/${employeeId}/onboarding-checklist`
+      );
+      if (res.success && res.data) {
+        setTasks(res.data.tasks);
+        setProgress(res.data.progressPercent);
+      }
+    } catch {
+      toast.error('Failed to load onboarding checklist');
+    } finally {
+      setLoading(false);
+    }
+  }, [employeeId]);
+
+  useEffect(() => { fetchChecklist(); }, [fetchChecklist]);
+
+  const toggleTask = async (task: ChecklistTask) => {
+    if (!canEdit) return;
+    const newStatus = task.status === 'COMPLETED' ? 'PENDING' : 'COMPLETED';
+    setUpdating(task.id);
+    try {
+      const res = await apiClient.patch(`/api/v1/employees/${employeeId}/onboarding-checklist/tasks/${task.id}`, { status: newStatus });
+      if (res.success) {
+        setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t));
+        const updated = tasks.map(t => t.id === task.id ? { ...t, status: newStatus } : t);
+        const completed = updated.filter(t => t.status === 'COMPLETED').length;
+        setProgress(updated.length > 0 ? Math.round((completed / updated.length) * 100) : 0);
+      }
+    } catch {
+      toast.error('Failed to update task');
+    } finally {
+      setUpdating(null);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-3 py-4">
+        {[1,2,3,4,5].map(i => <Skeleton key={i} className="h-10 w-full" />)}
+      </div>
+    );
+  }
+
+  // Group tasks by category
+  const grouped = tasks.reduce<Record<string, ChecklistTask[]>>((acc, t) => {
+    (acc[t.category] = acc[t.category] || []).push(t);
+    return acc;
+  }, {});
+
+  const completedCount = tasks.filter(t => t.status === 'COMPLETED').length;
+
+  return (
+    <div className="space-y-4">
+      {/* Progress header */}
+      <div className="flex items-center justify-between gap-4 p-3 rounded-lg bg-muted/40">
+        <div className="flex items-center gap-2">
+          <ClipboardList className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-medium">{completedCount} / {tasks.length} tasks completed</span>
+        </div>
+        <div className="flex-1 max-w-[200px]">
+          <Progress value={progress} className="h-2" />
+        </div>
+        <span className="text-sm font-semibold text-primary">{progress}%</span>
+      </div>
+
+      {/* Task groups */}
+      {Object.entries(grouped).map(([category, catTasks]) => (
+        <div key={category} className="space-y-1">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground px-1">
+            {CATEGORY_LABELS[category] ?? category}
+          </h4>
+          <div className="rounded-md border divide-y">
+            {catTasks.map(task => (
+              <div
+                key={task.id}
+                className={`flex items-start gap-3 p-3 cursor-pointer hover:bg-muted/30 transition-colors ${
+                  task.status === 'COMPLETED' ? 'opacity-60' : ''
+                } ${!canEdit ? 'cursor-default' : ''}`}
+                onClick={() => toggleTask(task)}
+              >
+                <div className="mt-0.5 shrink-0">
+                  {updating === task.id ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                  ) : task.status === 'COMPLETED' ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <Circle className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm font-medium leading-snug ${
+                    task.status === 'COMPLETED' ? 'line-through text-muted-foreground' : ''
+                  }`}>{task.title}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{task.description}</p>
+                </div>
+                <Badge
+                  variant="outline"
+                  className="shrink-0 text-[10px] hidden sm:flex"
+                >
+                  Day {task.dueDay}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

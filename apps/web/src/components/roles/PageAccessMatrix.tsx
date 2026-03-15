@@ -36,6 +36,7 @@ import {
 } from '@/lib/api/roles';
 
 // Page definitions with their required permissions
+// NOTE: permission format must match resource:action exactly as stored in the DB
 const PAGE_DEFINITIONS = [
   { 
     id: 'dashboard', 

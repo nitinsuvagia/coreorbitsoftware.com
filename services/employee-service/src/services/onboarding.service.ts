@@ -637,6 +637,68 @@ export class OnboardingService {
   }
 
   /**
+   * Create the default 25-task onboarding checklist for a newly hired employee.
+   * Idempotent – skips creation if a checklist already exists.
+   */
+  private static async createDefaultOnboardingChecklist(db: any, employeeId: string) {
+    const existing = await db.onboardingChecklist.findUnique({ where: { employeeId } });
+    if (existing) return existing;
+
+    const defaultTasks = [
+      // DOCUMENTATION
+      { title: 'Submit signed offer letter', description: 'Upload signed copy of offer letter.', category: 'DOCUMENTATION', dueDay: 1, sortOrder: 1 },
+      { title: 'Submit government-issued ID proof', description: 'Aadhaar / PAN / Passport copy.', category: 'DOCUMENTATION', dueDay: 1, sortOrder: 2 },
+      { title: 'Submit address proof', description: 'Utility bill / rental agreement / bank statement.', category: 'DOCUMENTATION', dueDay: 2, sortOrder: 3 },
+      { title: 'Submit educational certificates', description: 'Degree / marksheets / diplomas.', category: 'DOCUMENTATION', dueDay: 3, sortOrder: 4 },
+      { title: 'Submit previous employment documents', description: 'Relieving letter, experience letter, last 3-month payslips.', category: 'DOCUMENTATION', dueDay: 5, sortOrder: 5 },
+      // PAYROLL
+      { title: 'Submit bank account details', description: 'Account number, IFSC, cancelled cheque.', category: 'PAYROLL', dueDay: 2, sortOrder: 6 },
+      { title: 'Submit PF / ESI nomination form', description: 'Form 2 for PF nomination.', category: 'PAYROLL', dueDay: 5, sortOrder: 7 },
+      // IT_SETUP
+      { title: 'Collect laptop / workstation', description: 'Collect assigned hardware from IT team.', category: 'IT_SETUP', dueDay: 1, sortOrder: 8 },
+      { title: 'System & email account created', description: 'Official email and system login credentials provided.', category: 'IT_SETUP', dueDay: 1, sortOrder: 9 },
+      { title: 'Set up required software & tools', description: 'Install all role-specific software (Slack, VPN, IDEs, etc.).', category: 'IT_SETUP', dueDay: 3, sortOrder: 10 },
+      // COMPLIANCE
+      { title: 'Sign NDA / confidentiality agreement', description: 'Read and sign the non-disclosure agreement.', category: 'COMPLIANCE', dueDay: 1, sortOrder: 11 },
+      { title: 'Sign code of conduct', description: 'Acknowledge company code of conduct policy.', category: 'COMPLIANCE', dueDay: 2, sortOrder: 12 },
+      { title: 'Complete POSH awareness', description: 'Complete Prevention of Sexual Harassment orientation.', category: 'COMPLIANCE', dueDay: 7, sortOrder: 13 },
+      // TRAINING
+      { title: 'Attend company orientation', description: 'Company overview, culture & values session.', category: 'TRAINING', dueDay: 1, sortOrder: 14 },
+      { title: 'Complete mandatory policy training', description: 'IT security, leave, expense, and HR policies.', category: 'TRAINING', dueDay: 7, sortOrder: 15 },
+      { title: 'Complete role-specific onboarding training', description: 'Department / role-level training plan.', category: 'TRAINING', dueDay: 14, sortOrder: 16 },
+      // TEAM_INTRO
+      { title: 'Meet reporting manager', description: 'One-on-one with direct manager.', category: 'TEAM_INTRO', dueDay: 1, sortOrder: 17 },
+      { title: 'Meet the team', description: 'Introduction with immediate team members.', category: 'TEAM_INTRO', dueDay: 1, sortOrder: 18 },
+      { title: 'Buddy / mentor assigned', description: 'HR to assign an onboarding buddy.', category: 'TEAM_INTRO', dueDay: 2, sortOrder: 19 },
+      // WORKSPACE
+      { title: 'Collect access card / biometric enrollment', description: 'Register fingerprint / collect RFID access card.', category: 'WORKSPACE', dueDay: 1, sortOrder: 20 },
+      { title: 'Desk & workspace set up', description: 'Workstation / hot-desk allocated and ready.', category: 'WORKSPACE', dueDay: 1, sortOrder: 21 },
+      // OTHER
+      { title: 'Update employee profile on HRMS', description: 'Add photo, emergency contact, and address on the portal.', category: 'OTHER', dueDay: 3, sortOrder: 22 },
+      { title: '30-day check-in with HR', description: 'Feedback session with HR after first month.', category: 'OTHER', dueDay: 30, sortOrder: 23 },
+      { title: '60-day check-in with manager', description: 'Performance and settling-in review session.', category: 'OTHER', dueDay: 60, sortOrder: 24 },
+      { title: 'Complete probation review', description: 'Formal probation performance review.', category: 'OTHER', dueDay: 90, sortOrder: 25 },
+    ];
+
+    return db.onboardingChecklist.create({
+      data: {
+        employeeId,
+        tasks: {
+          create: defaultTasks.map((t) => ({
+            title: t.title,
+            description: t.description,
+            category: t.category,
+            dueDay: t.dueDay,
+            sortOrder: t.sortOrder,
+            status: 'PENDING',
+          })),
+        },
+      },
+      include: { tasks: true },
+    });
+  }
+
+  /**
    * Mark candidate as hired - creates employee record
    * Called by HR after candidate joins the office
    */
@@ -685,6 +747,13 @@ export class OnboardingService {
     });
 
     const { employee } = result;
+
+    // Auto-create the default onboarding checklist for the new employee
+    try {
+      await this.createDefaultOnboardingChecklist(db, employee.id);
+    } catch (checklistErr) {
+      logger.warn({ error: (checklistErr as Error).message, employeeId: employee.id }, 'Failed to create onboarding checklist after hire (non-fatal)');
+    }
 
     // Send welcome email
     await this.sendWelcomeEmail({

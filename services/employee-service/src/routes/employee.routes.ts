@@ -4411,6 +4411,53 @@ async function createDefaultOnboardingChecklist(prisma: PrismaClient, employeeId
 }
 
 /**
+ * POST /employees/onboarding-checklist/backfill
+ * Create missing onboarding checklists for all active employees that don't have one yet.
+ * Safe to call multiple times (idempotent).
+ */
+router.post('/onboarding-checklist/backfill', async (req: Request, res: Response) => {
+  try {
+    const prisma = getPrismaFromRequest(req);
+
+    // Find all active employees who don't have a checklist yet
+    const employees = await prisma.employee.findMany({
+      where: {
+        status: 'ACTIVE',
+        deletedAt: null,
+        onboardingChecklist: null,
+      },
+      select: { id: true, displayName: true },
+    });
+
+    const results: { id: string; name: string; status: 'created' | 'error'; error?: string }[] = [];
+
+    for (const emp of employees) {
+      try {
+        await createDefaultOnboardingChecklist(prisma, emp.id);
+        results.push({ id: emp.id, name: emp.displayName, status: 'created' });
+      } catch (err) {
+        results.push({ id: emp.id, name: emp.displayName, status: 'error', error: (err as Error).message });
+      }
+    }
+
+    logger.info({ created: results.filter(r => r.status === 'created').length, failed: results.filter(r => r.status === 'error').length }, 'Onboarding checklist backfill complete');
+
+    res.json({
+      success: true,
+      data: {
+        processed: employees.length,
+        created: results.filter(r => r.status === 'created').length,
+        failed: results.filter(r => r.status === 'error').length,
+        details: results,
+      },
+    });
+  } catch (error) {
+    logger.error({ error: (error as Error).message }, 'Failed to backfill onboarding checklists');
+    res.status(500).json({ success: false, error: { code: 'BACKFILL_FAILED', message: (error as Error).message } });
+  }
+});
+
+/**
  * GET /employees/:id/onboarding-checklist
  * Returns the onboarding checklist for an employee, auto-creating it if missing.
  */
