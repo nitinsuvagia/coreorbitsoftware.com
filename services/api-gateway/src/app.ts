@@ -1278,11 +1278,50 @@ app.get('/api/v1/employees/me',
   }
 );
 
+// Employee self-service: GET onboarding checklist (own record) - registered before general proxy
+// Regular employees can view their own checklist; HR/Admin can view any
+app.get('/api/v1/employees/:employeeId/onboarding-checklist',
+  requireAuth,
+  requireTenantContext,
+  async (req: any, res: any, next: any) => {
+    try {
+      const tenantSlug = req.tenantContext?.tenantSlug || req.domainResolution?.tenantSlug || req.user?.tenantSlug;
+      const userId = req.user?.id;
+      const { employeeId } = req.params;
+
+      if (!tenantSlug || !userId) {
+        return res.status(400).json({ success: false, error: { code: 'CONTEXT_REQUIRED', message: 'Tenant and user context required' } });
+      }
+
+      // Check if user has HR/Admin permission — if so, let the general proxy handle it
+      const userPermissions: string[] = req.user?.permissions || [];
+      const hasHRAccess = userPermissions.some((p: string) =>
+        ['employees:read', 'employees:write', 'employees:delete', 'employees:view'].includes(p)
+      );
+      if (hasHRAccess) return next();
+
+      // Otherwise verify the user is accessing their own checklist
+      const tenantPrisma = await getTenantPrismaBySlug(tenantSlug);
+      const user = await tenantPrisma.user.findUnique({ where: { id: userId }, select: { employeeId: true } });
+
+      if (!user?.employeeId || user.employeeId !== employeeId) {
+        return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Access denied' } });
+      }
+
+      // Self-access confirmed — proxy to employee service
+      return employeeSelfServiceProxy(req, res, next);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Onboarding checklist self-service proxy error');
+      return res.status(500).json({ success: false, error: { code: 'PROXY_ERROR', message: 'Internal server error' } });
+    }
+  }
+);
+
 // Employee service proxy (requires tenant context) - admin/HR operations
 app.use('/api/v1/employees', 
   requireAuth,
   requireTenantContext,
-  requireAnyPermission('employees:read', 'employees:write', 'employees:delete'),
+  requireAnyPermission('employees:read', 'employees:write', 'employees:delete', 'employees:view'),
   createProxyMiddleware({
     target: config.employeeServiceUrl,
     changeOrigin: true,
@@ -1560,7 +1599,7 @@ app.use('/api/v1/assessments',
 app.use('/api/v1/performance-reviews',
   requireAuth,
   requireTenantContext,
-  requireAnyPermission('performance:read', 'performance:write', 'performance:self'),
+  requireAnyPermission('performance:read', 'performance:write', 'performance:self', 'performance:view'),
   createProxyMiddleware({
     target: config.employeeServiceUrl,
     changeOrigin: true,
@@ -1744,7 +1783,7 @@ app.use('/api/v1/holidays',
 app.use('/api/v1/attendance',
   requireAuth,
   requireTenantContext,
-  requireAnyPermission('attendance:read', 'attendance:write', 'attendance:self'),
+  requireAnyPermission('attendance:read', 'attendance:write', 'attendance:self', 'attendance:view', 'attendance:create'),
   createProxyMiddleware({
     target: config.attendanceServiceUrl,
     changeOrigin: true,
@@ -1767,7 +1806,7 @@ app.use('/api/v1/attendance',
 app.use('/api/v1/leaves',
   requireAuth,
   requireTenantContext,
-  requireAnyPermission('leave:read', 'leave:write', 'leave:self'),
+  requireAnyPermission('leave:read', 'leave:write', 'leave:self', 'leaves:view', 'leaves:create'),
   createProxyMiddleware({
     target: config.attendanceServiceUrl,
     changeOrigin: true,
@@ -1925,7 +1964,7 @@ app.use('/api/v1/notifications',
 app.use('/api/v1/projects',
   requireAuth,
   requireTenantContext,
-  requireAnyPermission('projects:read', 'projects:write'),
+  requireAnyPermission('projects:read', 'projects:write', 'projects:view'),
   createProxyMiddleware({
     target: config.projectServiceUrl,
     changeOrigin: true,
@@ -1940,7 +1979,7 @@ app.use('/api/v1/projects',
 app.use('/api/v1/tasks',
   requireAuth,
   requireTenantContext,
-  requireAnyPermission('tasks:read', 'tasks:write'),
+  requireAnyPermission('tasks:read', 'tasks:write', 'tasks:view', 'tasks:create', 'tasks:update'),
   createProxyMiddleware({
     target: config.taskServiceUrl,
     changeOrigin: true,
@@ -1955,7 +1994,7 @@ app.use('/api/v1/tasks',
 app.use('/api/v1/clients',
   requireAuth,
   requireTenantContext,
-  requireAnyPermission('projects:read', 'projects:write'),
+  requireAnyPermission('projects:read', 'projects:write', 'projects:view'),
   createProxyMiddleware({
     target: config.clientServiceUrl,
     changeOrigin: true,
@@ -1970,7 +2009,7 @@ app.use('/api/v1/clients',
 app.use('/api/documents',
   requireAuth,
   requireTenantContext,
-  requireAnyPermission('documents:read', 'documents:write', 'documents:self'),
+  requireAnyPermission('documents:read', 'documents:write', 'documents:self', 'documents:view', 'documents:create'),
   createProxyMiddleware({
     target: config.documentServiceUrl || 'http://localhost:3007',
     changeOrigin: true,

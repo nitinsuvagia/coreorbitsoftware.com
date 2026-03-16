@@ -2,16 +2,29 @@
  * Project Service Configuration
  */
 
+const isProduction = process.env.NODE_ENV === 'production';
+
+function requireEnv(key: string, fallback: string): string {
+  const value = process.env[key];
+  if (!value) {
+    if (isProduction) {
+      throw new Error(`[project-service] Missing required environment variable: ${key}`);
+    }
+    return fallback;
+  }
+  return value;
+}
+
 export const config = {
   // Server
   port: parseInt(process.env.PROJECT_SERVICE_PORT || '3004', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   
   // Database
-  masterDatabaseUrl: process.env.MASTER_DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/oms_master',
+  masterDatabaseUrl: requireEnv('MASTER_DATABASE_URL', 'postgresql://postgres:password@localhost:5432/oms_master'),
   
   // CORS
-  corsOrigins: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000'],
+  corsOrigins: process.env.CORS_ORIGINS?.split(',') || (isProduction ? [] : ['http://localhost:3000']),
   
   // AWS
   aws: {

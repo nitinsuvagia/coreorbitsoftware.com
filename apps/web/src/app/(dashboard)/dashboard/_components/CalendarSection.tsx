@@ -37,6 +37,7 @@ import {
   Briefcase,
   PartyPopper,
   UserX,
+  CalendarX,
 } from 'lucide-react';
 import {
   Tooltip,
@@ -747,9 +748,15 @@ export function CalendarSection({ loading: parentLoading = false }: CalendarSect
             <CardContent className="flex-1 overflow-hidden px-4 pb-4">
               <ScrollArea className="h-full">
                 {selectedDateEvents.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">
-                    No events on this day
-                  </p>
+                  <div className="flex flex-col items-center justify-center h-full py-8 gap-3">
+                    <div className="flex items-center justify-center w-12 h-12 rounded-full bg-muted">
+                      <CalendarX className="h-6 w-6 text-muted-foreground" />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm font-medium text-foreground">No events today</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Nothing scheduled for this day</p>
+                    </div>
+                  </div>
                 ) : (
                   <div className="space-y-2 pr-3">
                     {selectedDateEvents.map((event) => {
@@ -807,9 +814,15 @@ export function CalendarSection({ loading: parentLoading = false }: CalendarSect
             <CardContent className="flex-1 overflow-hidden pb-4">
               <ScrollArea className="h-full pr-2">
                 {upcomingEvents.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">
-                    No upcoming events
-                  </p>
+                  <div className="flex flex-col items-center justify-center h-full py-8 gap-3">
+                    <div className="flex items-center justify-center w-12 h-12 rounded-full bg-muted">
+                      <Clock className="h-6 w-6 text-muted-foreground" />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm font-medium text-foreground">No upcoming events</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Nothing scheduled in the next 30 days</p>
+                    </div>
+                  </div>
                 ) : (
                   <div className="space-y-3">
                     {upcomingEvents.map((event) => {
