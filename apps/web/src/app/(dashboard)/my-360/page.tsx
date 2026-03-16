@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/auth-context';
 import { useMyEmployee } from '@/hooks/use-employees';
@@ -45,6 +45,7 @@ import {
   TrendingUp,
   Target,
   CheckCircle2,
+  Circle,
   XCircle,
   Award,
   Zap,
@@ -642,12 +643,13 @@ export default function My360Page() {
           <Card>
             <Tabs defaultValue="personal" className="w-full">
               <CardHeader>
-                <TabsList className="grid w-full grid-cols-5">
+                <TabsList className="grid w-full grid-cols-6">
                   <TabsTrigger value="personal">Personal</TabsTrigger>
                   <TabsTrigger value="employment">Employment</TabsTrigger>
                   <TabsTrigger value="reviews">Reviews</TabsTrigger>
                   <TabsTrigger value="leaves">Leaves</TabsTrigger>
                   <TabsTrigger value="documents">Documents</TabsTrigger>
+                  <TabsTrigger value="onboarding">Onboarding</TabsTrigger>
                 </TabsList>
               </CardHeader>
               <CardContent>
@@ -932,11 +934,134 @@ export default function My360Page() {
                     </div>
                   )}
                 </TabsContent>
+
+                {/* ── Onboarding Checklist Tab ─────────────────────────────── */}
+                <TabsContent value="onboarding" className="space-y-4">
+                  {employee?.id ? (
+                    <My360OnboardingTab employeeId={employee.id} />
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">Loading...</div>
+                  )}
+                </TabsContent>
               </CardContent>
             </Tabs>
           </Card>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Onboarding Checklist Tab (read-only for employee) ───────────────────────
+
+const MY360_CATEGORY_LABELS: Record<string, string> = {
+  DOCUMENTATION: 'Documentation',
+  PAYROLL: 'Payroll',
+  IT_SETUP: 'IT Setup',
+  COMPLIANCE: 'Compliance',
+  TRAINING: 'Training',
+  TEAM_INTRO: 'Team Introduction',
+  WORKSPACE: 'Workspace',
+  OTHER: 'Other',
+};
+
+interface My360ChecklistTask {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  dueDay: number;
+  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'SKIPPED';
+}
+
+function My360OnboardingTab({ employeeId }: { employeeId: string }) {
+  const [tasks, setTasks] = useState<My360ChecklistTask[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [progress, setProgress] = useState(0);
+
+  const fetchChecklist = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await apiClient.get<{ tasks: My360ChecklistTask[]; completedCount: number; totalCount: number; progressPercent: number }>(
+        `/api/v1/employees/${employeeId}/onboarding-checklist`
+      );
+      if (res.success && res.data) {
+        setTasks(res.data.tasks);
+        setProgress(res.data.progressPercent);
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setLoading(false);
+    }
+  }, [employeeId]);
+
+  useEffect(() => { fetchChecklist(); }, [fetchChecklist]);
+
+  if (loading) {
+    return (
+      <div className="space-y-3 py-4">
+        {[1,2,3,4,5].map(i => (
+          <div key={i} className="h-10 bg-muted animate-pulse rounded" />  
+        ))}
+      </div>
+    );
+  }
+
+  const grouped = tasks.reduce<Record<string, My360ChecklistTask[]>>((acc, t) => {
+    (acc[t.category] = acc[t.category] || []).push(t);
+    return acc;
+  }, {});
+
+  const completedCount = tasks.filter(t => t.status === 'COMPLETED').length;
+
+  return (
+    <div className="space-y-4">
+      {/* Progress header */}
+      <div className="flex items-center justify-between gap-4 p-3 rounded-lg bg-muted/40">
+        <div className="flex items-center gap-2">
+          <ClipboardList className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-medium">{completedCount} / {tasks.length} tasks completed</span>
+        </div>
+        <div className="flex-1 max-w-[200px]">
+          <Progress value={progress} className="h-2" />
+        </div>
+        <span className="text-sm font-semibold text-primary">{progress}%</span>
+      </div>
+
+      {/* Task groups */}
+      {Object.entries(grouped).map(([category, catTasks]) => (
+        <div key={category} className="space-y-1">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground px-1">
+            {MY360_CATEGORY_LABELS[category] ?? category}
+          </h4>
+          <div className="rounded-md border divide-y">
+            {catTasks.map(task => (
+              <div
+                key={task.id}
+                className={`flex items-start gap-3 p-3 ${task.status === 'COMPLETED' ? 'opacity-60' : ''}`}
+              >
+                <div className="mt-0.5 shrink-0">
+                  {task.status === 'COMPLETED' ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <Circle className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm font-medium leading-snug ${task.status === 'COMPLETED' ? 'line-through text-muted-foreground' : ''}`}>
+                    {task.title}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{task.description}</p>
+                </div>
+                <Badge variant="outline" className="shrink-0 text-[10px] hidden sm:flex">
+                  Day {task.dueDay}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

@@ -444,9 +444,9 @@ router.get(
       const fromDate = new Date(Date.UTC(fy, fm - 1, fd));
       const toDate = new Date(Date.UTC(ty, tm - 1, td));
 
-      // Fetch all active employees
+      // Fetch all employees (ACTIVE, ONBOARDING, ON_LEAVE, PROBATION, NOTICE_PERIOD, RESIGNED)
       const employees = await prisma.employee.findMany({
-        where: { status: { in: ['ACTIVE', 'ON_LEAVE', 'PROBATION', 'NOTICE_PERIOD'] } },
+        where: { status: { in: ['ACTIVE', 'ONBOARDING', 'ON_LEAVE', 'PROBATION', 'NOTICE_PERIOD', 'RESIGNED'] } },
         include: {
           department: { select: { name: true, code: true } },
           designation: { select: { name: true } },

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth/auth-context';
 import {
   useAdminWeeklyAttendance,
@@ -10,6 +11,8 @@ import {
   WeeklyAttendanceLeave,
 } from '@/hooks/use-attendance';
 import { useOrgSettings } from '@/hooks/use-org-settings';
+import { get } from '@/lib/api/client';
+import type { OrganizationSettings, WeeklyWorkingHours, DayWorkingHours } from '@/app/(dashboard)/organization/types';
 import {
   Dialog,
   DialogContent,
@@ -63,6 +66,41 @@ function formatDateRange(from: string, to: string): string {
   const t = new Date(to + 'T00:00:00');
   const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' };
   return `${f.toLocaleDateString('en-US', opts)} – ${t.toLocaleDateString('en-US', opts)}`;
+}
+
+// Day name mapping for weeklyWorkingHours
+const DAY_NAMES: (keyof WeeklyWorkingHours)[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+// Get day settings from weeklyWorkingHours
+function getDaySettings(dateStr: string, weeklyWorkingHours: WeeklyWorkingHours | null): DayWorkingHours | null {
+  if (!weeklyWorkingHours) return null;
+  const d = new Date(dateStr + 'T00:00:00');
+  const dayName = DAY_NAMES[d.getDay()];
+  return weeklyWorkingHours[dayName] || null;
+}
+
+// Calculate working minutes for a day from start/end time
+function calculateDayWorkMinutes(daySettings: DayWorkingHours | null, defaultMinutes: number = 480): number {
+  if (!daySettings || !daySettings.isWorkingDay) return 0;
+  if (!daySettings.startTime || !daySettings.endTime) return defaultMinutes;
+  
+  const [startH, startM] = daySettings.startTime.split(':').map(Number);
+  const [endH, endM] = daySettings.endTime.split(':').map(Number);
+  const startMins = startH * 60 + startM;
+  const endMins = endH * 60 + endM;
+  return Math.max(0, endMins - startMins);
+}
+
+// Check if a day is a weekend/non-working day
+function isNonWorkingDay(dateStr: string, weeklyWorkingHours: WeeklyWorkingHours | null): boolean {
+  if (!weeklyWorkingHours) {
+    // Default: Saturday and Sunday are non-working
+    const d = new Date(dateStr + 'T00:00:00');
+    const day = d.getDay();
+    return day === 0 || day === 6;
+  }
+  const daySettings = getDaySettings(dateStr, weeklyWorkingHours);
+  return !daySettings?.isWorkingDay;
 }
 
 // ─── Time formatting ───────────────────────────────────────────────────────────
@@ -228,14 +266,20 @@ interface CellProps {
   sessions: WeeklyAttendanceSession[];
   leave: WeeklyAttendanceLeave | null;
   tick: number;
+  weeklyWorkingHours: WeeklyWorkingHours | null;
   onClickSessions: () => void;
 }
 
-function AttendanceCell({ employee, dateStr, isToday, sessions, leave, tick, onClickSessions }: CellProps) {
+function AttendanceCell({ employee, dateStr, isToday, sessions, leave, tick, weeklyWorkingHours, onClickSessions }: CellProps) {
   const now = Date.now();
   const hasOpen = sessions.some((s) => s.checkIn && !s.checkOut);
   const hasSessions = sessions.length > 0;
   const totalMins = totalWorkMinutes(sessions, now);
+
+  // Calculate Full Day threshold based on org settings (default 8 hours = 480 mins, half = 240 mins)
+  const daySettings = getDaySettings(dateStr, weeklyWorkingHours);
+  const dayWorkMins = calculateDayWorkMinutes(daySettings, 480);
+  const fullDayThreshold = Math.floor(dayWorkMins / 2); // Half of standard day = full day threshold
 
   // No sessions and on leave
   if (!hasSessions && leave) {
@@ -268,7 +312,8 @@ function AttendanceCell({ employee, dateStr, isToday, sessions, leave, tick, onC
     );
   }
 
-  // Has sessions
+  // Has sessions - determine Full Day (>= threshold) or Half Day (< threshold)
+  const isFullDay = totalMins >= fullDayThreshold;
   const sessionLabel = `${sessions.length} session${sessions.length !== 1 ? 's' : ''}`;
 
   return (
@@ -277,11 +322,13 @@ function AttendanceCell({ employee, dateStr, isToday, sessions, leave, tick, onC
       <div className="flex items-center gap-1.5">
         <div
           className={`w-2 h-2 rounded-full flex-shrink-0 ${
-            hasOpen ? 'bg-green-500 animate-pulse' : 'bg-orange-400'
+            hasOpen ? 'bg-green-500 animate-pulse' : isFullDay ? 'bg-green-500' : 'bg-orange-400'
           }`}
         />
-        <span className={`text-xs font-medium ${hasOpen ? 'text-green-700' : 'text-orange-600'}`}>
-          {hasOpen ? 'Online' : 'Done'}
+        <span className={`text-xs font-medium ${
+          hasOpen ? 'text-green-700' : isFullDay ? 'text-green-700' : 'text-orange-600'
+        }`}>
+          {hasOpen ? 'Online' : isFullDay ? 'Full Day' : 'Half Day'}
         </span>
       </div>
 
@@ -327,6 +374,14 @@ export default function AttendanceMonitorPage() {
   const { user } = useAuth();
   const router = useRouter();
   const { timezone } = useOrgSettings();
+
+  // Fetch full org settings for weeklyWorkingHours
+  const { data: orgSettingsResponse } = useQuery({
+    queryKey: ['org-settings-full'],
+    queryFn: () => get<{ settings: OrganizationSettings }>('/api/v1/organization/settings'),
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
+  const weeklyWorkingHours: WeeklyWorkingHours | null = (orgSettingsResponse as any)?.settings?.weeklyWorkingHours || null;
 
   // Access guard
   const isAllowed = user?.roles?.some((r) => r === 'tenant_admin' || r === 'admin') ?? false;
@@ -413,19 +468,29 @@ export default function AttendanceMonitorPage() {
       <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
         <span className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-green-500 inline-block animate-pulse" />
-          Currently checked in (live timer)
+          Currently online
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-slate-400 inline-block" />
-          Checked out
+          <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
+          Full Day
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-orange-400 inline-block" />
+          Half Day
         </span>
         <span className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-slate-300 inline-block" />
           Absent
         </span>
         <span className="flex items-center gap-1.5">
-          <Badge variant="outline" className="text-amber-700 bg-amber-50 border-amber-200 text-[10px] py-0">LV</Badge>
+          <span className="flex items-center justify-center w-4 h-4 rounded bg-amber-50 border border-amber-200">
+            <CalendarX className="w-3 h-3 text-amber-700" />
+          </span>
           On leave
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-4 h-3 bg-muted/60 border border-muted-foreground/20 rounded inline-block" />
+          Weekend/Holiday
         </span>
       </div>
 
@@ -441,11 +506,12 @@ export default function AttendanceMonitorPage() {
               {weekDays.map((day) => {
                 const { day: dayName, date } = formatDateHeader(day);
                 const isToday = day === todayStr;
+                const isWeekendDay = isNonWorkingDay(day, weeklyWorkingHours);
                 return (
                   <th
                     key={day}
                     className={`px-3 py-3 text-center font-semibold min-w-[120px] ${
-                      isToday ? 'text-primary bg-primary/5' : 'text-muted-foreground'
+                      isToday ? 'text-primary bg-primary/5' : isWeekendDay ? 'bg-muted/60 text-muted-foreground/70' : 'text-muted-foreground'
                     }`}
                   >
                     <div>{dayName}</div>
@@ -520,10 +586,13 @@ export default function AttendanceMonitorPage() {
                   const sessions: WeeklyAttendanceSession[] = emp.attendance[day] ?? [];
                   const leave: WeeklyAttendanceLeave | null = emp.leaves[day] ?? null;
                   const isToday = day === todayStr;
+                  const isWeekendDay = isNonWorkingDay(day, weeklyWorkingHours);
                   return (
                     <td
                       key={day}
-                      className={`px-2 py-1 text-center align-middle ${isToday ? 'bg-primary/5' : ''}`}
+                      className={`px-2 py-1 text-center align-middle ${
+                        isToday ? 'bg-primary/5' : isWeekendDay ? 'bg-muted/40' : ''
+                      }`}
                     >
                       <AttendanceCell
                         employee={emp}
@@ -532,6 +601,7 @@ export default function AttendanceMonitorPage() {
                         sessions={sessions}
                         leave={leave}
                         tick={tick}
+                        weeklyWorkingHours={weeklyWorkingHours}
                         onClickSessions={() =>
                           sessions.length > 0 &&
                           setPopup({ employee: emp, dateStr: day, sessions })
