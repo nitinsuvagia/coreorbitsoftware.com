@@ -922,7 +922,7 @@ export class OnboardingService {
         personalEmail: candidate.email, // Same as candidate email - can be updated later
         phone: candidate.phone,
         mobile: candidate.phone, // Same as phone initially
-        status: 'ACTIVE',
+        status: 'ONBOARDING',  // Start with ONBOARDING status - will change to ACTIVE when checklist completed
         employmentType: candidate.job.employmentType || 'FULL_TIME',
         joinDate: candidate.offerJoiningDate || new Date(),
         // Work info from job and tenant settings

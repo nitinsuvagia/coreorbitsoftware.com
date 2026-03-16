@@ -795,14 +795,11 @@ router.get('/hr-dashboard-stats', async (req: Request, res: Response) => {
           },
         } 
       }),
-      // Employees currently onboarding (joined in last 30 days)
+      // Employees currently onboarding (status = ONBOARDING, checklist not complete)
       prisma.employee.count({ 
         where: { 
-          status: 'ACTIVE',
+          status: 'ONBOARDING',
           deletedAt: null,
-          joinDate: { 
-            gte: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-          },
         } 
       }),
     ]);
@@ -4535,6 +4532,25 @@ router.patch('/:id/onboarding-checklist/tasks/:taskId', async (req: Request, res
       where: { id: taskId },
       data: updateData,
     });
+
+    // Check if all tasks are now completed - if so, activate the employee
+    if (status === 'COMPLETED') {
+      const allTasks = await prisma.onboardingTask.findMany({
+        where: { checklistId: checklist.id },
+        select: { status: true },
+      });
+      
+      const allCompleted = allTasks.every(t => t.status === 'COMPLETED');
+      
+      if (allCompleted) {
+        // Change employee status from ONBOARDING to ACTIVE
+        await prisma.employee.update({
+          where: { id },
+          data: { status: 'ACTIVE' },
+        });
+        logger.info({ employeeId: id }, 'All onboarding tasks completed - employee status changed to ACTIVE');
+      }
+    }
 
     res.json({ success: true, data: task });
   } catch (error) {
