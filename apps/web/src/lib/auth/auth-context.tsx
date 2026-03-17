@@ -19,6 +19,7 @@ export interface User {
   tenantId?: string;
   tenantSlug?: string;
   isPlatformAdmin: boolean;
+  employeeRecordId?: string; // Employee record UUID for API lookups
 }
 
 interface AuthContextType {

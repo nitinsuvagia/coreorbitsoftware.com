@@ -272,7 +272,12 @@ export default function LeaveManagementPage() {
   const createLeave = useCreateLeave();
 
   // Determine current user's employee ID (always resolve, needed for self-leave detection)
+  // Prefer employeeRecordId from auth context (no lookup needed)
+  // Fallback to employees lookup for HR users who might need to view their own leaves
   const currentEmployeeId = useMemo(() => {
+    // Direct from auth context - no lookup needed for regular employees
+    if (user?.employeeRecordId) return user.employeeRecordId;
+    // Fallback: lookup from employees list (HR users have this loaded)
     if (!user?.email) return null;
     const emp = (employees as any[]).find((e: any) => e.email === user.email);
     return emp?.id || null;

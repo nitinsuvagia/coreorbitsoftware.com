@@ -185,6 +185,7 @@ async function fetchTenantProfile(tenantSlug: string, userId: string) {
     manager: managerName,
     joinDate: employee?.joinDate ? employee.joinDate.toISOString() : undefined,
     employeeId: employee?.employeeCode || undefined,
+    employeeRecordId: employee?.id || undefined, // Actual employee UUID for API lookups
     roles: user.roles?.map((userRole: any) => userRole.role.slug) || [],
     permissions: Array.from(permissionSet),
   };
@@ -792,6 +793,7 @@ router.get('/me', async (req: Request, res: Response, next: NextFunction) => {
         tenantId: tenantInfo.id,
         tenantSlug: tenantInfo.slug,
         isPlatformAdmin: false,
+        employeeRecordId: tenantProfile.employeeRecordId || undefined,
       },
     });
   } catch (error) {
