@@ -32,6 +32,9 @@ import {
   Circle,
   AlertCircle,
   Ban,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import {
   fetchOrgTodos,
@@ -47,11 +50,15 @@ import { format } from 'date-fns';
 // ============================================================================
 
 const PRIORITY_CONFIG = {
-  LOW:    { label: 'Low',    color: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' },
-  MEDIUM: { label: 'Medium', color: 'bg-blue-100  text-blue-700  dark:bg-blue-900  dark:text-blue-300'  },
-  HIGH:   { label: 'High',   color: 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300' },
-  URGENT: { label: 'Urgent', color: 'bg-red-100   text-red-700   dark:bg-red-900   dark:text-red-300'   },
+  LOW:    { label: 'Low',    color: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300', order: 4 },
+  MEDIUM: { label: 'Medium', color: 'bg-blue-100  text-blue-700  dark:bg-blue-900  dark:text-blue-300', order: 3 },
+  HIGH:   { label: 'High',   color: 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300', order: 2 },
+  URGENT: { label: 'Urgent', color: 'bg-red-100   text-red-700   dark:bg-red-900   dark:text-red-300', order: 1 },
 } as const;
+
+type SortField = 'dueDate' | 'priority' | 'title' | 'status' | 'assignee' | 'creator';
+type SortDir = 'asc' | 'desc';
+type SortConfig = { field: SortField; dir: SortDir };
 
 const STATUS_ICON: Record<string, React.ReactNode> = {
   PENDING:     <Circle      className="h-3.5 w-3.5 text-slate-400" />,
@@ -96,6 +103,12 @@ export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
   const [dueDateTo, setDueDateTo]       = useState('');
   const [page, setPage]                 = useState(1);
 
+  // ---- Sorting state (default: Due Date asc, then Priority asc) -----------
+  const [sortConfig, setSortConfig] = useState<SortConfig[]>([
+    { field: 'dueDate', dir: 'asc' },
+    { field: 'priority', dir: 'asc' },
+  ]);
+
   // ---- Employee picker state -----------------------------------------------
   const [empSearch, setEmpSearch]               = useState('');
   const [empSuggestions, setEmpSuggestions]     = useState<EmployeeSearchResult[]>([]);
@@ -108,6 +121,70 @@ export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
   const [todos, setTodos]                 = useState<Todo[]>([]);
   const [pagination, setPagination]       = useState({ page: 1, limit: 20, total: 0, pages: 0 });
   const [loading, setLoading]             = useState(false);
+
+  // ---- Sorting logic -------------------------------------------------------
+  function toggleSort(field: SortField) {
+    setSortConfig((prev) => {
+      const existing = prev.find((s) => s.field === field);
+      if (existing) {
+        // Cycle: asc -> desc -> remove
+        if (existing.dir === 'asc') {
+          return prev.map((s) => (s.field === field ? { ...s, dir: 'desc' as SortDir } : s));
+        } else {
+          return prev.filter((s) => s.field !== field);
+        }
+      } else {
+        // Add new sort field
+        return [...prev, { field, dir: 'asc' }];
+      }
+    });
+  }
+
+  function getSortIcon(field: SortField) {
+    const s = sortConfig.find((c) => c.field === field);
+    if (!s) return <ArrowUpDown className="h-3 w-3 opacity-40" />;
+    return s.dir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />;
+  }
+
+  function getSortIndex(field: SortField): number | null {
+    const idx = sortConfig.findIndex((c) => c.field === field);
+    return idx >= 0 ? idx + 1 : null;
+  }
+
+  // Sort todos client-side
+  const sortedTodos = [...todos].sort((a, b) => {
+    for (const { field, dir } of sortConfig) {
+      let cmp = 0;
+      switch (field) {
+        case 'dueDate': {
+          const aDate = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+          const bDate = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+          cmp = aDate - bDate;
+          break;
+        }
+        case 'priority': {
+          const aOrder = PRIORITY_CONFIG[a.priority as keyof typeof PRIORITY_CONFIG]?.order ?? 99;
+          const bOrder = PRIORITY_CONFIG[b.priority as keyof typeof PRIORITY_CONFIG]?.order ?? 99;
+          cmp = aOrder - bOrder;
+          break;
+        }
+        case 'title':
+          cmp = (a.title || '').localeCompare(b.title || '');
+          break;
+        case 'status':
+          cmp = (a.status || '').localeCompare(b.status || '');
+          break;
+        case 'assignee':
+          cmp = (a.assigneeName || '').localeCompare(b.assigneeName || '');
+          break;
+        case 'creator':
+          cmp = (a.creatorName || '').localeCompare(b.creatorName || '');
+          break;
+      }
+      if (cmp !== 0) return dir === 'asc' ? cmp : -cmp;
+    }
+    return 0;
+  });
 
   // ---- Load todos ----------------------------------------------------------
   const loadTodos = useCallback(async (filters: OrgTodoFilters) => {
@@ -152,6 +229,7 @@ export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
       setSelectedEmployee(null);
       setEmpSuggestions([]);
       setPage(1);
+      setSortConfig([{ field: 'dueDate', dir: 'asc' }, { field: 'priority', dir: 'asc' }]);
     }
   }, [open]);
 
@@ -198,7 +276,7 @@ export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-5xl w-[95vw] max-h-[90vh] flex flex-col p-0 gap-0">
+      <DialogContent className="w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] flex flex-col p-0 gap-0">
         {/* Header */}
         <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
           <div className="flex items-center gap-3">
@@ -355,12 +433,60 @@ export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-muted/60 backdrop-blur-sm z-10">
               <tr>
-                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground w-[38%]">Task</th>
-                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground w-[16%]">Creator</th>
-                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground w-[16%]">Assignee</th>
-                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground w-[10%]">Priority</th>
-                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground w-[12%]">Due Date</th>
-                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground w-[9%]">Status</th>
+                <th
+                  className="text-left px-4 py-2.5 font-medium text-muted-foreground w-[38%] cursor-pointer hover:bg-muted/80 select-none"
+                  onClick={() => toggleSort('title')}
+                >
+                  <span className="flex items-center gap-1.5">
+                    Task {getSortIcon('title')}
+                    {getSortIndex('title') && <span className="text-[10px] text-primary">({getSortIndex('title')})</span>}
+                  </span>
+                </th>
+                <th
+                  className="text-left px-4 py-2.5 font-medium text-muted-foreground w-[16%] cursor-pointer hover:bg-muted/80 select-none"
+                  onClick={() => toggleSort('creator')}
+                >
+                  <span className="flex items-center gap-1.5">
+                    Creator {getSortIcon('creator')}
+                    {getSortIndex('creator') && <span className="text-[10px] text-primary">({getSortIndex('creator')})</span>}
+                  </span>
+                </th>
+                <th
+                  className="text-left px-4 py-2.5 font-medium text-muted-foreground w-[16%] cursor-pointer hover:bg-muted/80 select-none"
+                  onClick={() => toggleSort('assignee')}
+                >
+                  <span className="flex items-center gap-1.5">
+                    Assignee {getSortIcon('assignee')}
+                    {getSortIndex('assignee') && <span className="text-[10px] text-primary">({getSortIndex('assignee')})</span>}
+                  </span>
+                </th>
+                <th
+                  className="text-left px-4 py-2.5 font-medium text-muted-foreground w-[10%] cursor-pointer hover:bg-muted/80 select-none"
+                  onClick={() => toggleSort('priority')}
+                >
+                  <span className="flex items-center gap-1.5">
+                    Priority {getSortIcon('priority')}
+                    {getSortIndex('priority') && <span className="text-[10px] text-primary">({getSortIndex('priority')})</span>}
+                  </span>
+                </th>
+                <th
+                  className="text-left px-4 py-2.5 font-medium text-muted-foreground w-[12%] cursor-pointer hover:bg-muted/80 select-none"
+                  onClick={() => toggleSort('dueDate')}
+                >
+                  <span className="flex items-center gap-1.5">
+                    Due Date {getSortIcon('dueDate')}
+                    {getSortIndex('dueDate') && <span className="text-[10px] text-primary">({getSortIndex('dueDate')})</span>}
+                  </span>
+                </th>
+                <th
+                  className="text-left px-4 py-2.5 font-medium text-muted-foreground w-[9%] cursor-pointer hover:bg-muted/80 select-none"
+                  onClick={() => toggleSort('status')}
+                >
+                  <span className="flex items-center gap-1.5">
+                    Status {getSortIcon('status')}
+                    {getSortIndex('status') && <span className="text-[10px] text-primary">({getSortIndex('status')})</span>}
+                  </span>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
@@ -384,7 +510,7 @@ export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
                 </tr>
               )}
 
-              {!loading && todos.map((todo) => {
+              {!loading && sortedTodos.map((todo) => {
                 const pc   = PRIORITY_CONFIG[todo.priority as keyof typeof PRIORITY_CONFIG];
                 const due  = formatDueDate(todo.dueDate);
                 const statusIcon = STATUS_ICON[todo.status] ?? STATUS_ICON.PENDING;
