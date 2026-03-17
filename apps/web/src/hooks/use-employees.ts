@@ -66,6 +66,7 @@ export interface EmployeeFilters {
   onRelieving?: string;  // 'true' = exitDate >= today
   page?: number;
   limit?: number;
+  enabled?: boolean;  // Query enabled flag (for conditional fetching)
 }
 
 export interface PaginatedResponse<T> {
@@ -85,10 +86,12 @@ function cleanFilters<T extends Record<string, any>>(filters: T): Partial<T> {
 
 // Employees
 export function useEmployees(filters: EmployeeFilters = {}) {
-  const cleanedFilters = cleanFilters(filters);
+  const { enabled = true, ...restFilters } = filters;
+  const cleanedFilters = cleanFilters(restFilters);
   return useQuery({
     queryKey: ['employees', cleanedFilters],
     queryFn: () => get<PaginatedResponse<Employee>>('/api/v1/employees', cleanedFilters),
+    enabled,
   });
 }
 
@@ -168,10 +171,11 @@ export interface Department {
   employeeCount: number;
 }
 
-export function useDepartments() {
+export function useDepartments(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ['departments'],
     queryFn: () => get<Department[]>('/api/v1/employees/departments'),
+    enabled: options?.enabled ?? true,
   });
 }
 

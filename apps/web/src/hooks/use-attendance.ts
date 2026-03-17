@@ -173,19 +173,24 @@ export interface LeaveFilters {
   page?: number;
   limit?: number;
   pageSize?: number;
+  enabled?: boolean;  // Query enabled flag (for conditional fetching)
 }
 
 export function useLeaves(filters: LeaveFilters = {}) {
+  const { enabled = true, ...restFilters } = filters;
   return useQuery({
-    queryKey: ['leaves', filters],
-    queryFn: () => get<{ data: LeaveRequest[]; total: number; page?: number; pageSize?: number }>('/api/v1/attendance/leaves/requests', filters),
+    queryKey: ['leaves', restFilters],
+    queryFn: () => get<{ data: LeaveRequest[]; total: number; page?: number; pageSize?: number }>('/api/v1/attendance/leaves/requests', restFilters),
+    enabled,
   });
 }
 
 export function useMyLeaves(filters: LeaveFilters = {}) {
+  const { enabled = true, ...restFilters } = filters;
   return useQuery({
-    queryKey: ['my-leaves', filters],
-    queryFn: () => get<{ data: LeaveRequest[]; total: number }>('/api/v1/attendance/leaves/requests/my', filters),
+    queryKey: ['my-leaves', restFilters],
+    queryFn: () => get<{ data: LeaveRequest[]; total: number }>('/api/v1/attendance/leaves/requests/my', restFilters),
+    enabled,
   });
 }
 

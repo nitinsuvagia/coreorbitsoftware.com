@@ -74,6 +74,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { getAvatarColor } from '@/lib/utils';
 import {
   useLeaves,
+  useMyLeaves,
   useLeaveTypes,
   useApproveLeave,
   useRejectLeave,
@@ -181,28 +182,41 @@ export default function LeaveManagementPage() {
   // Check if same date selected (single day leave)
   const isCreateSingleDay = newLeaveData.fromDate && newLeaveData.toDate && newLeaveData.fromDate === newLeaveData.toDate;
 
-  // Queries
-  const { data: leavesResponse, isLoading: isLoadingLeaves } = useLeaves({ 
+  // Queries - Use different endpoints based on permission level
+  // HR managers use `/api/v1/attendance/leaves/requests` (all leaves)
+  // Regular employees use `/api/v1/attendance/leaves/requests/my` (own leaves only)
+  const { data: hrLeavesResponse, isLoading: isLoadingHRLeaves } = useLeaves({ 
     status: selectedStatus === 'all' ? undefined : selectedStatus,
+    enabled: canManageLeaves,
   });
+  const { data: myLeavesResponse, isLoading: isLoadingMyLeaves } = useMyLeaves({ 
+    status: selectedStatus === 'all' ? undefined : selectedStatus,
+    enabled: !canManageLeaves,
+  });
+  
+  const isLoadingLeaves = canManageLeaves ? isLoadingHRLeaves : isLoadingMyLeaves;
+  const rawLeavesResponse = canManageLeaves ? hrLeavesResponse : myLeavesResponse;
+  
   // leavesResponse is the array directly since API client unwraps response.data.data
-  const leaves = Array.isArray(leavesResponse) 
-    ? leavesResponse 
-    : (leavesResponse as any)?.data || [];
+  const leaves = Array.isArray(rawLeavesResponse) 
+    ? rawLeavesResponse 
+    : (rawLeavesResponse as any)?.data || [];
   
   // Fetch ALL leaves for calendar (regardless of status filter)
-  const { data: allLeavesResponse } = useLeaves({});
-  const allLeaves = Array.isArray(allLeavesResponse) 
-    ? allLeavesResponse 
-    : (allLeavesResponse as any)?.data || [];
+  const { data: hrAllLeavesResponse } = useLeaves({ enabled: canManageLeaves });
+  const { data: myAllLeavesResponse } = useMyLeaves({ enabled: !canManageLeaves });
+  const rawAllLeavesResponse = canManageLeaves ? hrAllLeavesResponse : myAllLeavesResponse;
+  const allLeaves = Array.isArray(rawAllLeavesResponse) 
+    ? rawAllLeavesResponse 
+    : (rawAllLeavesResponse as any)?.data || [];
 
   const { data: leaveTypesResponse } = useLeaveTypes();
   const leaveTypes = (leaveTypesResponse as any)?.data || (leaveTypesResponse as any)?.items || leaveTypesResponse || [];
 
-  const { data: departmentsResponse } = useDepartments();
+  const { data: departmentsResponse } = useDepartments({ enabled: canManageLeaves });
   const departments = (departmentsResponse as any)?.data || departmentsResponse || [];
 
-  const { data: employeesResponse } = useEmployees({ excludeStatuses: 'TERMINATED,RESIGNED,RETIRED', limit: 1000 });
+  const { data: employeesResponse } = useEmployees({ excludeStatuses: 'TERMINATED,RESIGNED,RETIRED', limit: 1000, enabled: canManageLeaves });
   const employees = (employeesResponse as any)?.data || (employeesResponse as any)?.items || [];
 
   // Fetch organization settings for working days
