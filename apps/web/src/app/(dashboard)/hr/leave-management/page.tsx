@@ -745,12 +745,22 @@ export default function LeaveManagementPage() {
               : 'View and manage your leave requests'}
           </p>
         </div>
-        {canManageLeaves && (!isTenantAdmin || currentEmployeeId) && (
-          <Button onClick={() => { resetCreateForm(); setIsCreateDialogOpen(true); }}>
-            <Plus className="h-4 w-4 mr-2" />
-            Add Leave
-          </Button>
-        )}
+        <div className="flex gap-2">
+          {!canManageLeaves && (
+            <Button asChild>
+              <a href="/attendance/request-leave">
+                <Plus className="h-4 w-4 mr-2" />
+                Leave Request
+              </a>
+            </Button>
+          )}
+          {canManageLeaves && (!isTenantAdmin || currentEmployeeId) && (
+            <Button onClick={() => { resetCreateForm(); setIsCreateDialogOpen(true); }}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Leave
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -1173,10 +1183,10 @@ export default function LeaveManagementPage() {
 
             {/* Calendar Grid */}
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
+              <table className="w-full border-collapse table-fixed">
                 <thead>
                   <tr>
-                    <th className="sticky left-0 bg-background p-2 text-left border min-w-[200px] z-10">
+                    <th className="sticky left-0 bg-background p-2 text-left border w-[180px] z-10">
                       Employee
                     </th>
                     {calendarDays.map((day) => {
@@ -1188,13 +1198,13 @@ export default function LeaveManagementPage() {
                       return (
                         <th
                           key={day.toISOString()}
-                          className={`p-1 text-center border min-w-[40px] text-xs font-medium ${
-                            dayIsWeekend ? 'bg-gray-100' : holiday ? holidayColors?.cellBg : ''
+                          className={`p-0.5 text-center border text-xs font-medium ${
+                            dayIsWeekend ? 'bg-gray-100 w-[24px]' : holiday ? `${holidayColors?.cellBg} w-[32px]` : 'w-[32px]'
                           }`}
                         >
-                          <div>{format(day, 'd')}</div>
-                          <div className={`${dayIsWeekend ? 'text-gray-400' : 'text-muted-foreground'}`}>
-                            {format(day, 'EEE')}
+                          <div className="text-[10px]">{format(day, 'd')}</div>
+                          <div className={`text-[9px] ${dayIsWeekend ? 'text-gray-400' : 'text-muted-foreground'}`}>
+                            {format(day, 'EEE').charAt(0)}
                           </div>
                         </th>
                       );
@@ -1205,17 +1215,17 @@ export default function LeaveManagementPage() {
                   {((canManageLeaves ? employees : (employees as any[]).filter((e: any) => e.id === currentEmployeeId)) as any[]).map((emp: any) => {
                     return (
                       <tr key={emp.id}>
-                        <td className="sticky left-0 bg-background p-2 border font-medium z-10">
+                        <td className="sticky left-0 bg-background p-1 border font-medium z-10">
                           <div className="flex items-center gap-2">
-                            <Avatar className="h-8 w-8">
+                            <Avatar className="h-6 w-6">
                               <AvatarImage src={emp.avatar} alt={`${emp.firstName} ${emp.lastName}`} />
-                              <AvatarFallback className={`${getAvatarColor(emp.firstName + emp.lastName + emp.id).className} text-xs font-semibold`}>
+                              <AvatarFallback className={`${getAvatarColor(emp.firstName + emp.lastName + emp.id).className} text-[10px] font-semibold`}>
                                 {emp.firstName?.[0]}{emp.lastName?.[0]}
                               </AvatarFallback>
                             </Avatar>
                             <div>
-                              <div className="text-sm">{emp.firstName} {emp.lastName}</div>
-                              <div className="text-xs text-muted-foreground">{emp.employeeId}</div>
+                              <div className="text-xs">{emp.firstName} {emp.lastName}</div>
+                              <div className="text-[10px] text-muted-foreground">{emp.employeeId}</div>
                             </div>
                           </div>
                         </td>
@@ -1234,7 +1244,9 @@ export default function LeaveManagementPage() {
                           //   > Attendance absent / on-leave
                           //   > No data: past day → A, today/future → empty
                           let cellContent = null;
-                          let cellClass = 'p-1 text-center border h-8';
+                          let cellClass = dayIsWeekend 
+                            ? 'p-0.5 text-center border h-6' 
+                            : 'p-0.5 text-center border h-6';
                           let title = '';
 
                           const todayMidnight = new Date();
