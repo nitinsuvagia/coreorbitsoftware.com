@@ -297,7 +297,7 @@ services:
       - .env
     environment:
       - NODE_ENV=production
-      - PORT=3005
+      - TASK_SERVICE_PORT=3005
       - EVENT_BUS_MODE=redis
     depends_on:
       postgres:
