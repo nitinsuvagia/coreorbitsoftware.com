@@ -179,14 +179,19 @@ export function NotificationDropdown() {
         
         <ScrollArea className="h-[400px]">
           {loading && notifications.length === 0 ? (
-            <div className="flex items-center justify-center py-8 text-muted-foreground">
+            <div className="flex items-center justify-center h-full py-8 text-muted-foreground">
               <Clock className="h-4 w-4 mr-2 animate-spin" />
               Loading...
             </div>
           ) : activeNotifications.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-              <Bell className="h-8 w-8 mb-2 opacity-50" />
-              <p className="text-sm">No notifications yet</p>
+            <div className="flex flex-col items-center justify-center h-full min-h-[350px] text-center px-6">
+              <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center mb-4">
+                <Bell className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <h3 className="text-base font-semibold text-foreground mb-1">No notifications</h3>
+              <p className="text-sm text-muted-foreground">
+                You don't have any notifications yet. They'll appear here when something needs your attention.
+              </p>
             </div>
           ) : (
             <>
