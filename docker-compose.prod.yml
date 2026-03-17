@@ -264,6 +264,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3004
+      - EVENT_BUS_MODE=redis
     depends_on:
       postgres:
         condition: service_healthy
@@ -365,6 +366,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3007
+      - EVENT_BUS_MODE=redis
     volumes:
       - uploads_data:/app/uploads
     depends_on:
