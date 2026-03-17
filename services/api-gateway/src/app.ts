@@ -1341,8 +1341,8 @@ app.get('/api/v1/employees/search/mentionable',
 
       res.json({ success: true, data: { items } });
     } catch (error: any) {
-      logger.error({ error: error.message }, 'Failed to search mentionable employees');
-      res.status(500).json({ success: false, error: { code: 'SEARCH_FAILED', message: 'Failed to search employees' } });
+      logger.error({ error: error.message, stack: error.stack, tenantSlug: req.tenantContext?.tenantSlug }, 'Failed to search mentionable employees');
+      res.status(500).json({ success: false, error: { code: 'SEARCH_FAILED', message: error.message || 'Failed to search employees' } });
     }
   }
 );
