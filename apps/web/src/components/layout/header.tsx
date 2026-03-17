@@ -12,11 +12,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Bell, Moon, Sun, Search, LogOut, Settings, User } from 'lucide-react';
+import { Moon, Sun, Search, LogOut, Settings, User } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { getInitials } from '@/lib/utils';
 import Link from 'next/link';
 import { SearchCommand } from '@/components/global-search/search-command';
+import { NotificationDropdown } from './notification-dropdown';
 
 interface HeaderProps {
   title?: string;
@@ -74,13 +75,8 @@ export function Header({ title }: HeaderProps) {
 
       {/* Actions */}
       <div className="flex items-center gap-2">
-        {/* Notifications */}
-        <Button variant="ghost" size="icon" asChild>
-          <Link href="/notifications">
-            <Bell className="h-5 w-5" />
-            <span className="sr-only">Notifications</span>
-          </Link>
-        </Button>
+        {/* Notifications Dropdown */}
+        <NotificationDropdown />
 
         {/* Theme Toggle */}
         <Button
