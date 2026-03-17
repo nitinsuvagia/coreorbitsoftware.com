@@ -148,7 +148,7 @@ export class JobService {
     // Publish event for notifications
     try {
       const eventBus = getEventBus('employee-service');
-      await eventBus.publishToTopic(SNS_TOPICS.EMPLOYEE_EVENTS, 'job.created', {
+      await eventBus.publishToTopic('job-description-created', 'job.created', {
         jobId: job.id,
         title: job.title,
         department: job.department,

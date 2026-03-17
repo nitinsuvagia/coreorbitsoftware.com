@@ -164,7 +164,7 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription): Pro
     
     // Publish to topic for notification service
     const eventBus = getEventBus('billing-service');
-    await eventBus.publishToTopic(SNS_TOPICS.EMPLOYEE_EVENTS, 'billing.subscription-canceled', {
+    await eventBus.publishToTopic('billing-subscription-canceled', 'billing.subscription_canceled', {
       subscriptionId: sub.id,
       tenantId: sub.tenantId,
       stripeSubscriptionId: subscription.id,
@@ -319,7 +319,7 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session):
   
   // Publish to topic for notification service
   const eventBus = getEventBus('billing-service');
-  await eventBus.publishToTopic(SNS_TOPICS.EMPLOYEE_EVENTS, 'billing.subscription-activated', {
+  await eventBus.publishToTopic('billing-subscription-activated', 'billing.subscription_activated', {
     tenantId,
     planName: plan.name,
     planId,
@@ -446,7 +446,7 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice): Promise<void
       
       // Publish to topic for notification service
       const eventBus = getEventBus('billing-service');
-      await eventBus.publishToTopic(SNS_TOPICS.EMPLOYEE_EVENTS, 'billing.payment-failed', {
+      await eventBus.publishToTopic('billing-payment-failed', 'billing.payment_failed', {
         subscriptionId: subscription.id,
         tenantId: subscription.tenantId,
         stripeInvoiceId: invoice.id,

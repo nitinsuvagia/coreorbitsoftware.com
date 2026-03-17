@@ -467,7 +467,7 @@ export class InterviewService {
       
       if (tenant) {
         const eventBus = getEventBus('employee-service');
-        await eventBus.publishToTopic(SNS_TOPICS.EMPLOYEE_EVENTS, 'interview.scheduled', {
+        await eventBus.publishToTopic('interview-scheduled', 'interview.scheduled', {
           interviewId: interview.id,
           candidateName: `${interview.candidate?.firstName} ${interview.candidate?.lastName}`,
           jobTitle: interview.candidate?.job?.title,
@@ -682,7 +682,7 @@ export class InterviewService {
       
       if (tenant) {
         const eventBus = getEventBus('employee-service');
-        await eventBus.publishToTopic(SNS_TOPICS.EMPLOYEE_EVENTS, 'interview.rescheduled', {
+        await eventBus.publishToTopic('interview-rescheduled', 'interview.rescheduled', {
           interviewId: id,
           candidateName: `${interview.candidate?.firstName} ${interview.candidate?.lastName}`,
           newScheduledAt: new Date(newDate).toISOString(),

@@ -787,7 +787,7 @@ export class OnboardingService {
       
       if (tenant) {
         const eventBus = getEventBus('employee-service');
-        await eventBus.publishToTopic(SNS_TOPICS.EMPLOYEE_EVENTS, 'candidate.hired', {
+        await eventBus.publishToTopic('candidate-hired', 'candidate.hired', {
           candidateId,
           candidateName: `${candidate.firstName} ${candidate.lastName}`,
           jobTitle: candidate.job?.title,
