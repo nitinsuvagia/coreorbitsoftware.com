@@ -137,13 +137,13 @@ async function resolveEmployeeId(prisma: any, userId: string): Promise<string> {
   if (!user?.employeeId) {
     throw new Error('Employee profile not found for the current user');
   }
-  // Verify the employee is active or onboarding
+  // Verify the employee is not terminated/resigned/retired
   const employee = await prisma.employee.findUnique({
     where: { id: user.employeeId },
     select: { id: true, status: true },
   });
-  const allowedStatuses = ['ACTIVE', 'ONBOARDING'];
-  if (!employee || !allowedStatuses.includes(employee.status)) {
+  const blockedStatuses = ['RESIGNED', 'RETIRED', 'TERMINATED'];
+  if (!employee || blockedStatuses.includes(employee.status)) {
     throw new Error('Employee profile not found or inactive');
   }
   return employee.id;
