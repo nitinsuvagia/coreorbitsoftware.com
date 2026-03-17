@@ -1818,6 +1818,92 @@ app.use('/api/v1/holidays',
   })
 );
 
+// ============================================================================
+// LEAVE SELF-SERVICE ROUTES (must be before general attendance proxy)
+// Allow employees to view/create their own leave requests without HR permissions
+// ============================================================================
+
+const attendanceSelfServiceProxy = createProxyMiddleware({
+  target: config.attendanceServiceUrl,
+  changeOrigin: true,
+  onProxyReq: (proxyReq, req) => {
+    addTenantHeaders(proxyReq, req as TenantContextRequest);
+  },
+  onProxyRes: (proxyRes, req) => {
+    const origin = req.headers.origin;
+    if (origin) {
+      proxyRes.headers['access-control-allow-origin'] = origin;
+      proxyRes.headers['access-control-allow-credentials'] = 'true';
+    }
+  },
+});
+
+// My leave requests - any authenticated tenant user can view their own
+app.get('/api/v1/attendance/leaves/requests/my',
+  requireAuth,
+  requireTenantContext,
+  attendanceSelfServiceProxy
+);
+
+// Apply for leave - any authenticated tenant user can create a leave request
+app.post('/api/v1/attendance/leaves/requests',
+  requireAuth,
+  requireTenantContext,
+  attendanceSelfServiceProxy
+);
+
+// Cancel own leave request - any authenticated tenant user
+app.post('/api/v1/attendance/leaves/requests/:id/cancel',
+  requireAuth,
+  requireTenantContext,
+  attendanceSelfServiceProxy
+);
+
+// Leave balance - employees can view their own balance
+app.get('/api/v1/attendance/leaves/balance/:employeeId',
+  requireAuth,
+  requireTenantContext,
+  async (req: any, res: any, next: any) => {
+    try {
+      const tenantSlug = req.tenantContext?.tenantSlug || req.domainResolution?.tenantSlug || req.user?.tenantSlug;
+      const userId = req.user?.id;
+      const { employeeId } = req.params;
+
+      if (!tenantSlug || !userId) {
+        return res.status(400).json({ success: false, error: { code: 'CONTEXT_REQUIRED', message: 'Tenant and user context required' } });
+      }
+
+      // Check if user has HR/Admin permission — if so, let the general proxy handle it
+      const userPermissions: string[] = req.user?.permissions || [];
+      const hasHRAccess = userPermissions.some((p: string) =>
+        ['attendance:read', 'attendance:write', 'leave:read', 'leave:write'].includes(p)
+      );
+      if (hasHRAccess) return next();
+
+      // Otherwise verify the user is accessing their own balance
+      const tenantPrisma = await getTenantPrismaBySlug(tenantSlug);
+      const user = await tenantPrisma.user.findUnique({ where: { id: userId }, select: { employeeId: true } });
+
+      if (!user?.employeeId || user.employeeId !== employeeId) {
+        return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Access denied' } });
+      }
+
+      // Self-access confirmed — proxy to attendance service
+      return attendanceSelfServiceProxy(req, res, next);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Leave balance self-service proxy error');
+      return res.status(500).json({ success: false, error: { code: 'PROXY_ERROR', message: 'Internal server error' } });
+    }
+  }
+);
+
+// Leave types - any authenticated user can view leave types
+app.get('/api/v1/attendance/leaves/types',
+  requireAuth,
+  requireTenantContext,
+  attendanceSelfServiceProxy
+);
+
 // Attendance service proxy
 app.use('/api/v1/attendance',
   requireAuth,
