@@ -282,9 +282,13 @@ export default function LeaveManagementPage() {
     // For employees: show only their own leave requests
     if (!canManageLeaves) {
       result = result.filter((leave: any) => {
-        // Match by employee ID or by email
+        // Match by employee ID (primary - always safe)
         if (currentEmployeeId && leave.employeeId === currentEmployeeId) return true;
-        if (user?.email && leave.employee?.email === user.email) return true;
+        // Fallback: match by email ONLY if employee is still active (prevents showing
+        // old employee's data to new employee with same email after rehire)
+        const activeStatuses = ['ACTIVE', 'ONBOARDING', 'PROBATION'];
+        if (user?.email && leave.employee?.email === user.email && 
+            activeStatuses.includes(leave.employee?.status)) return true;
         return false;
       });
     }
@@ -343,9 +347,13 @@ export default function LeaveManagementPage() {
     let allUserLeaves = allLeaves;
     if (!canManageLeaves) {
       allUserLeaves = allLeaves.filter((leave: any) => {
-        // Match by employee ID or by email
+        // Match by employee ID (primary - always safe)
         if (currentEmployeeId && leave.employeeId === currentEmployeeId) return true;
-        if (user?.email && leave.employee?.email === user.email) return true;
+        // Fallback: match by email ONLY if employee is still active (prevents showing
+        // old employee's data to new employee with same email after rehire)
+        const activeStatuses = ['ACTIVE', 'ONBOARDING', 'PROBATION'];
+        if (user?.email && leave.employee?.email === user.email && 
+            activeStatuses.includes(leave.employee?.status)) return true;
         return false;
       });
     }
@@ -1224,9 +1232,12 @@ export default function LeaveManagementPage() {
                 <tbody>
                   {((canManageLeaves 
                     ? employees 
-                    : (employees as any[]).filter((e: any) => 
-                        e.id === currentEmployeeId || e.email === user?.email
-                      )
+                    : (employees as any[]).filter((e: any) => {
+                        // Match by ID (primary) or email only for active employees
+                        if (e.id === currentEmployeeId) return true;
+                        const activeStatuses = ['ACTIVE', 'ONBOARDING', 'PROBATION'];
+                        return e.email === user?.email && activeStatuses.includes(e.status);
+                      })
                   ) as any[]).map((emp: any) => {
                     return (
                       <tr key={emp.id}>
