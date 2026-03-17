@@ -161,7 +161,11 @@ export function Sidebar({ className }: SidebarProps) {
     );
   };
 
-  const isItemActive = (href: string) => {
+  // Check if item is active - exact match only for standalone items
+  const isItemActive = (href: string, exactOnly = false) => {
+    if (exactOnly || standaloneItems.some(item => item.href === href)) {
+      return pathname === href;
+    }
     return pathname === href || pathname.startsWith(`${href}/`);
   };
 
