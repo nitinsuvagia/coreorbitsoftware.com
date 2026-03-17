@@ -323,13 +323,30 @@ export default function LeaveManagementPage() {
     [filteredLeaves]
   );
 
-  // Stats
+  // Stats (for filtered table display)
   const stats = useMemo(() => ({
     total: filteredLeaves.length,
     pending: pendingLeaves.length,
     approved: approvedLeaves.length,
     rejected: rejectedLeaves.length,
   }), [filteredLeaves, pendingLeaves, approvedLeaves, rejectedLeaves]);
+
+  // Overall stats from ALL leaves (not affected by filters) - for stat cards
+  // This ensures cards always show true counts regardless of applied filters
+  const overallStats = useMemo(() => {
+    // Get all leaves, filtered for current employee if not admin
+    let allUserLeaves = allLeaves;
+    if (!canManageLeaves && currentEmployeeId) {
+      allUserLeaves = allLeaves.filter((leave: any) => leave.employeeId === currentEmployeeId);
+    }
+    
+    return {
+      total: allUserLeaves.length,
+      pending: allUserLeaves.filter((l: any) => l.status === 'pending').length,
+      approved: allUserLeaves.filter((l: any) => l.status === 'approved').length,
+      rejected: allUserLeaves.filter((l: any) => l.status === 'rejected').length,
+    };
+  }, [allLeaves, canManageLeaves, currentEmployeeId]);
 
   // Calendar data
   const calendarDays = useMemo(() => {
@@ -745,7 +762,7 @@ export default function LeaveManagementPage() {
                 <p className="text-sm font-medium text-muted-foreground">Total Requests</p>
                 <div className="flex items-baseline gap-2 mt-2">
                   <h3 className="text-3xl font-bold">
-                    {isLoadingLeaves ? <Skeleton className="h-9 w-16" /> : stats.total}
+                    {isLoadingLeaves ? <Skeleton className="h-9 w-16" /> : overallStats.total}
                   </h3>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">All leave requests</p>
@@ -763,7 +780,7 @@ export default function LeaveManagementPage() {
                 <p className="text-sm font-medium text-muted-foreground">Pending</p>
                 <div className="flex items-baseline gap-2 mt-2">
                   <h3 className="text-3xl font-bold text-amber-600">
-                    {isLoadingLeaves ? <Skeleton className="h-9 w-16" /> : stats.pending}
+                    {isLoadingLeaves ? <Skeleton className="h-9 w-16" /> : overallStats.pending}
                   </h3>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">Awaiting approval</p>
@@ -781,7 +798,7 @@ export default function LeaveManagementPage() {
                 <p className="text-sm font-medium text-muted-foreground">Approved</p>
                 <div className="flex items-baseline gap-2 mt-2">
                   <h3 className="text-3xl font-bold text-green-600">
-                    {isLoadingLeaves ? <Skeleton className="h-9 w-16" /> : stats.approved}
+                    {isLoadingLeaves ? <Skeleton className="h-9 w-16" /> : overallStats.approved}
                   </h3>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">Approved requests</p>
@@ -799,7 +816,7 @@ export default function LeaveManagementPage() {
                 <p className="text-sm font-medium text-muted-foreground">Rejected</p>
                 <div className="flex items-baseline gap-2 mt-2">
                   <h3 className="text-3xl font-bold text-red-600">
-                    {isLoadingLeaves ? <Skeleton className="h-9 w-16" /> : stats.rejected}
+                    {isLoadingLeaves ? <Skeleton className="h-9 w-16" /> : overallStats.rejected}
                   </h3>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">Rejected requests</p>
