@@ -309,9 +309,16 @@ export function PageAccessMatrix() {
     return rolePermissions[roleId]?.has(permId) || false;
   };
 
+  const isPermissionMissing = (pagePermission: string): boolean => {
+    return getPermissionIdByName(pagePermission) === null;
+  };
+
   const handleToggle = (roleId: string, pagePermission: string) => {
     const permId = getPermissionIdByName(pagePermission);
-    if (!permId) return;
+    if (!permId) {
+      toast.error(`Permission "${pagePermission}" not found in database. Please run the permissions seed script.`);
+      return;
+    }
 
     setRolePermissions(prev => {
       const newMap = { ...prev };
@@ -448,17 +455,25 @@ export function PageAccessMatrix() {
                   const Icon = page.icon;
                   const allChecked = roles.every(role => hasPageAccess(role.id, page.permission));
                   const someChecked = roles.some(role => hasPageAccess(role.id, page.permission));
+                  const permissionMissing = isPermissionMissing(page.permission);
                   
                   return (
                     <tr 
                       key={page.id} 
-                      className={`border-b hover:bg-muted/30 transition-colors ${idx % 2 === 0 ? 'bg-white dark:bg-gray-950' : 'bg-muted/10'}`}
+                      className={`border-b hover:bg-muted/30 transition-colors ${idx % 2 === 0 ? 'bg-white dark:bg-gray-950' : 'bg-muted/10'} ${permissionMissing ? 'opacity-60' : ''}`}
                     >
                       <td className="p-3 sticky left-0 bg-inherit z-10">
                         <div className="flex items-center gap-3">
                           <Icon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                           <div>
-                            <div className="font-medium text-sm">{page.name}</div>
+                            <div className="font-medium text-sm flex items-center gap-2">
+                              {page.name}
+                              {permissionMissing && (
+                                <Badge variant="outline" className="text-[10px] px-1 py-0 bg-amber-50 text-amber-700 border-amber-300">
+                                  Missing
+                                </Badge>
+                              )}
+                            </div>
                             <div className="text-xs text-muted-foreground">{page.description}</div>
                           </div>
                         </div>
@@ -469,6 +484,7 @@ export function PageAccessMatrix() {
                             checked={hasPageAccess(role.id, page.permission)}
                             onCheckedChange={() => handleToggle(role.id, page.permission)}
                             className="mx-auto"
+                            disabled={permissionMissing}
                           />
                         </td>
                       ))}
@@ -479,6 +495,7 @@ export function PageAccessMatrix() {
                           className="h-6 w-6 p-0"
                           onClick={() => handleSelectAllForPage(page.permission)}
                           title={allChecked ? 'Revoke from all' : 'Grant to all'}
+                          disabled={permissionMissing}
                         >
                           <CheckCheck className={`h-4 w-4 ${allChecked ? 'text-green-600' : someChecked ? 'text-amber-500' : 'text-muted-foreground'}`} />
                         </Button>
