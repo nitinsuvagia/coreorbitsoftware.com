@@ -196,6 +196,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3002
+      - EVENT_BUS_MODE=redis
     depends_on:
       postgres:
         condition: service_healthy
@@ -229,6 +230,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3003
+      - EVENT_BUS_MODE=redis
     depends_on:
       postgres:
         condition: service_healthy
@@ -295,6 +297,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3005
+      - EVENT_BUS_MODE=redis
     depends_on:
       postgres:
         condition: service_healthy
@@ -328,6 +331,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3006
+      - EVENT_BUS_MODE=redis
     depends_on:
       postgres:
         condition: service_healthy
@@ -396,6 +400,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3008
+      - EVENT_BUS_MODE=redis
     depends_on:
       postgres:
         condition: service_healthy
