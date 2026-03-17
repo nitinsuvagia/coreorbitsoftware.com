@@ -656,7 +656,7 @@ export async function requestLeave(
   
   // Publish to topic for notification service (non-fatal)
   try {
-    await eventBus.publishToTopic('leave-requested', 'leave.requested', {
+    await eventBus.publishToTopic('leave-requested' as any, 'leave.requested', {
       leaveId: leaveRequest.id,
       employeeId: input.employeeId,
       employeeName: `${leaveRequest.employee?.user?.firstName || ''} ${leaveRequest.employee?.user?.lastName || ''}`.trim(),
@@ -814,7 +814,7 @@ export async function approveLeave(
   
   // Publish to topic for notification service (non-fatal)
   try {
-    await eventBus.publishToTopic('leave-approved', 'leave.approved', {
+    await eventBus.publishToTopic('leave-approved' as any, 'leave.approved', {
       leaveId: input.leaveRequestId,
       employeeId: leaveRequest.employeeId,
       employeeName: leaveRequest.employee?.user
@@ -937,7 +937,7 @@ export async function rejectLeave(
   // Publish to topic for notification service (non-fatal)
   try {
     const eventBus = getEventBus('attendance-service');
-    await eventBus.publishToTopic('leave-rejected', 'leave.rejected', {
+    await eventBus.publishToTopic('leave-rejected' as any, 'leave.rejected', {
       leaveId: input.leaveRequestId,
       employeeId: leaveRequest.employeeId,
       employeeName: updated.employee?.user

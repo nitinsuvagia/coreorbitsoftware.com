@@ -287,7 +287,7 @@ export async function onboardEmployee(
   
   // Emit event
   await eventBus.publishToTopic(
-    'employee-onboarded',
+    'employee-onboarded' as any,
     'employee.onboarded',
     {
       employeeId: result.employee.id,

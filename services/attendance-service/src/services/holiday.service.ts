@@ -129,7 +129,7 @@ export async function createHoliday(
   // For now, we can publish with minimal context
   try {
     const eventBus = getEventBus('attendance-service');
-    await eventBus.publishToTopic('holiday-created', 'holiday.created', {
+    await eventBus.publishToTopic('holiday-created' as any, 'holiday.created', {
       holidayId: id,
       name: input.name,
       date: input.date,
