@@ -194,14 +194,16 @@ export async function checkIn(
   const timezone = await getTenantTimezone(tenantContext.tenantSlug);
   const today = getDateInTimezone(timezone, now);
   
-  // Check if employee exists and is active
+  // Check if employee exists and has a status that allows check-in
   const employee = await prisma.employee.findUnique({
     where: { id: input.employeeId },
     include: { user: { select: { firstName: true, lastName: true } } },
   });
   
-  if (!employee || employee.status !== 'ACTIVE') {
-    throw new Error('Employee not found or inactive');
+  // Statuses that can check in (excludes TERMINATED, RESIGNED, RETIRED)
+  const allowedStatuses = ['ONBOARDING', 'ACTIVE', 'ON_LEAVE', 'PROBATION', 'NOTICE_PERIOD'];
+  if (!employee || !allowedStatuses.includes(employee.status)) {
+    throw new Error('Employee not found or not eligible for attendance');
   }
   
   // Check for ANY open (not checked-out) session across all dates.
