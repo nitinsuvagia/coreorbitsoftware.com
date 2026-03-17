@@ -1278,6 +1278,74 @@ app.get('/api/v1/employees/me',
   }
 );
 
+// Employee search for @mentions - any authenticated tenant user can search for employees to mention
+// This is a lightweight search specifically for @mention/assignee pickers
+app.get('/api/v1/employees/search/mentionable',
+  requireAuth,
+  requireTenantContext,
+  async (req: any, res: any) => {
+    try {
+      const tenantSlug = req.tenantContext?.tenantSlug || req.domainResolution?.tenantSlug || req.user?.tenantSlug;
+
+      if (!tenantSlug) {
+        return res.status(400).json({ success: false, error: { code: 'CONTEXT_REQUIRED', message: 'Tenant context required' } });
+      }
+
+      const tenantPrisma = await getTenantPrismaBySlug(tenantSlug);
+      const { search = '', limit = '10' } = req.query;
+      const searchTerm = (search as string).trim();
+      const limitNum = Math.min(parseInt(limit as string) || 10, 20);
+
+      // Build search filter
+      const searchFilter = searchTerm ? {
+        OR: [
+          { firstName: { contains: searchTerm, mode: 'insensitive' as any } },
+          { lastName: { contains: searchTerm, mode: 'insensitive' as any } },
+          { email: { contains: searchTerm, mode: 'insensitive' as any } },
+        ],
+      } : {};
+
+      // Fetch active employees with user accounts
+      const employees = await tenantPrisma.employee.findMany({
+        where: {
+          ...searchFilter,
+          status: 'ACTIVE',
+          userId: { not: null },
+        },
+        select: {
+          id: true,
+          userId: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          avatar: true,
+          department: { select: { name: true } },
+          designation: { select: { name: true } },
+        },
+        take: limitNum,
+        orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+      });
+
+      const items = employees.map((emp: any) => ({
+        id: emp.id,
+        userId: emp.userId,
+        firstName: emp.firstName,
+        lastName: emp.lastName,
+        displayName: `${emp.firstName} ${emp.lastName}`,
+        email: emp.email,
+        avatar: emp.avatar,
+        department: emp.department,
+        designation: emp.designation,
+      }));
+
+      res.json({ success: true, data: { items } });
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Failed to search mentionable employees');
+      res.status(500).json({ success: false, error: { code: 'SEARCH_FAILED', message: 'Failed to search employees' } });
+    }
+  }
+);
+
 // Employee self-service: Skills (own record) - registered before general proxy
 // Regular employees can access their own skills; HR/Admin can access any
 app.use('/api/v1/employees/:employeeId/skills',

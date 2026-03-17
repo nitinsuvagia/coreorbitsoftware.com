@@ -262,19 +262,18 @@ export interface EmployeeSearchResult {
 /**
  * Search active employees by name for the assignee picker.
  * Returns up to 10 matching employees.
+ * Uses the mentionable search endpoint which is accessible to all authenticated users.
  */
 export async function searchEmployees(query: string): Promise<EmployeeSearchResult[]> {
   if (!query.trim()) return [];
   try {
     const params = new URLSearchParams({
       search: query.trim(),
-      status: 'ACTIVE',
       limit: '10',
-      hasUser: 'true',  // only employees with a system user account (required for assignment)
     });
-    // api.get returns { data: { success, data: { items, ... } } } (Axios shape)
+    // Uses mentionable endpoint - accessible to all authenticated tenant users
     const response = await api.get<{ success: boolean; data: { items: EmployeeSearchResult[] } }>(
-      `/api/v1/employees?${params.toString()}`
+      `/api/v1/employees/search/mentionable?${params.toString()}`
     );
     return response.data.data?.items ?? [];
   } catch (error) {
