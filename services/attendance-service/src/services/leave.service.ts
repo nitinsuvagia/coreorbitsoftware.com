@@ -656,7 +656,7 @@ export async function requestLeave(
   
   // Publish to topic for notification service (non-fatal)
   try {
-    await eventBus.publishToTopic(SNS_TOPICS.EMPLOYEE_EVENTS, 'leave.requested', {
+    await eventBus.publishToTopic('leave-requested', 'leave.requested', {
       leaveId: leaveRequest.id,
       employeeId: input.employeeId,
       employeeName: `${leaveRequest.employee?.user?.firstName || ''} ${leaveRequest.employee?.user?.lastName || ''}`.trim(),
@@ -669,7 +669,7 @@ export async function requestLeave(
       managerIds: (employee.reportingManager as any)?.userId ? [(employee.reportingManager as any).userId] : [],
     }, tenantContext);
   } catch (topicError: any) {
-    logger.warn({ error: topicError.message, leaveRequestId: leaveRequest.id }, 'Failed to publish leave.requested SNS event (non-fatal)');
+    logger.warn({ error: topicError.message, leaveRequestId: leaveRequest.id }, 'Failed to publish leave.requested event (non-fatal)');
   }
   
   // Log activity (non-fatal)
@@ -814,7 +814,7 @@ export async function approveLeave(
   
   // Publish to topic for notification service (non-fatal)
   try {
-    await eventBus.publishToTopic(SNS_TOPICS.EMPLOYEE_EVENTS, 'leave.approved', {
+    await eventBus.publishToTopic('leave-approved', 'leave.approved', {
       leaveId: input.leaveRequestId,
       employeeId: leaveRequest.employeeId,
       employeeName: leaveRequest.employee?.user
@@ -829,7 +829,7 @@ export async function approveLeave(
       comments: input.comments,
     }, tenantContext);
   } catch (topicError: any) {
-    logger.warn({ error: topicError.message, leaveRequestId: input.leaveRequestId }, 'Failed to publish leave.approved SNS event (non-fatal)');
+    logger.warn({ error: topicError.message, leaveRequestId: input.leaveRequestId }, 'Failed to publish leave.approved event (non-fatal)');
   }
   
   // Log activity (non-fatal)
@@ -937,7 +937,7 @@ export async function rejectLeave(
   // Publish to topic for notification service (non-fatal)
   try {
     const eventBus = getEventBus('attendance-service');
-    await eventBus.publishToTopic(SNS_TOPICS.EMPLOYEE_EVENTS, 'leave.rejected', {
+    await eventBus.publishToTopic('leave-rejected', 'leave.rejected', {
       leaveId: input.leaveRequestId,
       employeeId: leaveRequest.employeeId,
       employeeName: updated.employee?.user
@@ -952,7 +952,7 @@ export async function rejectLeave(
       reason: input.reason,
     }, tenantContext);
   } catch (topicError: any) {
-    logger.warn({ error: topicError.message, leaveRequestId: input.leaveRequestId }, 'Failed to publish leave.rejected SNS event (non-fatal)');
+    logger.warn({ error: topicError.message, leaveRequestId: input.leaveRequestId }, 'Failed to publish leave.rejected event (non-fatal)');
   }
   
   return updated;
