@@ -68,6 +68,7 @@ import { toast } from 'sonner';
 
 interface TodoListProps {
   loading?: boolean;
+  onTaskChange?: () => void;
 }
 
 const priorityConfig: Record<TodoPriority, { label: string; color: string; bgColor: string }> = {
@@ -484,7 +485,7 @@ function TodoDialog({ open, onOpenChange, todo, onSave }: TodoDialogProps) {
   );
 }
 
-export function TodoList({ loading: externalLoading }: TodoListProps) {
+export function TodoList({ loading: externalLoading, onTaskChange }: TodoListProps) {
   const { user } = useAuth();
   const currentUserId = user?.id;
   const [todosData, setTodosData] = useState<TodosResponse | null>(null);
@@ -545,6 +546,7 @@ export function TodoList({ loading: externalLoading }: TodoListProps) {
     try {
       await toggleTodo(id);
       fetchTodos();
+      onTaskChange?.();
       toast.success('Todo updated');
     } catch (error) {
       toast.error('Failed to update todo');
@@ -560,6 +562,7 @@ export function TodoList({ loading: externalLoading }: TodoListProps) {
     try {
       await deleteTodo(id);
       fetchTodos();
+      onTaskChange?.();
       toast.success('Todo deleted');
     } catch (error) {
       toast.error('Failed to delete todo');
@@ -575,6 +578,7 @@ export function TodoList({ loading: externalLoading }: TodoListProps) {
       toast.success('Todo created');
     }
     fetchTodos();
+    onTaskChange?.();
   };
 
   // Handle quick-add input change — detect @mention trigger
@@ -670,6 +674,7 @@ export function TodoList({ loading: externalLoading }: TodoListProps) {
       setQuickAddAssignee(null);
       setMentionSuggestions([]);
       fetchTodos();
+      onTaskChange?.();
       toast.success(
         quickAddAssignee
           ? `Task assigned to ${

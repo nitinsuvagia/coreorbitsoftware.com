@@ -183,7 +183,7 @@ function CheckInCard() {
 // ============================================================================
 
 function AdminDashboard({ firstName }: { firstName?: string }) {
-  const { stats, tenant, limits, loading, error } = useDashboard();
+  const { stats, tenant, limits, loading, error, refetch } = useDashboard();
   const { hasRole } = usePermissions();
   const isTenantOwner = hasRole('tenant_admin');
   const [orgTasksOpen, setOrgTasksOpen] = useState(false);
@@ -211,7 +211,7 @@ function AdminDashboard({ firstName }: { firstName?: string }) {
         <TodaySchedule loading={loading} />
 
         {/* My Tasks / Todo List - spans 3 columns */}
-        <TodoList loading={loading} />
+        <TodoList loading={loading} onTaskChange={refetch} />
       </div>
 
       {/* Alerts and Recent Activity */}
@@ -234,7 +234,7 @@ function AdminDashboard({ firstName }: { firstName?: string }) {
 // ============================================================================
 
 function EmployeeDashboard({ firstName }: { firstName?: string }) {
-  const { employee, attendance, leave, tasks, projects, loading, error } = useEmployeeDashboard();
+  const { employee, attendance, leave, tasks, projects, loading, error, refetch } = useEmployeeDashboard();
 
   return (
     <div className="space-y-6">
@@ -262,7 +262,7 @@ function EmployeeDashboard({ firstName }: { firstName?: string }) {
         <TodaySchedule loading={loading} />
 
         {/* My Tasks / Todo List - spans 3 columns */}
-        <TodoList loading={loading} />
+        <TodoList loading={loading} onTaskChange={refetch} />
       </div>
 
       {/* Profile Card + Calendar */}
