@@ -1299,7 +1299,7 @@ app.get('/api/v1/employees/search/mentionable',
       // Build where clause
       const whereClause: any = {
         status: { notIn: ['TERMINATED', 'RESIGNED', 'RETIRED'] },
-        userId: { not: null },
+        user: { isNot: null }, // Employee must have a linked user account
       };
 
       if (searchTerm) {
@@ -1315,11 +1315,11 @@ app.get('/api/v1/employees/search/mentionable',
         where: whereClause,
         select: {
           id: true,
-          userId: true,
           firstName: true,
           lastName: true,
           email: true,
           avatar: true,
+          user: { select: { id: true } }, // Get user ID from relation
           department: { select: { name: true } },
           designation: { select: { name: true } },
         },
@@ -1329,7 +1329,7 @@ app.get('/api/v1/employees/search/mentionable',
 
       const items = employees.map((emp: any) => ({
         id: emp.id,
-        userId: emp.userId,
+        userId: emp.user?.id,
         firstName: emp.firstName,
         lastName: emp.lastName,
         displayName: `${emp.firstName} ${emp.lastName}`,
