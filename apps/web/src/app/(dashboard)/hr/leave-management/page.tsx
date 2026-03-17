@@ -1212,7 +1212,12 @@ export default function LeaveManagementPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {((canManageLeaves ? employees : (employees as any[]).filter((e: any) => e.id === currentEmployeeId)) as any[]).map((emp: any) => {
+                  {((canManageLeaves 
+                    ? employees 
+                    : (employees as any[]).filter((e: any) => 
+                        e.id === currentEmployeeId || e.email === user?.email
+                      )
+                  ) as any[]).map((emp: any) => {
                     return (
                       <tr key={emp.id}>
                         <td className="sticky left-0 bg-background p-1 border font-medium z-10">
