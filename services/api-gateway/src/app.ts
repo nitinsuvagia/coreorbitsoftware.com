@@ -1278,6 +1278,45 @@ app.get('/api/v1/employees/me',
   }
 );
 
+// Employee self-service: Skills (own record) - registered before general proxy
+// Regular employees can access their own skills; HR/Admin can access any
+app.use('/api/v1/employees/:employeeId/skills',
+  requireAuth,
+  requireTenantContext,
+  async (req: any, res: any, next: any) => {
+    try {
+      const tenantSlug = req.tenantContext?.tenantSlug || req.domainResolution?.tenantSlug || req.user?.tenantSlug;
+      const userId = req.user?.id;
+      const { employeeId } = req.params;
+
+      if (!tenantSlug || !userId) {
+        return res.status(400).json({ success: false, error: { code: 'CONTEXT_REQUIRED', message: 'Tenant and user context required' } });
+      }
+
+      // Check if user has HR/Admin permission — if so, let the general proxy handle it
+      const userPermissions: string[] = req.user?.permissions || [];
+      const hasHRAccess = userPermissions.some((p: string) =>
+        ['employees:read', 'employees:write', 'employees:delete', 'employees:view'].includes(p)
+      );
+      if (hasHRAccess) return next();
+
+      // Otherwise verify the user is accessing their own skills
+      const tenantPrisma = await getTenantPrismaBySlug(tenantSlug);
+      const user = await tenantPrisma.user.findUnique({ where: { id: userId }, select: { employeeId: true } });
+
+      if (!user?.employeeId || user.employeeId !== employeeId) {
+        return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Access denied' } });
+      }
+
+      // Self-access confirmed — proxy to employee service
+      return employeeSelfServiceProxy(req, res, next);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Skills self-service proxy error');
+      return res.status(500).json({ success: false, error: { code: 'PROXY_ERROR', message: 'Internal server error' } });
+    }
+  }
+);
+
 // Employee self-service: GET onboarding checklist (own record) - registered before general proxy
 // Regular employees can view their own checklist; HR/Admin can view any
 app.get('/api/v1/employees/:employeeId/onboarding-checklist',
