@@ -280,8 +280,13 @@ export default function LeaveManagementPage() {
     let result = leaves;
 
     // For employees: show only their own leave requests
-    if (!canManageLeaves && currentEmployeeId) {
-      result = result.filter((leave: any) => leave.employeeId === currentEmployeeId);
+    if (!canManageLeaves) {
+      result = result.filter((leave: any) => {
+        // Match by employee ID or by email
+        if (currentEmployeeId && leave.employeeId === currentEmployeeId) return true;
+        if (user?.email && leave.employee?.email === user.email) return true;
+        return false;
+      });
     }
 
     // Search filter
@@ -305,7 +310,7 @@ export default function LeaveManagementPage() {
     }
 
     return result;
-  }, [leaves, selectedDepartment, selectedEmployee, searchTerm, canManageLeaves, currentEmployeeId]);
+  }, [leaves, selectedDepartment, selectedEmployee, searchTerm, canManageLeaves, currentEmployeeId, user]);
 
   // Categorize leaves
   const pendingLeaves = useMemo(() => 
@@ -336,8 +341,13 @@ export default function LeaveManagementPage() {
   const overallStats = useMemo(() => {
     // Get all leaves, filtered for current employee if not admin
     let allUserLeaves = allLeaves;
-    if (!canManageLeaves && currentEmployeeId) {
-      allUserLeaves = allLeaves.filter((leave: any) => leave.employeeId === currentEmployeeId);
+    if (!canManageLeaves) {
+      allUserLeaves = allLeaves.filter((leave: any) => {
+        // Match by employee ID or by email
+        if (currentEmployeeId && leave.employeeId === currentEmployeeId) return true;
+        if (user?.email && leave.employee?.email === user.email) return true;
+        return false;
+      });
     }
     
     return {
@@ -346,7 +356,7 @@ export default function LeaveManagementPage() {
       approved: allUserLeaves.filter((l: any) => l.status === 'approved').length,
       rejected: allUserLeaves.filter((l: any) => l.status === 'rejected').length,
     };
-  }, [allLeaves, canManageLeaves, currentEmployeeId]);
+  }, [allLeaves, canManageLeaves, currentEmployeeId, user]);
 
   // Calendar data
   const calendarDays = useMemo(() => {
