@@ -733,12 +733,12 @@ router.get('/hr-dashboard-stats', async (req: Request, res: Response) => {
       prisma.employee.count({ 
         where: { status: 'ACTIVE', deletedAt: null } 
       }),
-      // Employees on probation (probationEndDate is in the future)
+      // Employees on probation (probationEndDate is in the future) - excludes terminated/resigned
       prisma.employee.count({ 
         where: { 
-          status: 'ACTIVE',
           deletedAt: null,
           probationEndDate: { gte: now },
+          status: { notIn: ['TERMINATED', 'RESIGNED'] },
         } 
       }),
       // Contracts expiring in next 30 days
@@ -1370,13 +1370,13 @@ router.get('/probation-contract-status', async (req: Request, res: Response) => 
     const prisma = getPrismaFromRequest(req);
     const now = new Date();
 
-    // Get counts
+    // Get counts - exclude terminated/resigned to match employee list logic
     const [onProbation, contractExpiring] = await Promise.all([
       prisma.employee.count({
         where: {
-          status: 'ACTIVE',
           deletedAt: null,
           probationEndDate: { gte: now },
+          status: { notIn: ['TERMINATED', 'RESIGNED'] },
         },
       }),
       prisma.employee.count({
@@ -1395,12 +1395,12 @@ router.get('/probation-contract-status', async (req: Request, res: Response) => 
     // Get employees with probation ending soon (within 30 days)
     const probationEnding = await prisma.employee.findMany({
       where: {
-        status: 'ACTIVE',
         deletedAt: null,
         probationEndDate: {
           gte: now,
           lte: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000),
         },
+        status: { notIn: ['TERMINATED', 'RESIGNED'] },
       },
       select: {
         id: true,
