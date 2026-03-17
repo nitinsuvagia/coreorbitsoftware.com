@@ -88,6 +88,13 @@ const PAGE_DEFINITIONS = [
     description: 'Approve, edit attendance'
   },
   { 
+    id: 'attendance_monitor', 
+    name: 'Attendance Monitor', 
+    icon: Calendar, 
+    permission: 'attendance_monitor:view',
+    description: 'Real-time attendance monitoring for all employees'
+  },
+  { 
     id: 'leave_view', 
     name: 'Leave Requests (View)', 
     icon: Calendar, 

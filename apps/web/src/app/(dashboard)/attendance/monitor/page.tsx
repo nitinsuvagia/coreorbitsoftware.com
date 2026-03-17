@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth/auth-context';
+import { usePermissions } from '@/hooks/use-permissions';
 import {
   useAdminWeeklyAttendance,
   WeeklyAttendanceSession,
@@ -382,6 +383,7 @@ export default function AttendanceMonitorPage() {
   const { user } = useAuth();
   const router = useRouter();
   const { timezone } = useOrgSettings();
+  const { can } = usePermissions();
 
   // Fetch full org settings for weeklyWorkingHours
   const { data: orgSettingsResponse } = useQuery({
@@ -391,8 +393,8 @@ export default function AttendanceMonitorPage() {
   });
   const weeklyWorkingHours: WeeklyWorkingHours | null = (orgSettingsResponse as any)?.settings?.weeklyWorkingHours || null;
 
-  // Access guard
-  const isAllowed = user?.roles?.some((r) => r === 'tenant_admin' || r === 'admin') ?? false;
+  // Access guard - permission-based (configurable via Page Access settings)
+  const isAllowed = can('attendance_monitor:view');
 
   useEffect(() => {
     if (user && !isAllowed) {

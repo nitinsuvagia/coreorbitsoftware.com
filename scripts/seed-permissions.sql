@@ -41,6 +41,7 @@ INSERT INTO permissions (id, resource, action, description) VALUES
   ('perm-attendance-self',      'attendance',   'self',   'View/mark own attendance'),
   ('perm-attendance-read',      'attendance',   'read',   'View all attendance records'),
   ('perm-attendance-write',     'attendance',   'write',  'Manage attendance records'),
+  ('perm-attendance-monitor',   'attendance_monitor', 'view', 'Access Attendance Monitor page'),
 
   -- Performance
   ('perm-performance-self',     'performance',  'self',   'View own performance reviews'),
