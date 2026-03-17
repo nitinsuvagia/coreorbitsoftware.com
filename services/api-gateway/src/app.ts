@@ -1305,11 +1305,11 @@ app.get('/api/v1/employees/search/mentionable',
         ],
       } : {};
 
-      // Fetch active employees with user accounts
+      // Fetch employees with user accounts (exclude terminated, resigned, retired)
       const employees = await tenantPrisma.employee.findMany({
         where: {
           ...searchFilter,
-          status: 'ACTIVE',
+          status: { notIn: ['TERMINATED', 'RESIGNED', 'RETIRED'] },
           userId: { not: null },
         },
         select: {
