@@ -35,10 +35,18 @@ import { getTodayInTimezone } from '@/lib/format';
 
 // ─── Date helpers ──────────────────────────────────────────────────────────────
 
+// Format date as YYYY-MM-DD using local timezone (avoids UTC conversion issues)
+function formatLocalDate(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function shiftDate(dateStr: string, days: number): string {
   const d = new Date(dateStr + 'T00:00:00');
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return formatLocalDate(d);
 }
 
 function getMondayOfWeek(dateStr: string): string {
@@ -46,7 +54,7 @@ function getMondayOfWeek(dateStr: string): string {
   const day = d.getDay(); // 0=Sun
   const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
+  return formatLocalDate(d);
 }
 
 function getWeekDays(monday: string): string[] {
