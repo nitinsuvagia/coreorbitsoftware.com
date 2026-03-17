@@ -1296,22 +1296,23 @@ app.get('/api/v1/employees/search/mentionable',
       const searchTerm = (search as string).trim();
       const limitNum = Math.min(parseInt(limit as string) || 10, 20);
 
-      // Build search filter
-      const searchFilter = searchTerm ? {
-        OR: [
-          { firstName: { contains: searchTerm, mode: 'insensitive' as any } },
-          { lastName: { contains: searchTerm, mode: 'insensitive' as any } },
-          { email: { contains: searchTerm, mode: 'insensitive' as any } },
-        ],
-      } : {};
+      // Build where clause
+      const whereClause: any = {
+        status: { notIn: ['TERMINATED', 'RESIGNED', 'RETIRED'] },
+        userId: { not: null },
+      };
+
+      if (searchTerm) {
+        whereClause.OR = [
+          { firstName: { contains: searchTerm, mode: 'insensitive' } },
+          { lastName: { contains: searchTerm, mode: 'insensitive' } },
+          { email: { contains: searchTerm, mode: 'insensitive' } },
+        ];
+      }
 
       // Fetch employees with user accounts (exclude terminated, resigned, retired)
       const employees = await tenantPrisma.employee.findMany({
-        where: {
-          ...searchFilter,
-          status: { notIn: ['TERMINATED', 'RESIGNED', 'RETIRED'] },
-          userId: { not: null },
-        },
+        where: whereClause,
         select: {
           id: true,
           userId: true,
