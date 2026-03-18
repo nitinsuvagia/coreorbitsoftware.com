@@ -4,7 +4,7 @@
 
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { PrismaClient } from '.prisma/tenant-client';
+import { PrismaClient, EmployeeStatus } from '.prisma/tenant-client';
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
@@ -1075,9 +1075,10 @@ router.get('/celebrations/today', async (req: Request, res: Response) => {
     const currentYear = today.getFullYear();
 
     // Get all employees except ex-employees (resigned, retired, terminated)
+    const EX_EMPLOYEE_STATUSES: EmployeeStatus[] = ['RESIGNED', 'RETIRED', 'TERMINATED'];
     const employees = await prisma.employee.findMany({
       where: {
-        status: { notIn: ['RESIGNED', 'RETIRED', 'TERMINATED'] },
+        status: { notIn: EX_EMPLOYEE_STATUSES },
         deletedAt: null,
       },
       select: {
@@ -1370,7 +1371,7 @@ router.get('/probation-contract-status', async (req: Request, res: Response) => 
     const prisma = getPrismaFromRequest(req);
     const now = new Date();
 
-    const EX_EMPLOYEE_STATUSES = ['RESIGNED', 'RETIRED', 'TERMINATED'];
+    const EX_EMPLOYEE_STATUSES: EmployeeStatus[] = ['RESIGNED', 'RETIRED', 'TERMINATED'];
 
     // Get counts - exclude ex-employees (resigned, retired, terminated)
     const [onProbation, contractExpiring] = await Promise.all([
