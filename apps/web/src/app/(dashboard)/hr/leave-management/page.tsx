@@ -81,6 +81,7 @@ import {
   useCancelLeave,
   useCreateLeave,
   useAttendance,
+  useMyAttendance,
   LeaveRequest,
   LeaveType,
 } from '@/hooks/use-attendance';
@@ -255,15 +256,21 @@ export default function LeaveManagementPage() {
   // Fetch attendance for calendar (all records for the month).
   // Auto-refresh every 60 s when viewing the current month so today's check-ins appear live.
   const isCurrentMonth = isSameMonth(calendarMonth, new Date());
-  const { data: attendanceResponse } = useAttendance(
-    {
-      startDate: format(startOfMonth(calendarMonth), 'yyyy-MM-dd'),
-      endDate: format(endOfMonth(calendarMonth), 'yyyy-MM-dd'),
-      limit: 5000,
-    },
-    { refetchInterval: isCurrentMonth ? 60000 : undefined }
+  // Admins use the all-attendance endpoint; employees use their own self-service endpoint.
+  const calendarDateFilters = {
+    startDate: format(startOfMonth(calendarMonth), 'yyyy-MM-dd'),
+    endDate: format(endOfMonth(calendarMonth), 'yyyy-MM-dd'),
+    limit: 5000,
+  };
+  const { data: adminAttendanceResponse } = useAttendance(
+    calendarDateFilters,
+    { refetchInterval: isCurrentMonth && canManageLeaves ? 60000 : undefined }
   );
-  const attendanceRecords = (attendanceResponse as any)?.data || (attendanceResponse as any)?.items || [];
+  const { data: myAttendanceResponse } = useMyAttendance(
+    calendarDateFilters,
+  );
+  const rawAttendanceResponse = canManageLeaves ? adminAttendanceResponse : myAttendanceResponse;
+  const attendanceRecords = (rawAttendanceResponse as any)?.data || (rawAttendanceResponse as any)?.items || [];
 
   // Mutations
   const approveLeave = useApproveLeave();
@@ -1249,14 +1256,18 @@ export default function LeaveManagementPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {((canManageLeaves 
-                    ? employees 
-                    : (employees as any[]).filter((e: any) => {
-                        // Match by ID (primary) or email only for active employees
-                        if (e.id === currentEmployeeId) return true;
-                        const activeStatuses = ['ACTIVE', 'ONBOARDING', 'PROBATION'];
-                        return e.email === user?.email && activeStatuses.includes(e.status);
-                      })
+                  {((canManageLeaves
+                    ? employees
+                    // For employees: build a single row from the authenticated user's profile
+                    : (user ? [{
+                        id: currentEmployeeId || user.id,
+                        firstName: user.firstName,
+                        lastName: user.lastName,
+                        employeeId: '',
+                        email: user.email,
+                        avatar: user.avatar,
+                        status: 'ACTIVE',
+                      }] : [])
                   ) as any[]).map((emp: any) => {
                     return (
                       <tr key={emp.id}>
@@ -1388,7 +1399,7 @@ export default function LeaveManagementPage() {
               </table>
             </div>
 
-            {(employees as any[]).length === 0 && (
+            {canManageLeaves && (employees as any[]).length === 0 && (
               <div className="text-center py-8 text-muted-foreground">
                 <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p>No employees to display in calendar</p>
