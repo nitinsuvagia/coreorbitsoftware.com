@@ -314,6 +314,7 @@ export async function getLeaveBalances(
     where: {
       employeeId,
       year: targetYear,
+      leaveType: { isActive: true },
     },
     include: {
       leaveType: true,
