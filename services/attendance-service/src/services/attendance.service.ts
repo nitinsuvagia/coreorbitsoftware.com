@@ -936,9 +936,26 @@ export async function getAttendanceOverviewForDate(
       .filter(a => a.status === 'present' || a.status === 'half_day' || a.status === 'PRESENT' || a.status === 'HALF_DAY')
       .map(a => a.employeeId)
   );
+
+  // Compute late status LIVE from checkInTime + timezone — don't trust the stored isLate flag
+  // (stored flag may be stale if service was redeployed or config changed mid-day)
+  const [startH, startM] = config.workHours.workStartTime.split(':').map(Number);
+  const graceEndMinutes = startH * 60 + startM + config.workHours.graceMinutesLate;
+  // Per employee: use their EARLIEST check-in of the day to determine if they were late
+  const earliestCheckInByEmployee = new Map<string, Date>();
+  for (const a of todayAttendance) {
+    if (!a.checkInTime) continue;
+    const existing = earliestCheckInByEmployee.get(a.employeeId);
+    if (!existing || new Date(a.checkInTime) < existing) {
+      earliestCheckInByEmployee.set(a.employeeId, new Date(a.checkInTime));
+    }
+  }
   const lateEmployees = new Set(
-    todayAttendance.filter(a => a.isLate).map(a => a.employeeId)
+    [...earliestCheckInByEmployee.entries()]
+      .filter(([, checkIn]) => getTimeOfDayMinutes(checkIn, timezone) > graceEndMinutes)
+      .map(([empId]) => empId)
   );
+
   const wfhEmployees = new Set(
     todayAttendance.filter(a => a.isRemote).map(a => a.employeeId)
   );
