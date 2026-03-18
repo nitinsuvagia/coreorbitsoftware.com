@@ -59,6 +59,9 @@ logs/
 # Backups
 backups/
 
+# Docs
+docs/
+
 # Docker
 docker-compose.override.yml
 
