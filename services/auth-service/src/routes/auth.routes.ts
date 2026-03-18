@@ -933,6 +933,12 @@ router.put('/users/profile', async (req: Request, res: Response, next: NextFunct
     if (user.employeeId) {
       if (parsed.data.firstName !== undefined) employeeUpdate.firstName = parsed.data.firstName;
       if (parsed.data.lastName !== undefined) employeeUpdate.lastName = parsed.data.lastName;
+      // Keep employee.displayName in sync whenever first/last name changes
+      if (parsed.data.firstName !== undefined || parsed.data.lastName !== undefined) {
+        const firstName = parsed.data.firstName ?? user.employee?.firstName ?? user.firstName;
+        const lastName = parsed.data.lastName ?? user.employee?.lastName ?? user.lastName;
+        employeeUpdate.displayName = buildDisplayName(firstName, lastName);
+      }
       if (parsed.data.phone !== undefined) employeeUpdate.phone = parsed.data.phone;
       if (parsed.data.location !== undefined) employeeUpdate.workLocation = parsed.data.location;
       if (parsed.data.timezone !== undefined) employeeUpdate.timezone = parsed.data.timezone;

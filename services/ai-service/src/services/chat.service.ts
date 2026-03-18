@@ -6,7 +6,7 @@
 import { getTenantOpenAISettings } from './openai.service';
 import { AI_TOOLS } from './tools';
 import { executeTool } from './tool-executor';
-import { getTenantPrismaBySlug } from '../utils/database';
+import { getTenantPrismaBySlug, getTenantTimezone } from '../utils/database';
 import { logger } from '../utils/logger';
 
 // ============================================================================
@@ -30,7 +30,7 @@ interface ChatMessage {
   name?: string;
 }
 
-function buildSystemPrompt(ctx: ChatContext): string {
+async function buildSystemPrompt(ctx: ChatContext): Promise<string> {
   const roles = ctx.userRoles ? ctx.userRoles.split(',').map(r => r.trim()) : [];
   const permissions = ctx.userPermissions ? ctx.userPermissions.split(',').map(p => p.trim()) : [];
   const isAdmin = roles.includes('tenant_admin');
@@ -55,7 +55,7 @@ function buildSystemPrompt(ctx: ChatContext): string {
     canViewEmployees ? '- List all departments' : null,
     canViewEmployees ? '- Show today\'s birthdays and work anniversaries' : null,
     // Attendance
-    canViewAttendance ? '- Get attendance overview for today (present, absent, late, WFH)' : null,
+    canViewAttendance ? '- Get attendance overview for today or any specific date (present, absent, late, WFH)' : null,
     '- View your own attendance history',
     // Leaves
     canManageLeaves ? '- Look up who is on leave today' : null,
@@ -86,7 +86,29 @@ function buildSystemPrompt(ctx: ChatContext): string {
     canViewProjects ? '- Show your assigned tasks and projects' : null,
   ].filter(Boolean).join('\n');
 
+  // Compute current date/time in the tenant's configured timezone
+  const timezone = await getTenantTimezone(ctx.tenantSlug);
+  const now = new Date();
+  const dateStr = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+  const timeStr = new Intl.DateTimeFormat('en-IN', {
+    timeZone: timezone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  }).format(now);
+  const dayName = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    weekday: 'long',
+  }).format(now);
+
   return `You are CoreOrbit AI — a helpful, professional office assistant for the CoreOrbit HR & Office Management platform.
+
+Current date & time: **${dayName}, ${dateStr}** at **${timeStr}** (timezone: ${timezone})
 
 Current user context:
 - Organization: **${ctx.tenantSlug}**
@@ -94,6 +116,8 @@ Current user context:
 - Role: **${roleName}**${!isAdmin && permissions.length ? `\n- Permissions: ${permissions.join(', ')}` : ''}
 
 IMPORTANT: All data you fetch is scoped to this organization ("${ctx.tenantSlug}"). You can ONLY access data belonging to this tenant. Never fabricate data — always use the available tools to fetch real information from the system.
+
+DATE HANDLING: When the user refers to relative dates (e.g. "yesterday", "last Monday", "last week"), compute the correct YYYY-MM-DD date based on the current date shown above and pass it to the appropriate tool. For attendance queries, always pass the \`date\` parameter in YYYY-MM-DD format.
 
 Your capabilities:
 ${capabilityList}
@@ -230,7 +254,7 @@ export async function chat(ctx: ChatContext, userMessage: string, conversationId
   });
 
   // Build messages array for OpenAI
-  const systemPrompt = buildSystemPrompt(ctx);
+  const systemPrompt = await buildSystemPrompt(ctx);
   const messages: ChatMessage[] = [{ role: 'system', content: systemPrompt }];
 
   for (const msg of conversation.messages) {
@@ -408,7 +432,7 @@ export async function chatStream(
     });
 
     // Build messages
-    const systemPrompt = buildSystemPrompt(ctx);
+    const systemPrompt = await buildSystemPrompt(ctx);
     const messages: ChatMessage[] = [{ role: 'system', content: systemPrompt }];
     for (const msg of conversation.messages) {
       if (msg.role === 'USER') {

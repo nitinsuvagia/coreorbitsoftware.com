@@ -846,7 +846,7 @@ export default function Employee360Page() {
           </Button>
           <div className="flex items-center gap-3">
             <h2 className="text-3xl font-bold tracking-tight">
-              {employee.displayName}
+              {employee.firstName} {employee.lastName}
             </h2>
             <Badge variant="outline">
               <Sparkles className="h-3 w-3 mr-1" />
@@ -1019,7 +1019,7 @@ export default function Employee360Page() {
                       )}
                     </div>
                     <div className="text-center">
-                      <h3 className="text-2xl font-bold">{employee.displayName}</h3>
+                      <h3 className="text-2xl font-bold">{employee.firstName} {employee.lastName}</h3>
                       <p className="text-muted-foreground font-medium">{employee.designation?.name}</p>
                       <p className="text-sm text-muted-foreground">{employee.department?.name}</p>
                     </div>

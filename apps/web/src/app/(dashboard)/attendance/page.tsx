@@ -127,13 +127,21 @@ export default function AttendancePage() {
     existing.statuses.push(r.status);
     dayMap.set(dateKey, existing);
   }
-  // A day counts as "present" if the employee checked in at all (present, half-day, or late status)
+  // Present = at least one session with status 'present' or 'half_day' that day
   const presentDays = Array.from(dayMap.values()).filter(
-    (d) => d.statuses.some((s) => ['present', 'half-day', 'late'].includes(s))
+    (d) => d.statuses.some((s) => ['present', 'half_day'].includes(s))
   ).length;
   const lateDays = Array.from(dayMap.values()).filter((d) => d.isLate).length;
 
+  // Days where the employee showed up but worked < 4 h are also counted as absent
+  const shortWorkDates = new Set(
+    Array.from(dayMap.entries())
+      .filter(([, d]) => d.workHours < 4)
+      .map(([k]) => k)
+  );
+
   // Absent days = working days (Mon-Fri) that have passed in the month with NO attendance record
+  // OR where the employee has a record but worked less than 4 hours
   const attendedDates = new Set(dayMap.keys());
   const todayDate = getTodayInTimezone(timezone);
   const todayD = new Date(todayDate + 'T00:00:00');
@@ -149,7 +157,7 @@ export default function AttendancePage() {
     const dow = dt.getDay();
     if (dow === 0 || dow === 6) continue; // skip weekends
     const key = `${mYear}-${String(mMonth).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    if (!attendedDates.has(key)) absentDays++;
+    if (!attendedDates.has(key) || shortWorkDates.has(key)) absentDays++;
   }
 
   const totalWorkHours = Array.from(dayMap.values()).reduce((sum, d) => sum + d.workHours, 0);

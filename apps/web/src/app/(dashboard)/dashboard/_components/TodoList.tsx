@@ -130,22 +130,24 @@ function TodoItem({ todo, currentUserId, onToggle, onEdit, onDelete }: TodoItemP
 
       {/* Content */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className={cn(
-            "font-medium",
-            todo.isCompleted && "line-through text-muted-foreground"
-          )}>
-            {todo.title}
-          </span>
-          <Badge 
-            variant="outline" 
-            className={cn("text-xs", priority.color)}
-          >
-            {priority.label}
-          </Badge>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+            <span className={cn(
+              "font-medium break-words",
+              todo.isCompleted && "line-through text-muted-foreground"
+            )}>
+              {todo.title}
+            </span>
+            <Badge 
+              variant="outline" 
+              className={cn("text-xs shrink-0", priority.color)}
+            >
+              {priority.label}
+            </Badge>
+          </div>
           {/* Due Date - Always visible */}
           <span className={cn(
-            "flex items-center gap-1 text-xs ml-auto",
+            "flex items-center gap-1 text-xs shrink-0 whitespace-nowrap",
             todo.dueDate
               ? overdue && !todo.isCompleted
                 ? "text-red-500 font-medium"
@@ -163,7 +165,7 @@ function TodoItem({ todo, currentUserId, onToggle, onEdit, onDelete }: TodoItemP
 
         {todo.description && (
           <p className={cn(
-            "text-sm text-muted-foreground truncate mt-0.5",
+            "text-sm text-muted-foreground break-words mt-0.5",
             todo.isCompleted && "line-through"
           )}>
             {todo.description}

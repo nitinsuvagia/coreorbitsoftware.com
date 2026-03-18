@@ -250,7 +250,7 @@ export default function EmployeeDetailPage() {
           </Button>
           <div>
             <h2 className="text-3xl font-bold tracking-tight">
-              {employee.displayName}
+              {employee.firstName} {employee.lastName}
             </h2>
             <p className="text-muted-foreground">
               {employee.employeeCode} • {employee.designation?.name}
@@ -288,7 +288,7 @@ export default function EmployeeDetailPage() {
                 </AvatarFallback>
               </Avatar>
               <div className="text-center">
-                <h3 className="text-xl font-semibold">{employee.displayName}</h3>
+                <h3 className="text-xl font-semibold">{employee.firstName} {employee.lastName}</h3>
                 <p className="text-muted-foreground">
                   {employee.designation?.name}
                 </p>

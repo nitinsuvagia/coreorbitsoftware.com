@@ -87,7 +87,7 @@ export const config: AttendanceServiceConfig = {
     workStartTime: process.env.WORK_START_TIME || '09:00',
     workEndTime: process.env.WORK_END_TIME || '18:00',
     lunchBreakMinutes: parseInt(process.env.LUNCH_BREAK_MINUTES || '60', 10),
-    graceMinutesLate: parseInt(process.env.GRACE_MINUTES_LATE || '15', 10),
+    graceMinutesLate: parseInt(process.env.GRACE_MINUTES_LATE || '90', 10),  // 1h 30m
     graceMinutesEarly: parseInt(process.env.GRACE_MINUTES_EARLY || '15', 10),
   },
   

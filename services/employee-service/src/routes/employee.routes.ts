@@ -3764,6 +3764,10 @@ router.put('/:id', async (req: Request, res: Response) => {
     }
 
     const employee = await prisma.$transaction(async (tx: any) => {
+      // Auto-compute displayName from firstName + lastName when not explicitly provided
+      const resolvedDisplayName = data.displayName
+        || (data.firstName || existing.firstName) + ' ' + (data.lastName || existing.lastName);
+
       // Update main employee record
       const emp = await tx.employee.update({
         where: { id: req.params.id },
@@ -3771,7 +3775,7 @@ router.put('/:id', async (req: Request, res: Response) => {
           firstName: data.firstName,
           lastName: data.lastName,
           middleName: data.middleName,
-          displayName: data.displayName,
+          displayName: resolvedDisplayName,
           personalEmail: data.personalEmail || null,
           phone: data.phone,
           mobile: data.mobile,

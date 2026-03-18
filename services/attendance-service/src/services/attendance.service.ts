@@ -73,7 +73,7 @@ export interface AttendanceRecord {
 
 /**
  * Get the organization timezone for a tenant.
- * Falls back to 'Asia/Kolkata' if not set.
+ * Falls back to 'UTC' if not set.
  */
 async function getTenantTimezone(tenantSlug: string): Promise<string> {
   try {
@@ -82,10 +82,10 @@ async function getTenantTimezone(tenantSlug: string): Promise<string> {
       where: { slug: tenantSlug },
       include: { settings: true },
     });
-    return (tenant?.settings as any)?.timezone || 'Asia/Kolkata';
+    return (tenant?.settings as any)?.timezone || 'UTC';
   } catch (error) {
     logger.warn({ error }, 'Failed to get tenant timezone, using default');
-    return 'Asia/Kolkata';
+    return 'UTC';
   }
 }
 
@@ -112,11 +112,39 @@ function getDateInTimezone(timezone: string, date?: Date): Date {
 // ============================================================================
 
 /**
- * Parse work time from HH:mm format
+ * Parse work time from HH:mm format, correctly interpreted in the given timezone.
+ * Falls back to server-local time when timezone is not provided.
  */
-
-function parseWorkTime(timeStr: string, date: Date): Date {
+function parseWorkTime(timeStr: string, date: Date, timezone?: string): Date {
   const [hours, minutes] = timeStr.split(':').map(Number);
+
+  if (timezone) {
+    // Get the calendar date as seen in the tenant timezone (YYYY-MM-DD)
+    const dateStr = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(date);
+
+    const hh = String(hours).padStart(2, '0');
+    const mm = String(minutes).padStart(2, '0');
+    // Treat HH:MM as UTC first, then compute the actual TZ offset at that moment
+    const pseudoUtc = new Date(`${dateStr}T${hh}:${mm}:00Z`);
+    // What time does the target timezone show for this UTC reference?
+    const tzParts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false,
+    }).formatToParts(pseudoUtc);
+    const tzH = parseInt(tzParts.find(p => p.type === 'hour')?.value ?? '0');
+    const tzM = parseInt(tzParts.find(p => p.type === 'minute')?.value ?? '0');
+    // Shift pseudoUtc by the difference so the result IS HH:MM in `timezone`
+    const offsetMs = (hours * 60 + minutes - (tzH * 60 + tzM)) * 60000;
+    return new Date(pseudoUtc.getTime() - offsetMs);
+  }
+
   const result = new Date(date);
   result.setHours(hours, minutes, 0, 0);
   return result;
@@ -150,7 +178,12 @@ function calculateOvertimeMinutes(workMinutes: number): number {
 }
 
 /**
- * Determine attendance status
+ * Determine attendance status based on total day work minutes.
+ *
+ * Rules:
+ *   < 4 h               → absent   (showed up but barely worked)
+ *   4 h ≤ x < 6 h       → half_day
+ *   ≥ 6 h               → present
  */
 function determineStatus(
   checkIn: Date | null,
@@ -160,20 +193,39 @@ function determineStatus(
 ): string {
   if (isOnLeave) return 'on_leave';
   if (!checkIn) return 'absent';
-  
-  const halfDayMinutes = (config.workHours.standardHoursPerDay * 60) / 2;
-  
-  if (workMinutes < halfDayMinutes) return 'half_day';
+
+  const absentThreshold = 4 * 60;   // < 4 h  → absent
+  const halfDayThreshold = 6 * 60;  // < 6 h  → half_day
+
+  if (workMinutes < absentThreshold) return 'absent';
+  if (workMinutes < halfDayThreshold) return 'half_day';
   return 'present';
 }
 
 /**
- * Check if employee is late
+ * Returns the time-of-day in minutes (0–1439) for `date` as seen in `timezone`.
  */
-function checkIsLate(checkInTime: Date): boolean {
-  const workStart = parseWorkTime(config.workHours.workStartTime, checkInTime);
-  const graceEnd = new Date(workStart.getTime() + config.workHours.graceMinutesLate * 60000);
-  return checkInTime > graceEnd;
+function getTimeOfDayMinutes(date: Date, timezone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false,
+  }).formatToParts(date);
+  const hour = parseInt(parts.find(p => p.type === 'hour')?.value ?? '0');
+  const minute = parseInt(parts.find(p => p.type === 'minute')?.value ?? '0');
+  return hour * 60 + minute;
+}
+
+/**
+ * Check if employee is late (timezone-aware).
+ * Compares the clock time in the tenant timezone against workStartTime + grace.
+ */
+function checkIsLate(checkInTime: Date, timezone: string = 'UTC'): boolean {
+  const checkInMinutes = getTimeOfDayMinutes(checkInTime, timezone);
+  const [startH, startM] = config.workHours.workStartTime.split(':').map(Number);
+  const graceEndMinutes = startH * 60 + startM + config.workHours.graceMinutesLate;
+  return checkInMinutes > graceEndMinutes;
 }
 
 // ============================================================================
@@ -255,7 +307,7 @@ export async function checkIn(
     where: { employeeId: input.employeeId, date: today },
     orderBy: { checkInTime: 'asc' },
   });
-  const isLate = existingSessionToday ? false : checkIsLate(now);
+  const isLate = existingSessionToday ? false : checkIsLate(now, timezone);
   
   const attendance = await prisma.attendance.create({
     data: {
@@ -338,9 +390,6 @@ export async function checkOut(
   }
   
   const now = new Date();
-  const workEnd = parseWorkTime(config.workHours.workEndTime, attendance.date);
-  const graceStart = new Date(workEnd.getTime() - config.workHours.graceMinutesEarly * 60000);
-  const isEarlyLeave = now < graceStart;
   
   // Calculate total break minutes (attendanceBreak model may not exist yet)
   let totalBreakMinutes = 0;
@@ -380,9 +429,12 @@ export async function checkOut(
     select: { id: true, workMinutes: true },
   });
   const totalDayWorkMinutes = otherSessions.reduce((sum, s) => sum + (s.workMinutes || 0), 0) + workMinutes;
-  
+
   // Determine status based on the TOTAL day's work, not just this session
   const status = determineStatus(attendance.checkInTime, now, totalDayWorkMinutes, false);
+
+  // is_early_leave = employee didn't complete the standard working hours for the day
+  const isEarlyLeave = totalDayWorkMinutes < config.workHours.standardHoursPerDay * 60;
   
   const updated = await prisma.attendance.update({
     where: { id: input.attendanceId },
@@ -532,7 +584,7 @@ export async function getTodayAttendance(
   tenantSlug?: string
 ): Promise<any> {
   const now = new Date();
-  const timezone = tenantSlug ? await getTenantTimezone(tenantSlug) : 'Asia/Kolkata';
+  const timezone = tenantSlug ? await getTenantTimezone(tenantSlug) : 'UTC';
   const today = getDateInTimezone(timezone, now);
   
   // Prefer the open (not checked-out) session; fall back to the most recent one
@@ -818,12 +870,15 @@ export async function getDepartmentAttendanceSummary(
 }
 
 /**
- * Get today's attendance overview for the entire company
+ * Get attendance overview for the entire company for a given date.
+ * If no date string is provided, defaults to today in the tenant's timezone.
  */
-export async function getTodayAttendanceOverview(
+export async function getAttendanceOverviewForDate(
   prisma: PrismaClient,
-  tenantSlug?: string
+  tenantSlug?: string,
+  dateStr?: string
 ): Promise<{
+  date: string;
   totalEmployees: number;
   present: number;
   absent: number;
@@ -832,9 +887,15 @@ export async function getTodayAttendanceOverview(
   workFromHome: number;
   presentRate: number;
 }> {
-  // Use org timezone to determine today's date
-  const timezone = tenantSlug ? await getTenantTimezone(tenantSlug) : 'Asia/Kolkata';
-  const todayDate = getDateInTimezone(timezone);
+  // Use org timezone to determine the target date
+  const timezone = tenantSlug ? await getTenantTimezone(tenantSlug) : 'UTC';
+  let todayDate: Date;
+  if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    todayDate = new Date(Date.UTC(y, m - 1, d));
+  } else {
+    todayDate = getDateInTimezone(timezone);
+  }
   
   // Get all active employees
   const totalEmployees = await prisma.employee.count({
@@ -894,7 +955,11 @@ export async function getTodayAttendanceOverview(
     ? Math.round((present / totalEmployees) * 100) 
     : 0;
   
+  // Format target date as YYYY-MM-DD for the response
+  const dateLabel = todayDate.toISOString().split('T')[0];
+
   return {
+    date: dateLabel,
     totalEmployees,
     present,
     absent,
@@ -903,4 +968,14 @@ export async function getTodayAttendanceOverview(
     workFromHome,
     presentRate,
   };
+}
+
+/**
+ * Get today's attendance overview (backward-compatible wrapper)
+ */
+export async function getTodayAttendanceOverview(
+  prisma: PrismaClient,
+  tenantSlug?: string
+) {
+  return getAttendanceOverviewForDate(prisma, tenantSlug);
 }

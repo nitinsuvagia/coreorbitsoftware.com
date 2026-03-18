@@ -69,7 +69,7 @@ export function EmployeeInfoCard({ employee, leave, loading }: EmployeeInfoCardP
             </AvatarFallback>
           </Avatar>
           <div>
-            <h3 className="font-semibold text-lg">{employee?.displayName || 'N/A'}</h3>
+            <h3 className="font-semibold text-lg">{employee?.firstName} {employee?.lastName}</h3>
             {employee?.designation && (
               <p className="text-sm text-muted-foreground">{employee.designation.name}</p>
             )}

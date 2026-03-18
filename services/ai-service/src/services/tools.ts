@@ -96,8 +96,14 @@ const attendanceTools: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'get_attendance_overview',
-      description: 'Get today\'s company-wide attendance overview: present, absent, late, on leave, work from home counts. Use for "who is present?", "attendance today", "how many absent?".',
-      parameters: { type: 'object', properties: {}, required: [] },
+      description: 'Get company-wide attendance overview for today OR a specific date: present, absent, late, on leave, work from home counts. Use for "who is present?", "attendance today", "how many absent?", "who was present yesterday?", "attendance on March 17th", "who was present on 2026-03-15?". Pass a date in YYYY-MM-DD format for historical queries; omit for today.',
+      parameters: {
+        type: 'object',
+        properties: {
+          date: { type: 'string', description: 'Date in YYYY-MM-DD format. Omit for today.' },
+        },
+        required: [],
+      },
     },
   },
   {

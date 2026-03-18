@@ -16,6 +16,7 @@ import {
   getMonthlyAttendanceSummary,
   getDepartmentAttendanceSummary,
   getTodayAttendanceOverview,
+  getAttendanceOverviewForDate,
 } from '../services/attendance.service';
 import { logger } from '../utils/logger';
 
@@ -564,6 +565,35 @@ router.get(
       });
     } catch (error) {
       logger.error({ error: (error as Error).message }, 'Failed to get today attendance overview');
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /attendance/overview/date/:date
+ * Get attendance overview for a specific date (YYYY-MM-DD)
+ */
+router.get(
+  '/overview/date/:date',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
+      const { date } = req.params;
+
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD.' });
+      }
+
+      const overview = await getAttendanceOverviewForDate(prisma, tenantSlug, date);
+
+      res.json({
+        success: true,
+        data: overview,
+      });
+    } catch (error) {
+      logger.error({ error: (error as Error).message }, 'Failed to get attendance overview for date');
       next(error);
     }
   }

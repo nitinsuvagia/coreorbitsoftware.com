@@ -5,6 +5,7 @@
  */
 
 import { logger } from '../utils/logger';
+import { getTenantTimezone } from '../utils/database';
 
 interface ToolContext {
   tenantSlug: string;
@@ -62,8 +63,14 @@ async function callService(url: string, ctx: ToolContext, options: { method?: st
   return data;
 }
 
-function todayStr(): string {
-  return new Date().toISOString().split('T')[0];
+/** Return today's date as YYYY-MM-DD in the given IANA timezone */
+function todayStr(timezone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
 }
 
 function formatDate(d: string | null | undefined): string {
@@ -94,6 +101,9 @@ export async function executeTool(
 ): Promise<string> {
   try {
     logger.info({ toolName, args, tenantSlug: ctx.tenantSlug }, 'Executing tool');
+
+    // Resolve the tenant's configured timezone once per tool call
+    const tenantTz = await getTenantTimezone(ctx.tenantSlug);
 
     switch (toolName) {
 
@@ -249,12 +259,14 @@ export async function executeTool(
       // ====================================================================
 
       case 'get_attendance_overview': {
-        const data = await callService(
-          `${ATTENDANCE_SERVICE}/api/v1/attendance/overview/today`,
-          ctx
-        );
+        const dateParam = args.date; // optional YYYY-MM-DD
+        const url = dateParam
+          ? `${ATTENDANCE_SERVICE}/api/v1/attendance/overview/date/${dateParam}`
+          : `${ATTENDANCE_SERVICE}/api/v1/attendance/overview/today`;
+        const data = await callService(url, ctx);
         const overview = data?.data || data;
-        let attendanceResult = `Today's attendance overview:\n- Total Employees: ${overview?.totalEmployees ?? overview?.total ?? 'N/A'}\n- Present: ${overview?.present ?? 'N/A'}\n- Absent: ${overview?.absent ?? 'N/A'}\n- Late: ${overview?.late ?? 'N/A'}\n- On Leave: ${overview?.onLeave ?? 'N/A'}\n- Work From Home: ${overview?.workFromHome ?? 'N/A'}\n- Present Rate: ${overview?.presentRate != null ? overview.presentRate + '%' : 'N/A'}`;
+        const dateLabel = overview?.date || dateParam || todayStr(tenantTz);
+        let attendanceResult = `Attendance overview for **${dateLabel}**:\n- Total Employees: ${overview?.totalEmployees ?? overview?.total ?? 'N/A'}\n- Present: ${overview?.present ?? 'N/A'}\n- Absent: ${overview?.absent ?? 'N/A'}\n- Late: ${overview?.late ?? 'N/A'}\n- On Leave: ${overview?.onLeave ?? 'N/A'}\n- Work From Home: ${overview?.workFromHome ?? 'N/A'}\n- Present Rate: ${overview?.presentRate != null ? overview.presentRate + '%' : 'N/A'}`;
         // Chart: attendance status breakdown
         const attendanceChartData = [
           { name: 'Present', value: overview?.present ?? 0 },
@@ -264,7 +276,7 @@ export async function executeTool(
           { name: 'WFH', value: overview?.workFromHome ?? 0 },
         ].filter(d => d.value > 0);
         if (attendanceChartData.length > 0) {
-          attendanceResult += `\n\n:::chart{type="doughnut" title="Today's Attendance Breakdown" xKey="name" yKey="value" color="#10b981" data=${JSON.stringify(attendanceChartData)}}:::`;
+          attendanceResult += `\n\n:::chart{type="doughnut" title="Attendance Breakdown (${dateLabel})" xKey="name" yKey="value" color="#10b981" data=${JSON.stringify(attendanceChartData)}}:::`;
         }
         return attendanceResult;
       }
@@ -301,7 +313,7 @@ export async function executeTool(
 
       case 'get_employees_on_leave_today': {
         const data = await callService(
-          `${ATTENDANCE_SERVICE}/api/v1/leaves/requests?status=approved&dateFrom=${todayStr()}&dateTo=${todayStr()}&pageSize=50`,
+          `${ATTENDANCE_SERVICE}/api/v1/leaves/requests?status=approved&dateFrom=${todayStr(tenantTz)}&dateTo=${todayStr(tenantTz)}&pageSize=50`,
           ctx
         );
         const leaves = Array.isArray(data?.data) ? data.data : data?.data?.items || [];
@@ -465,7 +477,7 @@ export async function executeTool(
       // ====================================================================
 
       case 'get_interviews_today': {
-        const today = todayStr();
+        const today = todayStr(tenantTz);
         const data = await callService(
           `${EMPLOYEE_SERVICE}/api/v1/interviews/today`,
           ctx

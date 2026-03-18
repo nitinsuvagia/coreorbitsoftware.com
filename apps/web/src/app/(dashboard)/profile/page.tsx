@@ -239,7 +239,7 @@ export default function ProfilePage() {
                 </AvatarFallback>
               </Avatar>
               <div className="text-center">
-                <h3 className="text-xl font-semibold">{employee.displayName}</h3>
+                <h3 className="text-xl font-semibold">{employee.firstName} {employee.lastName}</h3>
                 <p className="text-muted-foreground">
                   {employee.designation?.name}
                 </p>

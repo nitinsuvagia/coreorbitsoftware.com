@@ -54,6 +54,35 @@ export async function getTenantPrismaBySlug(tenantSlug: string): Promise<PrismaC
   return client;
 }
 
+// ---------------------------------------------------------------------------
+// Tenant timezone lookup (cached)
+// ---------------------------------------------------------------------------
+const timezoneCache = new Map<string, { tz: string; cachedAt: number }>();
+const TZ_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Get the IANA timezone configured for a tenant (e.g. 'America/New_York', 'Asia/Shanghai').
+ * Falls back to 'UTC' if not configured.
+ */
+export async function getTenantTimezone(tenantSlug: string): Promise<string> {
+  const cached = timezoneCache.get(tenantSlug);
+  if (cached && Date.now() - cached.cachedAt < TZ_CACHE_TTL) {
+    return cached.tz;
+  }
+  try {
+    const master = getMasterPrisma();
+    const tenant = await master.tenant.findUnique({
+      where: { slug: tenantSlug },
+      include: { settings: true },
+    });
+    const tz: string = (tenant?.settings as any)?.timezone || 'UTC';
+    timezoneCache.set(tenantSlug, { tz, cachedAt: Date.now() });
+    return tz;
+  } catch {
+    return cached?.tz || 'UTC';
+  }
+}
+
 export async function disconnectAll(): Promise<void> {
   if (masterClient) {
     await masterClient.$disconnect();
@@ -63,4 +92,5 @@ export async function disconnectAll(): Promise<void> {
     await client.$disconnect();
   }
   tenantClients.clear();
+  timezoneCache.clear();
 }
