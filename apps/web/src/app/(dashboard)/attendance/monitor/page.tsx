@@ -310,7 +310,8 @@ function AttendanceCell({ employee, dateStr, isToday, sessions, leave, tick, wee
     const d = new Date(dateStr + 'T00:00:00');
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    if (d > today) {
+    // Future dates or non-working days (weekends/holidays) with no check-in → dash
+    if (d > today || isNonWorkingDay(dateStr, weeklyWorkingHours)) {
       return <div className="text-center text-muted-foreground/40 text-xs py-1">—</div>;
     }
     return (

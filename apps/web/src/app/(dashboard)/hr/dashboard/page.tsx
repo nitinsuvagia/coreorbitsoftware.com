@@ -1534,17 +1534,28 @@ export default function HRDashboardPage() {
                   <div className="space-y-2">
                     <p className="text-xs font-medium text-muted-foreground">Probation Ending Soon</p>
                     {(probationStatus?.probationEnding ?? []).length > 0 ? (
-                      (probationStatus?.probationEnding ?? []).map((emp) => (
-                        <div key={emp.id} className="flex items-center justify-between p-2 rounded-lg border">
-                          <div>
-                            <p className="text-sm font-medium">{emp.name}</p>
-                            <p className="text-xs text-muted-foreground">{emp.department}</p>
+                      (probationStatus?.probationEnding ?? []).map((emp) => {
+                        const nameParts = (emp.name || '').split(' ');
+                        const fn = nameParts[0] || '';
+                        const ln = nameParts.slice(1).join(' ') || '';
+                        const avatarColor = getAvatarColor(emp.id);
+                        return (
+                        <div key={emp.id} className="flex items-center gap-2 p-2 rounded-lg border">
+                          <Avatar className="h-7 w-7 shrink-0">
+                            <AvatarFallback className={cn(avatarColor.className, 'text-xs font-semibold')}>
+                              {getInitials(fn, ln)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{emp.name}</p>
+                            <p className="text-xs text-muted-foreground truncate">{emp.department}</p>
                           </div>
                           <Badge variant={emp.daysRemaining <= 7 ? 'destructive' : 'secondary'}>
                             {emp.daysRemaining} days
                           </Badge>
                         </div>
-                      ))
+                        );
+                      })
                     ) : (
                       <div className="text-center py-4 text-muted-foreground">
                         <p className="text-xs">No employees ending probation soon</p>
@@ -1554,17 +1565,28 @@ export default function HRDashboardPage() {
                     {(probationStatus?.contractsEnding ?? []).length > 0 && (
                       <>
                         <p className="text-xs font-medium text-muted-foreground mt-3">Contracts Expiring Soon</p>
-                        {probationStatus?.contractsEnding.map((emp) => (
-                          <div key={emp.id} className="flex items-center justify-between p-2 rounded-lg border">
-                            <div>
-                              <p className="text-sm font-medium">{emp.name}</p>
-                              <p className="text-xs text-muted-foreground">{emp.department}</p>
+                        {probationStatus?.contractsEnding.map((emp) => {
+                          const nameParts = (emp.name || '').split(' ');
+                          const fn = nameParts[0] || '';
+                          const ln = nameParts.slice(1).join(' ') || '';
+                          const avatarColor = getAvatarColor(emp.id);
+                          return (
+                          <div key={emp.id} className="flex items-center gap-2 p-2 rounded-lg border">
+                            <Avatar className="h-7 w-7 shrink-0">
+                              <AvatarFallback className={cn(avatarColor.className, 'text-xs font-semibold')}>
+                                {getInitials(fn, ln)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{emp.name}</p>
+                              <p className="text-xs text-muted-foreground truncate">{emp.department}</p>
                             </div>
                             <Badge variant={emp.daysRemaining <= 7 ? 'destructive' : 'secondary'}>
                               {emp.daysRemaining} days
                             </Badge>
                           </div>
-                        ))}
+                          );
+                        })}
                       </>
                     )}
                   </div>
