@@ -1074,10 +1074,10 @@ router.get('/celebrations/today', async (req: Request, res: Response) => {
     const todayDay = today.getDate();
     const currentYear = today.getFullYear();
 
-    // Get all active employees with their DOB and join date
+    // Get all employees except ex-employees (resigned, retired, terminated)
     const employees = await prisma.employee.findMany({
       where: {
-        status: 'ACTIVE',
+        status: { notIn: ['RESIGNED', 'RETIRED', 'TERMINATED'] },
         deletedAt: null,
       },
       select: {
