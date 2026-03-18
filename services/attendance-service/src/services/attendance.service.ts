@@ -2,7 +2,7 @@
  * Attendance Service - Check-in, Check-out, and Time Tracking
  */
 
-import { PrismaClient } from '.prisma/tenant-client';
+import { PrismaClient, EmployeeStatus } from '.prisma/tenant-client';
 import { v4 as uuidv4 } from 'uuid';
 import {
   startOfDay,
@@ -897,10 +897,11 @@ export async function getAttendanceOverviewForDate(
     todayDate = getDateInTimezone(timezone);
   }
   
-  // Get all active employees
+  // Get all current employees (exclude ex-employees: resigned, retired, terminated)
+  const EX_EMPLOYEE_STATUSES: EmployeeStatus[] = ['RESIGNED', 'RETIRED', 'TERMINATED'];
   const totalEmployees = await prisma.employee.count({
     where: {
-      status: 'ACTIVE',
+      status: { notIn: EX_EMPLOYEE_STATUSES },
       deletedAt: null,
     },
   });
