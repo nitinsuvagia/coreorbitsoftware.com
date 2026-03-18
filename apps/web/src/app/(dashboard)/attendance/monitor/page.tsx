@@ -326,20 +326,42 @@ function AttendanceCell({ employee, dateStr, isToday, sessions, leave, tick, wee
   const isFullDay = totalMins >= fullDayThreshold;
   const sessionLabel = `${sessions.length} session${sessions.length !== 1 ? 's' : ''}`;
 
+  // Is the work day still ongoing? For today, check if current time is before org end time.
+  // If yes, don't finalise Half Day / Full Day — show "Active" (employee may return after lunch break).
+  const isDayOver = (() => {
+    if (!isToday) return true;
+    const endTime = daySettings?.endTime;
+    if (!endTime) return false; // unknown — keep as ongoing
+    const [endH, endM] = endTime.split(':').map(Number);
+    const nowDate = new Date();
+    return nowDate.getHours() * 60 + nowDate.getMinutes() >= endH * 60 + endM;
+  })();
+
+  // Status label + color
+  const statusLabel = hasOpen
+    ? 'Online'
+    : (!isDayOver ? 'Active' : isFullDay ? 'Full Day' : 'Half Day');
+  const dotClass = hasOpen
+    ? 'bg-green-500 animate-pulse'
+    : !isDayOver
+    ? 'bg-blue-400'
+    : isFullDay
+    ? 'bg-green-500'
+    : 'bg-orange-400';
+  const textClass = hasOpen
+    ? 'text-green-700'
+    : !isDayOver
+    ? 'text-blue-600'
+    : isFullDay
+    ? 'text-green-700'
+    : 'text-orange-600';
+
   return (
     <div className="flex flex-col items-center gap-1 py-1 min-w-[110px]">
       {/* Status dot */}
       <div className="flex items-center gap-1.5">
-        <div
-          className={`w-2 h-2 rounded-full flex-shrink-0 ${
-            hasOpen ? 'bg-green-500 animate-pulse' : isFullDay ? 'bg-green-500' : 'bg-orange-400'
-          }`}
-        />
-        <span className={`text-xs font-medium ${
-          hasOpen ? 'text-green-700' : isFullDay ? 'text-green-700' : 'text-orange-600'
-        }`}>
-          {hasOpen ? 'Online' : isFullDay ? 'Full Day' : 'Half Day'}
-        </span>
+        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${dotClass}`} />
+        <span className={`text-xs font-medium ${textClass}`}>{statusLabel}</span>
       </div>
 
       {/* Total time */}
