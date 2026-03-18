@@ -141,28 +141,29 @@ INSERT INTO role_permissions (id, role_id, permission_id, scope) VALUES
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- PROJECT MANAGER: Projects, tasks, view employees, dashboard, reports
+-- PROJECT MANAGER: Projects, tasks, leave management, dashboard
+-- (No HR Dashboard/Employees, No Reports)
 -- ─────────────────────────────────────────────────────────────────────────────
 INSERT INTO role_permissions (id, role_id, permission_id, scope) VALUES
   ('rp-pm-dashboard-view',       'f0e95f37-e519-4404-8c64-1bf8344c1de6', 'perm-dashboard-view',       'ALL'),
-  ('rp-pm-employees-read',       'f0e95f37-e519-4404-8c64-1bf8344c1de6', 'perm-employees-read',       'ALL'),
   ('rp-pm-projects-read',        'f0e95f37-e519-4404-8c64-1bf8344c1de6', 'perm-projects-read',        'ALL'),
   ('rp-pm-projects-write',       'f0e95f37-e519-4404-8c64-1bf8344c1de6', 'perm-projects-write',       'ALL'),
   ('rp-pm-tasks-read',           'f0e95f37-e519-4404-8c64-1bf8344c1de6', 'perm-tasks-read',           'ALL'),
   ('rp-pm-tasks-write',          'f0e95f37-e519-4404-8c64-1bf8344c1de6', 'perm-tasks-write',          'ALL'),
   ('rp-pm-leave-self',           'f0e95f37-e519-4404-8c64-1bf8344c1de6', 'perm-leave-self',           'ALL'),
   ('rp-pm-leave-read',           'f0e95f37-e519-4404-8c64-1bf8344c1de6', 'perm-leave-read',           'TEAM'),
+  ('rp-pm-leave-write',          'f0e95f37-e519-4404-8c64-1bf8344c1de6', 'perm-leave-write',          'ALL'),
   ('rp-pm-attendance-self',      'f0e95f37-e519-4404-8c64-1bf8344c1de6', 'perm-attendance-self',      'ALL'),
   ('rp-pm-attendance-read',      'f0e95f37-e519-4404-8c64-1bf8344c1de6', 'perm-attendance-read',      'TEAM'),
   ('rp-pm-performance-self',     'f0e95f37-e519-4404-8c64-1bf8344c1de6', 'perm-performance-self',     'ALL'),
   ('rp-pm-documents-self',       'f0e95f37-e519-4404-8c64-1bf8344c1de6', 'perm-documents-self',       'ALL'),
-  ('rp-pm-reports-view',         'f0e95f37-e519-4404-8c64-1bf8344c1de6', 'perm-reports-view',         'ALL'),
   ('rp-pm-notifications-read',   'f0e95f37-e519-4404-8c64-1bf8344c1de6', 'perm-notifications-read',   'ALL'),
   ('rp-pm-holidays-read',        'f0e95f37-e519-4404-8c64-1bf8344c1de6', 'perm-holidays-read',        'ALL')
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- TEAM LEAD: Team management, tasks, view employees, dashboard
+-- (No Leave Request Manager, No Performance Reviews)
 -- ─────────────────────────────────────────────────────────────────────────────
 INSERT INTO role_permissions (id, role_id, permission_id, scope) VALUES
   ('rp-tl-dashboard-view',       'ddea158d-31e8-440c-875f-27d57d0ca6d0', 'perm-dashboard-view',       'ALL'),
@@ -172,11 +173,9 @@ INSERT INTO role_permissions (id, role_id, permission_id, scope) VALUES
   ('rp-tl-tasks-write',          'ddea158d-31e8-440c-875f-27d57d0ca6d0', 'perm-tasks-write',          'TEAM'),
   ('rp-tl-leave-self',           'ddea158d-31e8-440c-875f-27d57d0ca6d0', 'perm-leave-self',           'ALL'),
   ('rp-tl-leave-read',           'ddea158d-31e8-440c-875f-27d57d0ca6d0', 'perm-leave-read',           'TEAM'),
-  ('rp-tl-leave-write',          'ddea158d-31e8-440c-875f-27d57d0ca6d0', 'perm-leave-write',          'TEAM'),
   ('rp-tl-attendance-self',      'ddea158d-31e8-440c-875f-27d57d0ca6d0', 'perm-attendance-self',      'ALL'),
   ('rp-tl-attendance-read',      'ddea158d-31e8-440c-875f-27d57d0ca6d0', 'perm-attendance-read',      'TEAM'),
   ('rp-tl-performance-self',     'ddea158d-31e8-440c-875f-27d57d0ca6d0', 'perm-performance-self',     'ALL'),
-  ('rp-tl-performance-read',     'ddea158d-31e8-440c-875f-27d57d0ca6d0', 'perm-performance-read',     'TEAM'),
   ('rp-tl-documents-self',       'ddea158d-31e8-440c-875f-27d57d0ca6d0', 'perm-documents-self',       'ALL'),
   ('rp-tl-holidays-read',        'ddea158d-31e8-440c-875f-27d57d0ca6d0', 'perm-holidays-read',        'ALL'),
   ('rp-tl-notifications-read',   'ddea158d-31e8-440c-875f-27d57d0ca6d0', 'perm-notifications-read',   'ALL')
@@ -199,14 +198,11 @@ INSERT INTO role_permissions (id, role_id, permission_id, scope) VALUES
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- VIEWER: Read-only access to most data
+-- VIEWER: Dashboard + calendar only
+-- (No HR Dashboard, No Employees, No Projects, No Tasks, No Reports)
 -- ─────────────────────────────────────────────────────────────────────────────
 INSERT INTO role_permissions (id, role_id, permission_id, scope) VALUES
   ('rp-vw-dashboard-view',       '01a55381-b857-46bc-bf70-68478bb53adb', 'perm-dashboard-view',       'ALL'),
-  ('rp-vw-employees-read',       '01a55381-b857-46bc-bf70-68478bb53adb', 'perm-employees-read',       'ALL'),
-  ('rp-vw-projects-read',        '01a55381-b857-46bc-bf70-68478bb53adb', 'perm-projects-read',        'ALL'),
-  ('rp-vw-tasks-read',           '01a55381-b857-46bc-bf70-68478bb53adb', 'perm-tasks-read',           'ALL'),
-  ('rp-vw-reports-view',         '01a55381-b857-46bc-bf70-68478bb53adb', 'perm-reports-view',         'ALL'),
   ('rp-vw-holidays-read',        '01a55381-b857-46bc-bf70-68478bb53adb', 'perm-holidays-read',        'ALL'),
   ('rp-vw-notifications-read',   '01a55381-b857-46bc-bf70-68478bb53adb', 'perm-notifications-read',   'ALL')
 ON CONFLICT (role_id, permission_id) DO NOTHING;
