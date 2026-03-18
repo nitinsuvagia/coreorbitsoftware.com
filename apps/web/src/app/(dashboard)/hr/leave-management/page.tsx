@@ -1440,7 +1440,14 @@ export default function LeaveManagementPage() {
 
               <div>
                 <span className="text-muted-foreground text-sm">Reason:</span>
-                <p className="mt-1 p-3 bg-muted rounded-md text-sm">{stripHtml(selectedLeave.reason)}</p>
+                <div
+                  className="mt-1 p-3 bg-muted rounded-md text-sm max-h-40 overflow-y-auto prose prose-sm dark:prose-invert max-w-none"
+                  dangerouslySetInnerHTML={{
+                    __html: selectedLeave.reason
+                      ? selectedLeave.reason.replace(/&nbsp;/g, '\u00a0')
+                      : '',
+                  }}
+                />
               </div>
 
               {actionType === 'reject' && (
@@ -1717,7 +1724,7 @@ export default function LeaveManagementPage() {
 
       {/* Leave Detail Dialog */}
       <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
-        <DialogContent className="sm:max-w-[600px]">
+        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Leave Request Details</DialogTitle>
             <DialogDescription>
@@ -1795,9 +1802,14 @@ export default function LeaveManagementPage() {
               {/* Reason */}
               <div className="space-y-1">
                 <label className="text-sm font-medium text-muted-foreground">Reason</label>
-                <div className="p-3 rounded-lg bg-muted/50 text-sm">
-                  {stripHtml(selectedLeave.reason) || 'No reason provided'}
-                </div>
+                <div
+                  className="p-3 rounded-lg bg-muted/50 text-sm max-h-64 overflow-y-auto prose prose-sm dark:prose-invert max-w-none"
+                  dangerouslySetInnerHTML={{
+                    __html: selectedLeave.reason
+                      ? selectedLeave.reason.replace(/&nbsp;/g, '\u00a0')
+                      : '<span class="text-muted-foreground">No reason provided</span>',
+                  }}
+                />
               </div>
 
               {/* Approval Info - show if approved or rejected */}
