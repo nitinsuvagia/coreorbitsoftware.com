@@ -16,33 +16,11 @@
 
 services:
   # ===========================================
-  # REVERSE PROXY
+  # NOTE: Reverse proxy is handled by Traefik
+  # running as a separate service on the host.
+  # Traefik listens on ports 80/443 and routes
+  # to containers via the shared "web" network.
   # ===========================================
-  
-  nginx:
-    image: nginx:alpine
-    container_name: oms-nginx
-    restart: always
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./deployment/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./deployment/nginx/conf.d:/etc/nginx/conf.d:ro
-      - ./deployment/nginx/ssl:/etc/nginx/ssl:ro
-      - ./deployment/nginx/logs:/var/log/nginx
-    depends_on:
-      - web
-      - public-website
-      - api-gateway
-    networks:
-      - oms-network
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO/dev/null http://localhost/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
 
   # ===========================================
   # INFRASTRUCTURE SERVICES
@@ -131,8 +109,16 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.coreorbit-api.rule=Host(`api.coreorbitsoftware.com`)"
+      - "traefik.http.routers.coreorbit-api.entrypoints=websecure"
+      - "traefik.http.routers.coreorbit-api.tls=true"
+      - "traefik.http.routers.coreorbit-api.tls.certresolver=letsencrypt-dns"
+      - "traefik.http.services.coreorbit-api.loadbalancer.server.port=4000"
     networks:
       - oms-network
+      - web
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:4000/health', r => r.statusCode === 200 ? process.exit(0) : process.exit(1)).on('error', () => process.exit(1))\""]
       interval: 30s
@@ -512,8 +498,16 @@ services:
       - PORT=3000
     depends_on:
       - api-gateway
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.coreorbit-portal.rule=Host(`portal.coreorbitsoftware.com`)"
+      - "traefik.http.routers.coreorbit-portal.entrypoints=websecure"
+      - "traefik.http.routers.coreorbit-portal.tls=true"
+      - "traefik.http.routers.coreorbit-portal.tls.certresolver=letsencrypt-dns"
+      - "traefik.http.services.coreorbit-portal.loadbalancer.server.port=3000"
     networks:
       - oms-network
+      - web
     healthcheck:
       test: ["CMD-SHELL", "node -e \"const h=require('http');const r=h.get('http://localhost:3000',res=>{res.resume();process.exit(res.statusCode<400?0:1)});r.on('error',()=>process.exit(1));r.setTimeout(5000,()=>{r.destroy();process.exit(1)})\""]
       interval: 30s
@@ -544,8 +538,25 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3100
+    labels:
+      - "traefik.enable=true"
+      # Bare domain + www
+      - 'traefik.http.routers.coreorbit-public.rule=Host(`coreorbitsoftware.com`) || Host(`www.coreorbitsoftware.com`)'
+      - "traefik.http.routers.coreorbit-public.entrypoints=websecure"
+      - "traefik.http.routers.coreorbit-public.tls=true"
+      - "traefik.http.routers.coreorbit-public.tls.certresolver=letsencrypt-dns"
+      # Wildcard cert covers all subdomains
+      - "traefik.http.routers.coreorbit-public.tls.domains[0].main=coreorbitsoftware.com"
+      - "traefik.http.routers.coreorbit-public.tls.domains[0].sans=*.coreorbitsoftware.com"
+      - "traefik.http.services.coreorbit-public.loadbalancer.server.port=3100"
+      # www → bare domain redirect
+      - 'traefik.http.middlewares.coreorbit-www.redirectregex.regex=^https://www\.coreorbitsoftware\.com(.*)'
+      - 'traefik.http.middlewares.coreorbit-www.redirectregex.replacement=https://coreorbitsoftware.com$${1}'
+      - "traefik.http.middlewares.coreorbit-www.redirectregex.permanent=true"
+      - "traefik.http.routers.coreorbit-public.middlewares=coreorbit-www"
     networks:
       - oms-network
+      - web
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3100', r => r.statusCode === 200 ? process.exit(0) : process.exit(1)).on('error', () => process.exit(1))\""]
       interval: 30s
@@ -581,3 +592,5 @@ networks:
     ipam:
       config:
         - subnet: 172.28.0.0/16
+  web:
+    external: true   # shared Traefik network — must be created on EC2 before deploying
