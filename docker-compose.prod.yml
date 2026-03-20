@@ -115,6 +115,7 @@ services:
       - "traefik.http.routers.coreorbit-api.entrypoints=websecure"
       - "traefik.http.routers.coreorbit-api.tls=true"
       - "traefik.http.routers.coreorbit-api.tls.certresolver=letsencrypt-dns"
+      - "traefik.http.routers.coreorbit-api.priority=10"
       - "traefik.http.services.coreorbit-api.loadbalancer.server.port=4000"
     networks:
       - oms-network
@@ -500,10 +501,13 @@ services:
       - api-gateway
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.coreorbit-portal.rule=Host(`portal.coreorbitsoftware.com`)"
+      # Catch all tenant subdomains: softque.*, acme.*, portal.*, etc.
+      - 'traefik.http.routers.coreorbit-portal.rule=HostRegexp(`{subdomain:[a-z0-9-]+}.coreorbitsoftware.com`)'
       - "traefik.http.routers.coreorbit-portal.entrypoints=websecure"
       - "traefik.http.routers.coreorbit-portal.tls=true"
       - "traefik.http.routers.coreorbit-portal.tls.certresolver=letsencrypt-dns"
+      # Low priority — api.* and www.* exact-host rules (priority 10) win over this
+      - "traefik.http.routers.coreorbit-portal.priority=1"
       - "traefik.http.services.coreorbit-portal.loadbalancer.server.port=3000"
     networks:
       - oms-network
@@ -545,6 +549,7 @@ services:
       - "traefik.http.routers.coreorbit-public.entrypoints=websecure"
       - "traefik.http.routers.coreorbit-public.tls=true"
       - "traefik.http.routers.coreorbit-public.tls.certresolver=letsencrypt-dns"
+      - "traefik.http.routers.coreorbit-public.priority=10"
       # Wildcard cert covers all subdomains
       - "traefik.http.routers.coreorbit-public.tls.domains[0].main=coreorbitsoftware.com"
       - "traefik.http.routers.coreorbit-public.tls.domains[0].sans=*.coreorbitsoftware.com"
