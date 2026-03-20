@@ -506,6 +506,9 @@ services:
       - "traefik.http.routers.coreorbit-portal.entrypoints=websecure"
       - "traefik.http.routers.coreorbit-portal.tls=true"
       - "traefik.http.routers.coreorbit-portal.tls.certresolver=letsencrypt-dns"
+      # Explicitly declare wildcard cert — required because HostRegexp has no extractable domain
+      - "traefik.http.routers.coreorbit-portal.tls.domains[0].main=coreorbitsoftware.com"
+      - "traefik.http.routers.coreorbit-portal.tls.domains[0].sans=*.coreorbitsoftware.com"
       # Low priority — api.* and www.* exact-host rules (priority 10) win over this
       - "traefik.http.routers.coreorbit-portal.priority=1"
       - "traefik.http.services.coreorbit-portal.loadbalancer.server.port=3000"
