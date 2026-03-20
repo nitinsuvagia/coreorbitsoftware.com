@@ -114,7 +114,7 @@ services:
       - "traefik.http.routers.coreorbit-api.rule=Host(`api.coreorbitsoftware.com`)"
       - "traefik.http.routers.coreorbit-api.entrypoints=websecure"
       - "traefik.http.routers.coreorbit-api.tls=true"
-      - "traefik.http.routers.coreorbit-api.tls.certresolver=letsencrypt-dns"
+      - "traefik.http.routers.coreorbit-api.tls.certresolver=letsencrypt"
       - "traefik.http.routers.coreorbit-api.priority=10"
       - "traefik.http.services.coreorbit-api.loadbalancer.server.port=4000"
     networks:
@@ -506,7 +506,7 @@ services:
       - "traefik.http.routers.coreorbit-portal.entrypoints=websecure"
       - "traefik.http.routers.coreorbit-portal.tls=true"
       - "traefik.http.routers.coreorbit-portal.tls.certresolver=letsencrypt-dns"
-      # Explicitly declare wildcard cert — required because HostRegexp has no extractable domain
+      # Wildcard cert — DNS-01 required, needs CLOUDFLARE_DNS_API_TOKEN in Traefik env
       - "traefik.http.routers.coreorbit-portal.tls.domains[0].main=coreorbitsoftware.com"
       - "traefik.http.routers.coreorbit-portal.tls.domains[0].sans=*.coreorbitsoftware.com"
       # Low priority — api.* and www.* exact-host rules (priority 10) win over this
@@ -551,7 +551,7 @@ services:
       - 'traefik.http.routers.coreorbit-public.rule=Host(`coreorbitsoftware.com`) || Host(`www.coreorbitsoftware.com`)'
       - "traefik.http.routers.coreorbit-public.entrypoints=websecure"
       - "traefik.http.routers.coreorbit-public.tls=true"
-      - "traefik.http.routers.coreorbit-public.tls.certresolver=letsencrypt-dns"
+      - "traefik.http.routers.coreorbit-public.tls.certresolver=letsencrypt"
       - "traefik.http.routers.coreorbit-public.priority=10"
       # Wildcard cert covers all subdomains
       - "traefik.http.routers.coreorbit-public.tls.domains[0].main=coreorbitsoftware.com"
