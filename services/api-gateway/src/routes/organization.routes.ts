@@ -897,8 +897,8 @@ router.get('/dashboard/admin-360', async (req: TenantRequest, res: Response, nex
       activeEmployees,
       totalDepartments,
     ] = await Promise.all([
-      tenantPrisma.employee.count(),
-      tenantPrisma.employee.count({ where: { status: 'ACTIVE' } }),
+      tenantPrisma.employee.count({ where: { deletedAt: null } }),
+      tenantPrisma.employee.count({ where: { status: { in: ['ACTIVE', 'active'] }, deletedAt: null } }),
       tenantPrisma.department.count({ where: { isActive: true } }),
     ]);
     
@@ -993,24 +993,26 @@ router.get('/dashboard/admin-360', async (req: TenantRequest, res: Response, nex
     // Projects table may not exist in all setups, keep defaults if query fails
     
     // ========== DEPARTMENT METRICS (including employee count) ==========
+    // Use raw query to handle mixed-case status values in DB
+    // (legacy employees may have lowercase 'active' vs uppercase 'ACTIVE')
     const departments = await tenantPrisma.department.findMany({
       where: { isActive: true },
-      select: { 
-        id: true, 
-        name: true,
-        _count: {
-          select: {
-            employees: {
-              where: { status: 'ACTIVE' }
-            }
-          }
-        }
-      },
+      select: { id: true, name: true },
     });
-    
+
+    const rawDeptCounts = await tenantPrisma.$queryRaw<Array<{ department_id: string; count: bigint }>>`
+      SELECT department_id, COUNT(*) AS count
+      FROM employees
+      WHERE UPPER(status::text) NOT IN ('TERMINATED', 'RESIGNED', 'RETIRED', 'INACTIVE', 'OFFBOARDED')
+        AND deleted_at IS NULL
+        AND department_id IS NOT NULL
+      GROUP BY department_id
+    `;
+    const deptCountMap = new Map(rawDeptCounts.map(r => [r.department_id, Number(r.count)]));
+
     const employeesByDepartment = departments.map(dept => ({
       name: dept.name,
-      count: dept._count.employees,
+      count: deptCountMap.get(dept.id) || 0,
     })).sort((a, b) => b.count - a.count);
     
     // ========== PERFORMANCE METRICS ==========
@@ -1156,8 +1158,12 @@ router.get('/dashboard/admin-360', async (req: TenantRequest, res: Response, nex
     
     // ========== FINANCIAL METRICS ==========
     // Get salary data per department
+    // Include all non-terminated employees (handles mixed-case status in DB)
     const employeesWithSalary = await tenantPrisma.employee.findMany({
-      where: { status: 'ACTIVE' },
+      where: {
+        status: { in: ['ACTIVE', 'active', 'ON_LEAVE', 'on_leave', 'PROBATION', 'probation', 'NOTICE_PERIOD', 'notice_period'] },
+        deletedAt: null,
+      },
       select: {
         baseSalary: true,
         department: {

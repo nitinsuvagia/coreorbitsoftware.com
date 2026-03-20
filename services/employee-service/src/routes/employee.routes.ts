@@ -951,14 +951,21 @@ router.get('/department-overview', async (req: Request, res: Response) => {
     });
 
     // Get employee counts per department
-    const employeeCounts = await prisma.employee.groupBy({
-      by: ['departmentId'],
-      where: {
-        status: 'ACTIVE',
-        deletedAt: null,
-      },
-      _count: { id: true },
-    });
+    // Use UPPER() comparison via raw query to handle mixed-case status values in DB
+    // (some legacy employees may have lowercase 'active' status)
+    const rawEmpCounts = await prisma.$queryRaw<Array<{ department_id: string; count: bigint }>>`
+      SELECT department_id, COUNT(*) AS count
+      FROM employees
+      WHERE UPPER(status::text) NOT IN ('TERMINATED', 'RESIGNED', 'RETIRED', 'INACTIVE', 'OFFBOARDED')
+        AND deleted_at IS NULL
+        AND department_id IS NOT NULL
+      GROUP BY department_id
+    `;
+    // Normalize to the same shape used in the rest of the handler
+    const employeeCounts = rawEmpCounts.map(r => ({
+      departmentId: r.department_id,
+      _count: { id: Number(r.count) },
+    }));
 
     // Get open positions per department from job descriptions
     let openPositionsByDept: Record<string, number> = {};
