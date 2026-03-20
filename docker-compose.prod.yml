@@ -501,8 +501,8 @@ services:
       - api-gateway
     labels:
       - "traefik.enable=true"
-      # Catch all tenant subdomains: softque.*, acme.*, portal.*, etc.
-      - 'traefik.http.routers.coreorbit-portal.rule=HostRegexp(`{subdomain:[a-z0-9-]+}.coreorbitsoftware.com`)'
+      # Catch all tenant subdomains: softque.*, acme.*, portal.*, etc. (Traefik v3 HostRegexp syntax)
+      - 'traefik.http.routers.coreorbit-portal.rule=HostRegexp(`[a-z0-9-]+\.coreorbitsoftware\.com`)'
       - "traefik.http.routers.coreorbit-portal.entrypoints=websecure"
       - "traefik.http.routers.coreorbit-portal.tls=true"
       - "traefik.http.routers.coreorbit-portal.tls.certresolver=letsencrypt-dns"
