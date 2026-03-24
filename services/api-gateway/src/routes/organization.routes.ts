@@ -899,7 +899,7 @@ router.get('/dashboard/admin-360', async (req: TenantRequest, res: Response, nex
       totalDepartments,
     ] = await Promise.all([
       tenantPrisma.employee.count({ where: { deletedAt: null } }),
-      tenantPrisma.employee.count({ where: { status: { in: ['ACTIVE', 'active'] }, deletedAt: null } }),
+      tenantPrisma.employee.count({ where: { status: { in: ['ACTIVE', 'ON_LEAVE', 'PROBATION', 'NOTICE_PERIOD', 'ONBOARDING'] as any }, deletedAt: null } }),
       tenantPrisma.department.count({ where: { isActive: true } }),
     ]);
     
