@@ -1159,57 +1159,41 @@ router.get('/dashboard/admin-360', async (req: TenantRequest, res: Response, nex
     departmentScores = departmentScores.sort((a, b) => a.dept.localeCompare(b.dept));
     
     // ========== FINANCIAL METRICS ==========
-    // Get salary data per department
-    // Include all non-terminated employees (handles mixed-case status in DB)
-    const employeesWithSalary = await tenantPrisma.employee.findMany({
-      where: {
-        status: { in: ['ACTIVE', 'ON_LEAVE', 'PROBATION', 'NOTICE_PERIOD', 'ONBOARDING'] as any },
-        deletedAt: null,
-      },
-      select: {
-        baseSalary: true,
-        department: {
-          select: { id: true, name: true }
-        }
-      }
-    });
-    
-    // Calculate total annual payroll
-    const totalAnnualPayroll = employeesWithSalary.reduce((sum, emp) => {
-      return sum + (emp.baseSalary ? Number(emp.baseSalary) : 0);
-    }, 0);
+    // Use raw query for salary by dept: handles case-mismatch between
+    // employees.department_id and departments.id, and mixed-case status in DB
+    const salaryRaw = await tenantPrisma.$queryRaw<Array<{
+      dept_name: string;
+      total_salary: number;
+    }>>`
+      SELECT d.name AS dept_name, COALESCE(SUM(e.base_salary), 0) AS total_salary
+      FROM departments d
+      LEFT JOIN employees e
+        ON LOWER(e.department_id) = LOWER(d.id)
+        AND UPPER(e.status::text) NOT IN ('TERMINATED', 'RESIGNED', 'RETIRED')
+        AND e.deleted_at IS NULL
+      WHERE d.is_active = true
+      GROUP BY d.id, d.name
+      ORDER BY d.name
+    `;
+
+    // Total payroll from same raw data
+    const totalAnnualPayroll = salaryRaw.reduce((sum, r) => sum + Number(r.total_salary), 0);
     const monthlyPayroll = Math.round(totalAnnualPayroll / 12);
-    
-    // Calculate salary by department
+
+    // Build salary by department map
     const salaryByDepartment: { [key: string]: number } = {};
-    employeesWithSalary.forEach(emp => {
-      if (emp.department) {
-        const deptName = emp.department.name;
-        if (!salaryByDepartment[deptName]) {
-          salaryByDepartment[deptName] = 0;
-        }
-        salaryByDepartment[deptName] += emp.baseSalary ? Number(emp.baseSalary) : 0;
-      }
+    salaryRaw.forEach(r => {
+      salaryByDepartment[r.dept_name] = Number(r.total_salary);
     });
     
-    // Convert to array sorted alphabetically by department name
-    let departmentSalaries = Object.entries(salaryByDepartment)
+    // Convert to array — already includes ALL active departments (LEFT JOIN in raw query)
+    const departmentSalaries = Object.entries(salaryByDepartment)
       .map(([name, annualSalary]) => ({
         name,
         annualSalary,
         monthlySalary: Math.round(annualSalary / 12),
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
-    
-    // Fill in missing departments with $0 salary (show ALL departments)
-    const deptNamesWithSalary = departmentSalaries.map(d => d.name);
-    departments.forEach(dept => {
-      if (!deptNamesWithSalary.includes(dept.name)) {
-        departmentSalaries.push({ name: dept.name, annualSalary: 0, monthlySalary: 0 });
-      }
-    });
-    // Re-sort after adding missing departments (alphabetical)
-    departmentSalaries = departmentSalaries.sort((a, b) => a.name.localeCompare(b.name));
 
     // ========== SKILL MATRIX ==========
     let skillMatrix: Array<{ category: string; beginner: number; intermediate: number; advanced: number; expert: number; total: number }> = [];
