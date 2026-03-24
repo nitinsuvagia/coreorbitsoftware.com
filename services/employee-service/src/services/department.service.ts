@@ -220,7 +220,25 @@ export async function listDepartments(
     }),
     prisma.department.count({ where }),
   ]);
-  
+
+  // Override _count.employees with a case-insensitive raw count to handle
+  // employees whose department_id was stored in a different case than departments.id
+  if (data.length > 0) {
+    const rawCounts = await prisma.$queryRawUnsafe<Array<{ dept_id: string; cnt: bigint }>>(
+      `SELECT LOWER(department_id) AS dept_id, COUNT(*) AS cnt
+       FROM employees
+       WHERE deleted_at IS NULL AND department_id IS NOT NULL
+       GROUP BY LOWER(department_id)`
+    );
+    const empCountMap = new Map(rawCounts.map(r => [r.dept_id, Number(r.cnt)]));
+    data.forEach((dept: any) => {
+      if (dept._count) {
+        const raw = empCountMap.get(dept.id.toLowerCase());
+        if (raw !== undefined) dept._count.employees = raw;
+      }
+    });
+  }
+
   return { data, total, page, pageSize };
 }
 

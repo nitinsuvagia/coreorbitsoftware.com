@@ -24,6 +24,7 @@ import {
 import { formatDate, formatTime, formatDuration, getStatusColor } from '@/lib/utils';
 import { getTodayInTimezone } from '@/lib/format';
 import { useOrgSettings } from '@/hooks/use-org-settings';
+import { useHolidays } from '@/hooks/use-holidays';
 import { toast } from 'sonner';
 import {
   Clock,
@@ -60,6 +61,10 @@ export default function AttendancePage() {
   const { data: leaveBalanceRaw } = useLeaveBalance();
   const leaveBalance = Array.isArray(leaveBalanceRaw) ? leaveBalanceRaw : (leaveBalanceRaw as any)?.data || [];
   const { data: leavesDataRaw } = useMyLeaves({ status: 'pending', limit: 5 });
+
+  // Derive year/month for holiday fetch
+  const [mYearHook, mMonthHook] = month.split('-').map(Number);
+  const { data: holidaysResponse } = useHolidays({ year: mYearHook, month: mMonthHook });
 
   const checkInMutation = useCheckIn();
   const checkOutMutation = useCheckOut();
@@ -151,12 +156,18 @@ export default function AttendancePage() {
   const endDay = (mYear === todayD.getFullYear() && mMonth === todayD.getMonth() + 1)
     ? Math.min(todayD.getDate() - 1, lastDayOfMonth)  // up to yesterday (today isn't over yet)
     : lastDayOfMonth;
+  // Build holiday date set for this month
+  const holidayList = (holidaysResponse as any)?.data || holidaysResponse || [];
+  const holidayDates = new Set<string>(
+    (Array.isArray(holidayList) ? holidayList : []).map((h: any) => (h.date as string)?.slice(0, 10))
+  );
   let absentDays = 0;
   for (let d = 1; d <= endDay; d++) {
     const dt = new Date(mYear, mMonth - 1, d);
     const dow = dt.getDay();
     if (dow === 0 || dow === 6) continue; // skip weekends
     const key = `${mYear}-${String(mMonth).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    if (holidayDates.has(key)) continue; // skip holidays
     if (!attendedDates.has(key) || shortWorkDates.has(key)) absentDays++;
   }
 

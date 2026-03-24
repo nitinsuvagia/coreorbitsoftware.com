@@ -51,6 +51,7 @@ const DEFAULT_SETTINGS: OrganizationSettings = {
   workStartTime: '09:00',
   workEndTime: '18:00',
   weeklyWorkingHours: DEFAULT_WEEKLY_HOURS,
+  graceMinutesLate: 90,
   excludeHolidaysFromLeave: true,
   excludeWeekendsFromLeave: true,
   enabledHolidayTypes: {
@@ -198,6 +199,7 @@ export function useOrganizationSettings() {
         workStartTime: settingsForm.workStartTime,
         workEndTime: settingsForm.workEndTime,
         weeklyWorkingHours: settingsForm.weeklyWorkingHours,
+        graceMinutesLate: settingsForm.graceMinutesLate,
         excludeHolidaysFromLeave: settingsForm.excludeHolidaysFromLeave,
         excludeWeekendsFromLeave: settingsForm.excludeWeekendsFromLeave,
         enabledHolidayTypes: settingsForm.enabledHolidayTypes,

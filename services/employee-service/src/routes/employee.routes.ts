@@ -641,7 +641,7 @@ router.get('/stats', async (req: Request, res: Response) => {
     const prisma = getPrismaFromRequest(req);
     
     // Only count current employees (exclude TERMINATED, RESIGNED, RETIRED)
-    const currentEmployeeStatuses = ['ACTIVE', 'ON_LEAVE', 'PROBATION', 'NOTICE_PERIOD'] as const;
+    const currentEmployeeStatuses = ['ACTIVE', 'ON_LEAVE', 'PROBATION', 'NOTICE_PERIOD', 'ONBOARDING'] as const;
 
     const [total, active, onLeave, byDepartmentRaw] = await Promise.all([
       prisma.employee.count({ where: { deletedAt: null, status: { in: [...currentEmployeeStatuses] } } }),
@@ -664,10 +664,11 @@ router.get('/stats', async (req: Request, res: Response) => {
           select: { id: true, name: true, code: true },
         })
       : [];
-    const deptMap = new Map(departments.map((d: any) => [d.id, { name: d.name, code: d.code }]));
+    // Normalize IDs to lowercase for case-insensitive matching
+    const deptMap = new Map(departments.map((d: any) => [d.id.toLowerCase(), { name: d.name, code: d.code }]));
 
     const byDepartment = byDepartmentRaw.map((d: any) => {
-      const dept = deptMap.get(d.departmentId);
+      const dept = deptMap.get(d.departmentId?.toLowerCase());
       return {
         departmentId: d.departmentId,
         name: dept?.code || dept?.name || 'Unassigned',

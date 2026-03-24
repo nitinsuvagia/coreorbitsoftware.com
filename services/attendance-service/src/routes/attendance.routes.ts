@@ -17,6 +17,8 @@ import {
   getDepartmentAttendanceSummary,
   getTodayAttendanceOverview,
   getAttendanceOverviewForDate,
+  checkIsLate,
+  getTenantTimezone,
 } from '../services/attendance.service';
 import { logger } from '../utils/logger';
 
@@ -182,16 +184,42 @@ router.get(
       Object.keys(filters).forEach(k => { if (filters[k] === undefined) delete filters[k]; });
 
       const result = await listAttendance(prisma, filters);
+      const timezone = await getTenantTimezone(tenantSlug);
+
+      // Recompute isLate live from the earliest check-in of each day.
+      // The stored DB flag can be stale (admin edits, imports, config changes).
+      const earliestCheckInByDate = new Map<string, Date>();
+      for (const r of result.data) {
+        if (!r.checkInTime) continue;
+        const dateKey = r.date instanceof Date
+          ? r.date.toISOString().slice(0, 10)
+          : String(r.date).slice(0, 10);
+        const existing = earliestCheckInByDate.get(dateKey);
+        if (!existing || new Date(r.checkInTime) < existing) {
+          earliestCheckInByDate.set(dateKey, new Date(r.checkInTime));
+        }
+      }
 
       // Map to the shape the frontend expects: { items, total }
       // Also map checkInTime/checkOutTime → checkIn/checkOut, workMinutes → workHours
-      const items = result.data.map((r: any) => ({
-        ...r,
-        checkIn: r.checkInTime ? r.checkInTime : undefined,
-        checkOut: r.checkOutTime ? r.checkOutTime : undefined,
-        workHours: r.workMinutes ? r.workMinutes / 60 : 0,
-        overtime: r.overtimeMinutes ? r.overtimeMinutes / 60 : 0,
-      }));
+      const items = result.data.map((r: any) => {
+        const dateKey = r.date instanceof Date
+          ? r.date.toISOString().slice(0, 10)
+          : String(r.date).slice(0, 10);
+        const earliest = earliestCheckInByDate.get(dateKey);
+        // Only the first session of the day can be marked late
+        const isFirstSession = r.checkInTime && earliest &&
+          new Date(r.checkInTime).getTime() === earliest.getTime();
+        const isLateComputed = isFirstSession ? checkIsLate(new Date(r.checkInTime), timezone) : false;
+        return {
+          ...r,
+          isLate: isLateComputed,
+          checkIn: r.checkInTime ? r.checkInTime : undefined,
+          checkOut: r.checkOutTime ? r.checkOutTime : undefined,
+          workHours: r.workMinutes ? r.workMinutes / 60 : 0,
+          overtime: r.overtimeMinutes ? r.overtimeMinutes / 60 : 0,
+        };
+      });
 
       res.json({ data: { items, total: result.total } });
     } catch (error) {
@@ -691,7 +719,8 @@ router.get(
         prisma,
         employeeId,
         year,
-        month
+        month,
+        tenantSlug
       );
       
       res.json({ data: summary });

@@ -75,7 +75,7 @@ export interface AttendanceRecord {
  * Get the organization timezone for a tenant.
  * Falls back to 'UTC' if not set.
  */
-async function getTenantTimezone(tenantSlug: string): Promise<string> {
+export async function getTenantTimezone(tenantSlug: string): Promise<string> {
   try {
     const masterPrisma = getMasterPrisma();
     const tenant = await masterPrisma.tenant.findUnique({
@@ -86,6 +86,31 @@ async function getTenantTimezone(tenantSlug: string): Promise<string> {
   } catch (error) {
     logger.warn({ error }, 'Failed to get tenant timezone, using default');
     return 'UTC';
+  }
+}
+
+/**
+ * Get tenant-specific attendance settings (workStartTime + graceMinutesLate).
+ * Falls back to environment-variable config when not configured in DB.
+ */
+export async function getTenantAttendanceSettings(tenantSlug: string): Promise<{ workStartTime: string; graceMinutesLate: number }> {
+  try {
+    const masterPrisma = getMasterPrisma();
+    const tenant = await masterPrisma.tenant.findUnique({
+      where: { slug: tenantSlug },
+      include: { settings: true },
+    });
+    const s = tenant?.settings as any;
+    return {
+      workStartTime: s?.workStartTime || config.workHours.workStartTime,
+      graceMinutesLate: s?.graceMinutesLate != null ? Number(s.graceMinutesLate) : config.workHours.graceMinutesLate,
+    };
+  } catch (error) {
+    logger.warn({ error }, 'Failed to get tenant attendance settings, using defaults');
+    return {
+      workStartTime: config.workHours.workStartTime,
+      graceMinutesLate: config.workHours.graceMinutesLate,
+    };
   }
 }
 
@@ -220,11 +245,18 @@ function getTimeOfDayMinutes(date: Date, timezone: string): number {
 /**
  * Check if employee is late (timezone-aware).
  * Compares the clock time in the tenant timezone against workStartTime + grace.
+ * Accepts optional per-tenant overrides; falls back to env-var config.
  */
-function checkIsLate(checkInTime: Date, timezone: string = 'UTC'): boolean {
+export function checkIsLate(
+  checkInTime: Date,
+  timezone: string = 'UTC',
+  workStartTime?: string,
+  graceMinutesLate?: number
+): boolean {
   const checkInMinutes = getTimeOfDayMinutes(checkInTime, timezone);
-  const [startH, startM] = config.workHours.workStartTime.split(':').map(Number);
-  const graceEndMinutes = startH * 60 + startM + config.workHours.graceMinutesLate;
+  const [startH, startM] = (workStartTime || config.workHours.workStartTime).split(':').map(Number);
+  const grace = graceMinutesLate != null ? graceMinutesLate : config.workHours.graceMinutesLate;
+  const graceEndMinutes = startH * 60 + startM + grace;
   return checkInMinutes > graceEndMinutes;
 }
 
@@ -244,6 +276,7 @@ export async function checkIn(
   // Use org timezone to determine today's calendar date
   const now = new Date();
   const timezone = await getTenantTimezone(tenantContext.tenantSlug);
+  const attendanceSettings = await getTenantAttendanceSettings(tenantContext.tenantSlug);
   const today = getDateInTimezone(timezone, now);
   
   // Check if employee exists and has a status that allows check-in
@@ -307,7 +340,7 @@ export async function checkIn(
     where: { employeeId: input.employeeId, date: today },
     orderBy: { checkInTime: 'asc' },
   });
-  const isLate = existingSessionToday ? false : checkIsLate(now, timezone);
+  const isLate = existingSessionToday ? false : checkIsLate(now, timezone, attendanceSettings.workStartTime, attendanceSettings.graceMinutesLate);
   
   const attendance = await prisma.attendance.create({
     data: {
@@ -699,7 +732,8 @@ export async function getMonthlyAttendanceSummary(
   prisma: PrismaClient,
   employeeId: string,
   year: number,
-  month: number
+  month: number,
+  tenantSlug?: string
 ): Promise<{
   totalDays: number;
   workingDays: number;
@@ -764,11 +798,30 @@ export async function getMonthlyAttendanceSummary(
   let totalOvertimeMinutes = 0;
   let checkInTimes: number[] = [];
   let checkOutTimes: number[] = [];
-  
+
+  // Compute lateDays live from earliest check-in per day (don't trust stored isLate flag)
+  const attSettings = tenantSlug
+    ? await getTenantAttendanceSettings(tenantSlug)
+    : { workStartTime: config.workHours.workStartTime, graceMinutesLate: config.workHours.graceMinutesLate };
+  const [startH, startM] = attSettings.workStartTime.split(':').map(Number);
+  const graceEndMinutes = startH * 60 + startM + attSettings.graceMinutesLate;
+  const earliestCheckInByDate = new Map<string, Date>();
+  for (const record of records) {
+    if (!record.checkInTime) continue;
+    const dateKey = format(record.checkInTime, 'yyyy-MM-dd');
+    const existing = earliestCheckInByDate.get(dateKey);
+    if (!existing || record.checkInTime < existing) {
+      earliestCheckInByDate.set(dateKey, record.checkInTime);
+    }
+  }
+  for (const [, earliest] of earliestCheckInByDate) {
+    const checkInMinutes = earliest.getHours() * 60 + earliest.getMinutes();
+    if (checkInMinutes > graceEndMinutes) lateDays++;
+  }
+
   for (const record of records) {
     if (record.status === 'present') presentDays++;
     if (record.status === 'half_day') halfDays++;
-    if (record.isLate) lateDays++;
     
     totalWorkMinutes += record.workMinutes || 0;
     totalOvertimeMinutes += record.overtimeMinutes || 0;

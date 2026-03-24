@@ -29,6 +29,7 @@ export interface OrganizationSettings {
   workStartTime: string;  // Default start time
   workEndTime: string;    // Default end time
   weeklyWorkingHours?: WeeklyWorkingHours;  // Detailed per-day configuration
+  graceMinutesLate?: number;          // Minutes after workStartTime before marking late (default: 90)
   excludeHolidaysFromLeave?: boolean;  // Whether to exclude holidays from leave count
   excludeWeekendsFromLeave?: boolean;  // Whether to exclude non-working days from leave count
   enabledHolidayTypes?: {

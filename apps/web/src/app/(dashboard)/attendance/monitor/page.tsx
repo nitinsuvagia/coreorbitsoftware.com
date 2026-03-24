@@ -5,13 +5,13 @@ import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth/auth-context';
 import { usePermissions } from '@/hooks/use-permissions';
-import {
-  useAdminWeeklyAttendance,
+import { useAdminWeeklyAttendance,
   WeeklyAttendanceSession,
   WeeklyAttendanceEmployee,
   WeeklyAttendanceLeave,
 } from '@/hooks/use-attendance';
 import { useOrgSettings } from '@/hooks/use-org-settings';
+import { useHolidays } from '@/hooks/use-holidays';
 import { get } from '@/lib/api/client';
 import type { OrganizationSettings, WeeklyWorkingHours, DayWorkingHours } from '@/app/(dashboard)/organization/types';
 import {
@@ -433,6 +433,14 @@ export default function AttendanceMonitorPage() {
 
   const { data, isLoading, isError } = useAdminWeeklyAttendance(weekStart, weekEnd);
 
+  // Fetch holidays for the displayed week (use weekStart's year)
+  const weekStartYear = new Date(weekStart + 'T00:00:00').getFullYear();
+  const { data: holidaysResponse } = useHolidays({ year: weekStartYear });
+  const holidayList = (holidaysResponse as any)?.data || holidaysResponse || [];
+  const holidayDates = useMemo(() => new Set<string>(
+    (Array.isArray(holidayList) ? holidayList : []).map((h: any) => (h.date as string)?.slice(0, 10))
+  ), [holidayList]);
+
   // Live tick for running sessions
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -523,7 +531,11 @@ export default function AttendanceMonitorPage() {
         </span>
         <span className="flex items-center gap-1.5">
           <span className="w-4 h-3 bg-muted/60 border border-muted-foreground/20 rounded inline-block" />
-          Weekend/Holiday
+          Weekend
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-4 h-3 bg-red-100 border border-red-200 rounded inline-block" />
+          Holiday
         </span>
       </div>
 
@@ -540,11 +552,12 @@ export default function AttendanceMonitorPage() {
                 const { day: dayName, date } = formatDateHeader(day);
                 const isToday = day === todayStr;
                 const isWeekendDay = isNonWorkingDay(day, weeklyWorkingHours);
+                const isHoliday = !isWeekendDay && holidayDates.has(day);
                 return (
                   <th
                     key={day}
                     className={`px-3 py-3 text-center font-semibold min-w-[120px] ${
-                      isToday ? 'text-primary bg-primary/5' : isWeekendDay ? 'bg-muted/60 text-muted-foreground/70' : 'text-muted-foreground'
+                      isToday ? 'text-primary bg-primary/5' : isHoliday ? 'bg-red-50 text-red-700' : isWeekendDay ? 'bg-muted/60 text-muted-foreground/70' : 'text-muted-foreground'
                     }`}
                   >
                     <div>{dayName}</div>
@@ -553,6 +566,11 @@ export default function AttendanceMonitorPage() {
                       {isToday && (
                         <span className="ml-1 text-[10px] bg-primary text-primary-foreground px-1 rounded">
                           Today
+                        </span>
+                      )}
+                      {isHoliday && (
+                        <span className="ml-1 text-[10px] bg-red-500 text-white px-1 rounded">
+                          Holiday
                         </span>
                       )}
                     </div>
@@ -620,11 +638,12 @@ export default function AttendanceMonitorPage() {
                   const leave: WeeklyAttendanceLeave | null = emp.leaves[day] ?? null;
                   const isToday = day === todayStr;
                   const isWeekendDay = isNonWorkingDay(day, weeklyWorkingHours);
+                  const isHoliday = !isWeekendDay && holidayDates.has(day);
                   return (
                     <td
                       key={day}
                       className={`px-2 py-1 text-center align-middle ${
-                        isToday ? 'bg-primary/5' : isWeekendDay ? 'bg-muted/40' : ''
+                        isToday ? 'bg-primary/5' : isHoliday ? 'bg-red-50/60' : isWeekendDay ? 'bg-muted/40' : ''
                       }`}
                     >
                       <AttendanceCell

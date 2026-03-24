@@ -60,6 +60,14 @@ type SortField = 'dueDate' | 'priority' | 'title' | 'status' | 'assignee' | 'cre
 type SortDir = 'asc' | 'desc';
 type SortConfig = { field: SortField; dir: SortDir };
 
+// Custom status sort order: PENDING first, then IN_PROGRESS, COMPLETED, CANCELLED
+const STATUS_ORDER: Record<string, number> = {
+  PENDING:     1,
+  IN_PROGRESS: 2,
+  COMPLETED:   3,
+  CANCELLED:   4,
+};
+
 const STATUS_ICON: Record<string, React.ReactNode> = {
   PENDING:     <Circle      className="h-3.5 w-3.5 text-slate-400" />,
   IN_PROGRESS: <Clock       className="h-3.5 w-3.5 text-blue-500" />,
@@ -103,9 +111,10 @@ export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
   const [dueDateTo, setDueDateTo]       = useState('');
   const [page, setPage]                 = useState(1);
 
-  // ---- Sorting state (default: Due Date asc, then Priority asc) -----------
+  // ---- Sorting state (default: Pending first, then Due Date asc, then Priority) -----------
   const [sortConfig, setSortConfig] = useState<SortConfig[]>([
-    { field: 'dueDate', dir: 'asc' },
+    { field: 'status',   dir: 'asc' },
+    { field: 'dueDate',  dir: 'asc' },
     { field: 'priority', dir: 'asc' },
   ]);
 
@@ -171,9 +180,12 @@ export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
         case 'title':
           cmp = (a.title || '').localeCompare(b.title || '');
           break;
-        case 'status':
-          cmp = (a.status || '').localeCompare(b.status || '');
+        case 'status': {
+          const aOrder = STATUS_ORDER[a.status || ''] ?? 99;
+          const bOrder = STATUS_ORDER[b.status || ''] ?? 99;
+          cmp = aOrder - bOrder;
           break;
+        }
         case 'assignee':
           cmp = (a.assigneeName || '').localeCompare(b.assigneeName || '');
           break;

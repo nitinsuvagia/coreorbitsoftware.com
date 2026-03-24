@@ -766,23 +766,23 @@ export async function getEmployeeStats(
     prisma.employee.count({ where: { status: 'ON_LEAVE' } }),
     prisma.employee.groupBy({
       by: ['departmentId'],
-      where: { status: 'ACTIVE' },
+      where: { status: { in: ['ACTIVE', 'ON_LEAVE', 'PROBATION', 'NOTICE_PERIOD', 'ONBOARDING'] as any }, deletedAt: null },
       _count: true,
     }),
     prisma.employee.groupBy({
       by: ['employmentType'],
-      where: { status: 'ACTIVE' },
+      where: { status: { in: ['ACTIVE', 'ON_LEAVE', 'PROBATION', 'NOTICE_PERIOD', 'ONBOARDING'] as any }, deletedAt: null },
       _count: true,
     }),
     prisma.employee.groupBy({
       by: ['workLocation'],
-      where: { status: 'ACTIVE' },
+      where: { status: { in: ['ACTIVE', 'ON_LEAVE', 'PROBATION', 'NOTICE_PERIOD', 'ONBOARDING'] as any }, deletedAt: null },
       _count: true,
     }),
     prisma.employee.count({
       where: {
-        joiningDate: { gte: thirtyDaysAgo },
-        status: 'ACTIVE',
+        joinDate: { gte: thirtyDaysAgo },
+        status: { in: ['ACTIVE', 'ON_LEAVE', 'PROBATION', 'NOTICE_PERIOD', 'ONBOARDING'] as any },
       } as any,
     }),
   ]);

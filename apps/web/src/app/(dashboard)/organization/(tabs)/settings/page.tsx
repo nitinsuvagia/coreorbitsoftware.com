@@ -688,6 +688,38 @@ export default function OrganizationSettingsPage() {
             </div>
           </div>
 
+          {/* Late Arrival Grace Period */}
+          <div className="border-t pt-6 space-y-4">
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <Clock className="h-5 w-5" />
+              Late Arrival Policy
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              Set how many minutes after the shift start time an employee is allowed to check in without being marked as late.
+            </p>
+            <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg border">
+              <div className="space-y-0.5">
+                <Label className="text-sm font-medium">Grace Period for Late Arrival</Label>
+                <p className="text-sm text-muted-foreground">
+                  Employees checking in within this window after their shift start time will not be marked late.
+                  e.g. Shift starts 9:00 AM + 90 min grace = marked late only after 10:30 AM.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 ml-6 flex-shrink-0">
+                <Input
+                  type="number"
+                  min={0}
+                  max={480}
+                  step={5}
+                  value={orgSettingsForm.graceMinutesLate ?? 90}
+                  onChange={(e) => updateOrgSettingsField('graceMinutesLate', Math.max(0, Math.min(480, parseInt(e.target.value) || 0)))}
+                  className="w-24 text-center"
+                />
+                <span className="text-sm text-muted-foreground whitespace-nowrap">minutes</span>
+              </div>
+            </div>
+          </div>
+
           {/* Leave Calculation Settings */}
           <div className="border-t pt-6 space-y-4">
             <h3 className="text-lg font-semibold flex items-center gap-2">

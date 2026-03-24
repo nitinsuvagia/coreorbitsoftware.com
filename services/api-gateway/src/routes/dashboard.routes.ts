@@ -139,11 +139,12 @@ router.get('/my-stats', async (req: DashboardRequest, res: Response, next: NextF
           select: { date: true },
         }),
         
-        // Leave balances for current year
+        // Leave balances for current year (active leave types only)
         tenantPrisma.leaveBalance.findMany({
           where: {
             employeeId,
             year: currentYear,
+            leaveType: { isActive: true },
           },
           include: {
             leaveType: {

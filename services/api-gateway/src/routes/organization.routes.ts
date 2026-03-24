@@ -75,6 +75,7 @@ const updateSettingsSchema = z.object({
   workStartTime: z.string().optional(),
   workEndTime: z.string().optional(),
   weeklyWorkingHours: weeklyWorkingHoursSchema.optional(),
+  graceMinutesLate: z.number().min(0).max(480).optional(),
   excludeHolidaysFromLeave: z.boolean().optional(),
   excludeWeekendsFromLeave: z.boolean().optional(),
   enabledHolidayTypes: z.object({
@@ -1003,16 +1004,17 @@ router.get('/dashboard/admin-360', async (req: TenantRequest, res: Response, nex
     const rawDeptCounts = await tenantPrisma.$queryRaw<Array<{ department_id: string; count: bigint }>>`
       SELECT department_id, COUNT(*) AS count
       FROM employees
-      WHERE UPPER(status::text) NOT IN ('TERMINATED', 'RESIGNED', 'RETIRED', 'INACTIVE', 'OFFBOARDED')
+      WHERE UPPER(status::text) NOT IN ('TERMINATED', 'RESIGNED', 'RETIRED')
         AND deleted_at IS NULL
         AND department_id IS NOT NULL
       GROUP BY department_id
     `;
-    const deptCountMap = new Map(rawDeptCounts.map(r => [r.department_id, Number(r.count)]));
+    // Normalize IDs to lowercase for case-insensitive matching (department_id may be stored in any case)
+    const deptCountMap = new Map(rawDeptCounts.map(r => [r.department_id.toLowerCase(), Number(r.count)]));
 
     const employeesByDepartment = departments.map(dept => ({
       name: dept.name,
-      count: deptCountMap.get(dept.id) || 0,
+      count: deptCountMap.get(dept.id.toLowerCase()) || 0,
     })).sort((a, b) => b.count - a.count);
     
     // ========== PERFORMANCE METRICS ==========
@@ -1161,7 +1163,7 @@ router.get('/dashboard/admin-360', async (req: TenantRequest, res: Response, nex
     // Include all non-terminated employees (handles mixed-case status in DB)
     const employeesWithSalary = await tenantPrisma.employee.findMany({
       where: {
-        status: { in: ['ACTIVE', 'active', 'ON_LEAVE', 'on_leave', 'PROBATION', 'probation', 'NOTICE_PERIOD', 'notice_period'] },
+        status: { in: ['ACTIVE', 'ON_LEAVE', 'PROBATION', 'NOTICE_PERIOD', 'ONBOARDING'] as any },
         deletedAt: null,
       },
       select: {
@@ -1624,6 +1626,7 @@ router.get('/settings', async (req: TenantRequest, res: Response, next: NextFunc
           workStartTime: settings.workStartTime || '09:00',
           workEndTime: settings.workEndTime || '18:00',
           weeklyWorkingHours: settings.weeklyWorkingHours || null,
+          graceMinutesLate: settings.graceMinutesLate ?? 90,
           excludeHolidaysFromLeave: settings.excludeHolidaysFromLeave ?? true,
           excludeWeekendsFromLeave: settings.excludeWeekendsFromLeave ?? true,
           enabledHolidayTypes: settings.enabledHolidayTypes || { public: true, optional: true, restricted: true },
@@ -1703,6 +1706,7 @@ router.put('/settings', async (req: TenantRequest, res: Response, next: NextFunc
         workStartTime: data.workStartTime || '09:00',
         workEndTime: data.workEndTime || '18:00',
         weeklyWorkingHours: data.weeklyWorkingHours || undefined,
+        graceMinutesLate: data.graceMinutesLate ?? 90,
         excludeHolidaysFromLeave: data.excludeHolidaysFromLeave ?? true,
         excludeWeekendsFromLeave: data.excludeWeekendsFromLeave ?? true,
         enabledHolidayTypes: data.enabledHolidayTypes || undefined,
@@ -1720,6 +1724,7 @@ router.put('/settings', async (req: TenantRequest, res: Response, next: NextFunc
         workStartTime: data.workStartTime || '09:00',
         workEndTime: data.workEndTime || '18:00',
         weeklyWorkingHours: data.weeklyWorkingHours || undefined,
+        graceMinutesLate: data.graceMinutesLate ?? 90,
         excludeHolidaysFromLeave: data.excludeHolidaysFromLeave ?? true,
         excludeWeekendsFromLeave: data.excludeWeekendsFromLeave ?? true,
         enabledHolidayTypes: data.enabledHolidayTypes || { public: true, optional: true, restricted: true },
@@ -1741,6 +1746,7 @@ router.put('/settings', async (req: TenantRequest, res: Response, next: NextFunc
           workStartTime: updatedSettings.workStartTime,
           workEndTime: updatedSettings.workEndTime,
           weeklyWorkingHours: updatedSettings.weeklyWorkingHours,
+          graceMinutesLate: updatedSettings.graceMinutesLate,
           excludeHolidaysFromLeave: updatedSettings.excludeHolidaysFromLeave,
           excludeWeekendsFromLeave: updatedSettings.excludeWeekendsFromLeave,
           enabledHolidayTypes: updatedSettings.enabledHolidayTypes || { public: true, optional: true, restricted: true },
