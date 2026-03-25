@@ -50,7 +50,7 @@ const authPages = ['/login', '/signup', '/forgot-password', '/reset-password'];
 const routePermissions: Record<string, string[]> = {
   '/admin-360':              ['admin_360:view'],
   '/employees':              ['employees:read'],
-  '/hr/dashboard':           ['employees:read'],
+  '/hr/dashboard':           ['hr_dashboard:view'],
   '/hr/jobs':                ['hr_jobs:read'],
   '/hr/candidates':          ['hr_candidates:read'],
   '/hr/interviews':          ['hr_interviews:read'],

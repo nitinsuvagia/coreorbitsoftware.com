@@ -76,7 +76,7 @@ const categories: NavCategory[] = [
     title: 'HR',
     icon: Users,
     items: [
-      { title: 'HR Dashboard', href: '/hr/dashboard', icon: LayoutDashboard, permission: 'employees:read' },
+      { title: 'HR Dashboard', href: '/hr/dashboard', icon: LayoutDashboard, permission: 'hr_dashboard:view' },
       { title: 'Job Descriptions', href: '/hr/jobs', icon: Briefcase, permission: 'hr_jobs:read' },
       { title: 'Candidates', href: '/hr/candidates', icon: UserCheck, permission: 'hr_candidates:read' },
       { title: 'Interviews', href: '/hr/interviews', icon: Video, permission: 'hr_interviews:read' },

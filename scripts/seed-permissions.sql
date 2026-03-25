@@ -12,6 +12,7 @@ INSERT INTO permissions (id, resource, action, description) VALUES
   -- Dashboard
   ('perm-dashboard-view',       'dashboard',    'view',   'View main dashboard'),
   ('perm-admin360-view',        'admin_360',    'view',   'View Admin 360° overview'),
+  ('perm-hr-dashboard-view',    'hr_dashboard', 'view',   'Access the HR Dashboard page'),
 
   -- Employees
   ('perm-employees-read',       'employees',    'read',   'View employee list and profiles'),
@@ -111,6 +112,7 @@ ON CONFLICT (role_id, permission_id) DO NOTHING;
 INSERT INTO role_permissions (id, role_id, permission_id, scope) VALUES
   ('rp-hr-dashboard-view',       '419602c4-cd98-4949-bfa6-a78b8ab901f8', 'perm-dashboard-view',       'ALL'),
   ('rp-hr-admin360-view',        '419602c4-cd98-4949-bfa6-a78b8ab901f8', 'perm-admin360-view',        'ALL'),
+  ('rp-hr-hrdashboard-view',     '419602c4-cd98-4949-bfa6-a78b8ab901f8', 'perm-hr-dashboard-view',    'ALL'),
   ('rp-hr-employees-read',       '419602c4-cd98-4949-bfa6-a78b8ab901f8', 'perm-employees-read',       'ALL'),
   ('rp-hr-employees-write',      '419602c4-cd98-4949-bfa6-a78b8ab901f8', 'perm-employees-write',      'ALL'),
   ('rp-hr-employees-delete',     '419602c4-cd98-4949-bfa6-a78b8ab901f8', 'perm-employees-delete',     'ALL'),
