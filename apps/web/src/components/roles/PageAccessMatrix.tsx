@@ -53,13 +53,6 @@ const PAGE_DEFINITIONS = [
     description: 'Admin analytics and insights'
   },
   { 
-    id: 'hr_dashboard', 
-    name: 'HR Dashboard', 
-    icon: Users, 
-    permission: 'employees:read',
-    description: 'HR module main page'
-  },
-  { 
     id: 'employees_view', 
     name: 'Employees (View)', 
     icon: Users, 
