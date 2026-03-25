@@ -543,17 +543,6 @@ router.put('/roles/:id/permissions', async (req: Request, res: Response, next: N
       });
     }
 
-    // System roles (owner, admin, employee) cannot have permissions modified
-    if (role.isSystem) {
-      return res.status(403).json({
-        success: false,
-        error: { 
-          code: 'SYSTEM_ROLE', 
-          message: 'System role permissions cannot be modified. Create a custom role instead.' 
-        },
-      });
-    }
-
     // Validate that all permission IDs exist
     const validPermissions = await prisma.permission.findMany({
       where: { id: { in: permissionIds } },

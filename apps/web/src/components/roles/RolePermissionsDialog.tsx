@@ -163,8 +163,6 @@ export function RolePermissionsDialog({
   }, [open, roleId, fetchData]);
 
   const handlePermissionToggle = (permissionId: string) => {
-    if (isSystem) return;
-    
     setSelectedPermissions(prev => {
       const newSet = new Set(prev);
       if (newSet.has(permissionId)) {
@@ -177,8 +175,6 @@ export function RolePermissionsDialog({
   };
 
   const handleSelectAllInResource = (resource: string, permissions: { id: string }[]) => {
-    if (isSystem) return;
-    
     const permIds = permissions.map(p => p.id);
     const allSelected = permIds.every(id => selectedPermissions.has(id));
     
@@ -196,7 +192,7 @@ export function RolePermissionsDialog({
   };
 
   const handleSave = async () => {
-    if (!roleId || isSystem) return;
+    if (!roleId) return;
     
     try {
       setSaving(true);
@@ -236,15 +232,15 @@ export function RolePermissionsDialog({
           </DialogTitle>
           <DialogDescription>
             {isSystem 
-              ? 'System role permissions are locked and cannot be modified. Create a custom role to set custom permissions.'
+              ? 'System role — you can customize which permissions are granted. The role name cannot be changed.'
               : 'Enable or disable specific permissions for this role. Changes affect all users with this role.'}
           </DialogDescription>
         </DialogHeader>
 
         {isSystem && (
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-sm">
             <Shield className="h-4 w-4 flex-shrink-0" />
-            <span>This is a system role. Permissions cannot be modified.</span>
+            <span>This is a system role. You can customize its permissions, but the role name is fixed.</span>
           </div>
         )}
 
