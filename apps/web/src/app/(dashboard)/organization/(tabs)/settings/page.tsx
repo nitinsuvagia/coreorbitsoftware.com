@@ -882,11 +882,11 @@ export default function OrganizationSettingsPage() {
             ) : (
               <div className="rounded-lg border overflow-hidden">
                 {/* Header Row */}
-                <div className="grid grid-cols-14 gap-4 px-4 py-3 bg-muted/50 text-sm font-medium text-muted-foreground border-b">
+                <div className="grid grid-cols-12 gap-3 px-4 py-3 bg-muted/50 text-sm font-medium text-muted-foreground border-b">
                   <div className="col-span-3">Leave Type</div>
-                  <div className="col-span-2 text-center">Status</div>
-                  <div className="col-span-2 text-center">Is Paid</div>
-                  <div className="col-span-2 text-center">Days</div>
+                  <div className="col-span-1 text-center">Status</div>
+                  <div className="col-span-1 text-center">Paid</div>
+                  <div className="col-span-2 text-center">Days/Year</div>
                   <div className="col-span-2 text-center">Accrual</div>
                   <div className="col-span-3 text-center">Carry Forward</div>
                 </div>
@@ -903,7 +903,7 @@ export default function OrganizationSettingsPage() {
                   return (
                     <div 
                       key={lt.id}
-                      className={`grid grid-cols-14 gap-4 px-4 py-3 items-center transition-all ${
+                      className={`grid grid-cols-12 gap-3 px-4 py-3 items-center transition-all ${
                         index !== leaveTypes.length - 1 ? 'border-b' : ''
                       } ${!isActive ? 'bg-muted/30 opacity-60' : 'bg-background'}`}
                     >
@@ -922,26 +922,20 @@ export default function OrganizationSettingsPage() {
                       </div>
 
                       {/* Status Toggle */}
-                      <div className="col-span-2 flex justify-center items-center gap-2">
+                      <div className="col-span-1 flex justify-center items-center">
                         <Switch
                           checked={isActive}
                           onCheckedChange={(checked) => updateLeaveTypeEdit(lt.id, 'isActive', checked)}
                         />
-                        <span className={`text-xs font-medium ${isActive ? 'text-green-600' : 'text-muted-foreground'}`}>
-                          {isActive ? 'Active' : 'Inactive'}
-                        </span>
                       </div>
 
                       {/* Is Paid Toggle */}
-                      <div className="col-span-2 flex justify-center items-center gap-2">
+                      <div className="col-span-1 flex justify-center items-center">
                         <Switch
                           checked={isPaid}
                           onCheckedChange={(checked) => updateLeaveTypeEdit(lt.id, 'isPaid', checked)}
                           disabled={!isActive}
                         />
-                        <span className={`text-xs font-medium ${isPaid ? 'text-green-600' : 'text-orange-600'}`}>
-                          {isPaid ? 'Paid' : 'Unpaid'}
-                        </span>
                       </div>
 
                       {/* Days Per Year */}
