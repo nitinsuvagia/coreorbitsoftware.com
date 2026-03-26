@@ -291,6 +291,7 @@ export interface LeaveBalance {
   pendingDays?: number;
   remainingDays: number;
   carryForwardDays?: number;
+  adjustmentDays?: number;
   total?: number;
   used?: number;
   remaining?: number;

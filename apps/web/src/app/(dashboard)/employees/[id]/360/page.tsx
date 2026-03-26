@@ -823,7 +823,7 @@ export default function Employee360Page() {
     return !EXCLUDED_LEAVE_TYPES.includes(name.toLowerCase());
   });
   const leaveSummary = {
-    total: regularLeaves.reduce((s: number, b: LeaveBalance) => s + Number(b.totalDays || b.total || 0), 0),
+    total: regularLeaves.reduce((s: number, b: LeaveBalance) => s + Number(b.totalDays || b.total || 0) + Number((b as any).carryForwardDays || 0) + Number((b as any).adjustmentDays || 0), 0),
     used: regularLeaves.reduce((s: number, b: LeaveBalance) => s + Number(b.usedDays || b.used || 0), 0),
     pending: regularLeaves.reduce((s: number, b: LeaveBalance) => s + Number(b.pendingDays || 0), 0),
     available: regularLeaves.reduce((s: number, b: LeaveBalance) => s + Number(b.remainingDays || b.remaining || 0), 0),
@@ -1416,7 +1416,7 @@ export default function Employee360Page() {
                       <div className="space-y-3">
                         {leaveBalances.map((lb: LeaveBalance, idx: number) => {
                           const name = typeof lb.leaveType === 'object' ? (lb.leaveType as any)?.name : lb.leaveType;
-                          const total = Number(lb.totalDays || (lb as any).total || 0);
+                          const total = Number(lb.totalDays || (lb as any).total || 0) + Number((lb as any).carryForwardDays || 0) + Number((lb as any).adjustmentDays || 0);
                           const remaining = Number(lb.remainingDays || (lb as any).remaining || 0);
                           const pct = total > 0 ? (remaining / total) * 100 : 0;
                           return (

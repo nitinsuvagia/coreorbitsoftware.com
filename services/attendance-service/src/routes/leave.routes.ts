@@ -248,23 +248,24 @@ router.get(
 
       // Add computed alias fields expected by frontend
       const mapped = balances.map((b: any) => {
-        const total = Number(b.totalDays);
+        const baseDays = Number(b.totalDays);
         const used = Number(b.usedDays);
         const pending = Number(b.pendingDays || 0);
         const carryForward = Number(b.carryForwardDays || 0);
         const adjustment = Number(b.adjustmentDays || 0);
-        const available = total + carryForward + adjustment - used - pending;
+        const effectiveTotal = baseDays + carryForward + adjustment;
+        const available = effectiveTotal - used - pending;
         return {
           ...b,
-          totalDays: total,
+          totalDays: baseDays,
           usedDays: used,
           pendingDays: pending,
           carryForwardDays: carryForward,
           adjustmentDays: adjustment,
-          total,
+          total: effectiveTotal,
           used,
           remaining: available,
-          entitled: total,
+          entitled: effectiveTotal,
           balance: available,
           remainingDays: available,
         };
@@ -294,23 +295,24 @@ router.get(
       
       // Add computed alias fields expected by frontend (same mapping as /me endpoint)
       const mapped = balances.map((b: any) => {
-        const total = Number(b.totalDays);
+        const baseDays = Number(b.totalDays);
         const used = Number(b.usedDays);
         const pending = Number(b.pendingDays || 0);
         const carryForward = Number(b.carryForwardDays || 0);
         const adjustment = Number(b.adjustmentDays || 0);
-        const available = total + carryForward + adjustment - used - pending;
+        const effectiveTotal = baseDays + carryForward + adjustment;
+        const available = effectiveTotal - used - pending;
         return {
           ...b,
-          totalDays: total,
+          totalDays: baseDays,
           usedDays: used,
           pendingDays: pending,
           carryForwardDays: carryForward,
           adjustmentDays: adjustment,
-          total,
+          total: effectiveTotal,
           used,
           remaining: available,
-          entitled: total,
+          entitled: effectiveTotal,
           balance: available,
           remainingDays: available,
         };
