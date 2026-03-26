@@ -247,18 +247,28 @@ router.get(
       const balances = await getLeaveBalances(prisma, user.employeeId, year);
 
       // Add computed alias fields expected by frontend
-      const mapped = balances.map((b: any) => ({
-        ...b,
-        totalDays: Number(b.totalDays),
-        usedDays: Number(b.usedDays),
-        pendingDays: Number(b.pendingDays || 0),
-        total: Number(b.totalDays),
-        used: Number(b.usedDays),
-        remaining: Number(b.totalDays) - Number(b.usedDays) - Number(b.pendingDays || 0),
-        entitled: Number(b.totalDays),
-        balance: Number(b.totalDays) - Number(b.usedDays) - Number(b.pendingDays || 0),
-        remainingDays: Number(b.totalDays) - Number(b.usedDays) - Number(b.pendingDays || 0),
-      }));
+      const mapped = balances.map((b: any) => {
+        const total = Number(b.totalDays);
+        const used = Number(b.usedDays);
+        const pending = Number(b.pendingDays || 0);
+        const carryForward = Number(b.carryForwardDays || 0);
+        const adjustment = Number(b.adjustmentDays || 0);
+        const available = total + carryForward + adjustment - used - pending;
+        return {
+          ...b,
+          totalDays: total,
+          usedDays: used,
+          pendingDays: pending,
+          carryForwardDays: carryForward,
+          adjustmentDays: adjustment,
+          total,
+          used,
+          remaining: available,
+          entitled: total,
+          balance: available,
+          remainingDays: available,
+        };
+      });
 
       res.json({ success: true, data: mapped });
     } catch (error) {
@@ -271,7 +281,7 @@ router.get(
  * GET /leaves/balances/:employeeId
  * Get leave balances for an employee
  */
-router.get(
+ router.get(
   '/balances/:employeeId',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -283,18 +293,28 @@ router.get(
       const balances = await getLeaveBalances(prisma, employeeId, year);
       
       // Add computed alias fields expected by frontend (same mapping as /me endpoint)
-      const mapped = balances.map((b: any) => ({
-        ...b,
-        totalDays: Number(b.totalDays),
-        usedDays: Number(b.usedDays),
-        pendingDays: Number(b.pendingDays || 0),
-        total: Number(b.totalDays),
-        used: Number(b.usedDays),
-        remaining: Number(b.totalDays) - Number(b.usedDays) - Number(b.pendingDays || 0),
-        entitled: Number(b.totalDays),
-        balance: Number(b.totalDays) - Number(b.usedDays) - Number(b.pendingDays || 0),
-        remainingDays: Number(b.totalDays) - Number(b.usedDays) - Number(b.pendingDays || 0),
-      }));
+      const mapped = balances.map((b: any) => {
+        const total = Number(b.totalDays);
+        const used = Number(b.usedDays);
+        const pending = Number(b.pendingDays || 0);
+        const carryForward = Number(b.carryForwardDays || 0);
+        const adjustment = Number(b.adjustmentDays || 0);
+        const available = total + carryForward + adjustment - used - pending;
+        return {
+          ...b,
+          totalDays: total,
+          usedDays: used,
+          pendingDays: pending,
+          carryForwardDays: carryForward,
+          adjustmentDays: adjustment,
+          total,
+          used,
+          remaining: available,
+          entitled: total,
+          balance: available,
+          remainingDays: available,
+        };
+      });
 
       res.json({ success: true, data: mapped });
     } catch (error) {
