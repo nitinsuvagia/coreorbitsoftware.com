@@ -122,6 +122,7 @@ export interface LeaveType {
   code: string;
   description?: string;
   defaultDaysPerYear: number;
+  accrualType: 'yearly' | 'monthly';
   carryForwardAllowed: boolean;
   maxCarryForwardDays?: number;
   requiresApproval: boolean;

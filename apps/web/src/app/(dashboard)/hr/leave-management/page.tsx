@@ -26,6 +26,7 @@ import {
   Eye,
   Plus,
   RotateCcw,
+  Sliders,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -82,6 +83,8 @@ import {
   useCreateLeave,
   useAttendance,
   useMyAttendance,
+  useAdjustLeaveBalance,
+  useLeaveBalance,
   LeaveRequest,
   LeaveType,
 } from '@/hooks/use-attendance';
@@ -177,6 +180,15 @@ export default function LeaveManagementPage() {
     fromDate: '',
     toDate: '',
     durationType: 'full_day' as DurationType,
+    reason: '',
+  });
+
+  // Adjust balance dialog state
+  const [isAdjustDialogOpen, setIsAdjustDialogOpen] = useState(false);
+  const [adjustData, setAdjustData] = useState({
+    employeeId: '',
+    leaveTypeId: '',
+    adjustmentDays: '',
     reason: '',
   });
   
@@ -277,6 +289,13 @@ export default function LeaveManagementPage() {
   const rejectLeave = useRejectLeave();
   const cancelLeave = useCancelLeave();
   const createLeave = useCreateLeave();
+  const adjustBalance = useAdjustLeaveBalance();
+
+  // Fetch selected employee's leave balance for the adjust dialog
+  const { data: adjustEmployeeBalances } = useLeaveBalance(
+    adjustData.employeeId || undefined,
+    new Date().getFullYear()
+  );
 
   // Determine current user's employee ID (always resolve, needed for self-leave detection)
   // Prefer employeeRecordId from auth context (no lookup needed)
@@ -678,6 +697,61 @@ export default function LeaveManagementPage() {
     });
   };
 
+  // Adjust balance handlers
+  const handleAdjustBalance = async () => {
+    if (!adjustData.employeeId || !adjustData.leaveTypeId || !adjustData.adjustmentDays || !adjustData.reason.trim()) {
+      toast.error('Please fill in all required fields.');
+      return;
+    }
+
+    const days = parseFloat(adjustData.adjustmentDays);
+    if (isNaN(days) || days === 0) {
+      toast.error('Adjustment days must be a non-zero number.');
+      return;
+    }
+
+    try {
+      await adjustBalance.mutateAsync({
+        employeeId: adjustData.employeeId,
+        leaveTypeId: adjustData.leaveTypeId,
+        year: new Date().getFullYear(),
+        adjustmentDays: days,
+        reason: adjustData.reason.trim(),
+      });
+
+      const emp = (employees as any[]).find((e: any) => e.id === adjustData.employeeId);
+      const empName = emp ? `${emp.firstName} ${emp.lastName}` : 'Employee';
+      const lt = (leaveTypes as any[]).find((t: any) => t.id === adjustData.leaveTypeId);
+      const ltName = lt?.name || 'Leave';
+      toast.success(`${empName}'s ${ltName} balance adjusted by ${days > 0 ? '+' : ''}${days} day(s).`);
+
+      setIsAdjustDialogOpen(false);
+      resetAdjustForm();
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to adjust leave balance.');
+    }
+  };
+
+  const resetAdjustForm = () => {
+    setAdjustData({
+      employeeId: '',
+      leaveTypeId: '',
+      adjustmentDays: '',
+      reason: '',
+    });
+  };
+
+  // Get current balance for the selected employee + leave type in adjust dialog
+  const getSelectedBalance = () => {
+    if (!adjustData.employeeId || !adjustData.leaveTypeId) return null;
+    const balances = (adjustEmployeeBalances as any)?.data || adjustEmployeeBalances || [];
+    if (!Array.isArray(balances)) return null;
+    return balances.find((b: any) => {
+      const typeId = typeof b.leaveType === 'string' ? b.leaveType : b.leaveType?.id || b.leaveTypeId;
+      return typeId === adjustData.leaveTypeId;
+    });
+  };
+
   const LeaveTable = ({ data, showActions }: { data: LeaveRequest[]; showActions?: boolean }) => (
     <Table>
       <TableHeader>
@@ -802,6 +876,12 @@ export default function LeaveManagementPage() {
             <Button onClick={() => { resetCreateForm(); setIsCreateDialogOpen(true); }}>
               <Plus className="h-4 w-4 mr-2" />
               Add Leave
+            </Button>
+          )}
+          {canManageLeaves && (
+            <Button variant="outline" onClick={() => { resetAdjustForm(); setIsAdjustDialogOpen(true); }}>
+              <Sliders className="h-4 w-4 mr-2" />
+              Adjust Balance
             </Button>
           )}
         </div>
@@ -1906,6 +1986,151 @@ export default function LeaveManagementPage() {
                 </Button>
               </div>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Adjust Leave Balance Dialog */}
+      <Dialog open={isAdjustDialogOpen} onOpenChange={setIsAdjustDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sliders className="h-5 w-5" />
+              Adjust Leave Balance
+            </DialogTitle>
+            <DialogDescription>
+              Manually adjust an employee's leave balance. Use positive values to add days and negative values to deduct days.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Employee Selection */}
+            <div className="space-y-2">
+              <Label>Employee <span className="text-red-500">*</span></Label>
+              <Select
+                value={adjustData.employeeId}
+                onValueChange={(value) => setAdjustData(prev => ({ ...prev, employeeId: value, leaveTypeId: '' }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select employee" />
+                </SelectTrigger>
+                <SelectContent>
+                  <ScrollArea className="max-h-60">
+                    {(employees as any[]).map((emp: any) => (
+                      <SelectItem key={emp.id} value={emp.id}>
+                        {emp.firstName} {emp.lastName} {emp.employeeId ? `(${emp.employeeId})` : ''}
+                      </SelectItem>
+                    ))}
+                  </ScrollArea>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Leave Type Selection */}
+            <div className="space-y-2">
+              <Label>Leave Type <span className="text-red-500">*</span></Label>
+              <Select
+                value={adjustData.leaveTypeId}
+                onValueChange={(value) => setAdjustData(prev => ({ ...prev, leaveTypeId: value }))}
+                disabled={!adjustData.employeeId}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={adjustData.employeeId ? "Select leave type" : "Select employee first"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {(leaveTypes as LeaveType[]).filter((t: LeaveType) => t.isActive !== false).map((lt: LeaveType) => (
+                    <SelectItem key={lt.id} value={lt.id}>
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: lt.color || '#3B82F6' }} />
+                        {lt.name} ({lt.code})
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Current Balance Info */}
+            {adjustData.employeeId && adjustData.leaveTypeId && (() => {
+              const balance = getSelectedBalance();
+              if (!balance) return null;
+              const total = Number(balance.totalDays || balance.total || 0);
+              const used = Number(balance.usedDays || balance.used || 0);
+              const pending = Number(balance.pendingDays || 0);
+              const carryForward = Number(balance.carryForwardDays || 0);
+              const adjustment = Number(balance.adjustmentDays || 0);
+              const available = total + carryForward + adjustment - used - pending;
+              return (
+                <div className="rounded-lg border bg-muted/50 p-3 space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Current Balance ({new Date().getFullYear()})</p>
+                  <div className="grid grid-cols-3 gap-2 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Total:</span>{' '}
+                      <span className="font-medium">{total}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Used:</span>{' '}
+                      <span className="font-medium">{used}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Available:</span>{' '}
+                      <span className="font-semibold text-green-600">{available}</span>
+                    </div>
+                  </div>
+                  {(carryForward > 0 || adjustment !== 0) && (
+                    <div className="grid grid-cols-3 gap-2 text-xs text-muted-foreground">
+                      {carryForward > 0 && <div>Carry Forward: {carryForward}</div>}
+                      {adjustment !== 0 && <div>Prior Adjustments: {adjustment > 0 ? '+' : ''}{adjustment}</div>}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Adjustment Days */}
+            <div className="space-y-2">
+              <Label>Adjustment Days <span className="text-red-500">*</span></Label>
+              <Input
+                type="number"
+                step="0.5"
+                value={adjustData.adjustmentDays}
+                onChange={(e) => setAdjustData(prev => ({ ...prev, adjustmentDays: e.target.value }))}
+                placeholder="e.g. 2 to add, -1.5 to deduct"
+              />
+              <p className="text-xs text-muted-foreground">
+                Use positive values (e.g. 2) to credit additional days, negative values (e.g. -1.5) to deduct days.
+              </p>
+            </div>
+
+            {/* Reason */}
+            <div className="space-y-2">
+              <Label>Reason <span className="text-red-500">*</span></Label>
+              <Textarea
+                value={adjustData.reason}
+                onChange={(e) => setAdjustData(prev => ({ ...prev, reason: e.target.value }))}
+                placeholder="Reason for the adjustment (e.g. Compensatory off for weekend work, Correction for payroll mismatch)"
+                rows={3}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAdjustDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAdjustBalance}
+              disabled={adjustBalance.isPending || !adjustData.employeeId || !adjustData.leaveTypeId || !adjustData.adjustmentDays || !adjustData.reason.trim()}
+            >
+              {adjustBalance.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Adjusting...
+                </>
+              ) : (
+                'Apply Adjustment'
+              )}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

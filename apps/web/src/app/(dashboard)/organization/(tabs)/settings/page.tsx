@@ -25,6 +25,7 @@ import { toast } from 'sonner';
 // Local state type for leave type edits
 interface LeaveTypeEdit {
   defaultDaysPerYear: number;
+  accrualType: 'yearly' | 'monthly';
   carryForwardAllowed: boolean;
   maxCarryForwardDays: number | null;
   isActive: boolean;
@@ -66,6 +67,7 @@ export default function OrganizationSettingsPage() {
       leaveTypes.forEach((lt: LeaveType) => {
         edits[lt.id] = {
           defaultDaysPerYear: lt.defaultDaysPerYear,
+          accrualType: lt.accrualType || 'yearly',
           carryForwardAllowed: lt.carryForwardAllowed,
           maxCarryForwardDays: lt.maxCarryForwardDays ?? null,
           isActive: lt.isActive,
@@ -102,6 +104,7 @@ export default function OrganizationSettingsPage() {
       if (!edit) return false;
       return (
         edit.defaultDaysPerYear !== lt.defaultDaysPerYear ||
+        edit.accrualType !== (lt.accrualType || 'yearly') ||
         edit.carryForwardAllowed !== lt.carryForwardAllowed ||
         edit.maxCarryForwardDays !== (lt.maxCarryForwardDays ?? null) ||
         edit.isActive !== lt.isActive ||
@@ -117,6 +120,7 @@ export default function OrganizationSettingsPage() {
       if (!edit) return false;
       return (
         edit.defaultDaysPerYear !== lt.defaultDaysPerYear ||
+        edit.accrualType !== (lt.accrualType || 'yearly') ||
         edit.carryForwardAllowed !== lt.carryForwardAllowed ||
         edit.maxCarryForwardDays !== (lt.maxCarryForwardDays ?? null) ||
         edit.isActive !== lt.isActive ||
@@ -130,6 +134,7 @@ export default function OrganizationSettingsPage() {
         id: lt.id,
         data: {
           defaultDaysPerYear: edit.defaultDaysPerYear,
+          accrualType: edit.accrualType,
           carryForwardAllowed: edit.carryForwardAllowed,
           maxCarryForwardDays: edit.carryForwardAllowed && edit.maxCarryForwardDays != null ? edit.maxCarryForwardDays : undefined,
           isActive: edit.isActive,
@@ -877,11 +882,12 @@ export default function OrganizationSettingsPage() {
             ) : (
               <div className="rounded-lg border overflow-hidden">
                 {/* Header Row */}
-                <div className="grid grid-cols-12 gap-4 px-4 py-3 bg-muted/50 text-sm font-medium text-muted-foreground border-b">
+                <div className="grid grid-cols-14 gap-4 px-4 py-3 bg-muted/50 text-sm font-medium text-muted-foreground border-b">
                   <div className="col-span-3">Leave Type</div>
                   <div className="col-span-2 text-center">Status</div>
                   <div className="col-span-2 text-center">Is Paid</div>
                   <div className="col-span-2 text-center">Days</div>
+                  <div className="col-span-2 text-center">Accrual</div>
                   <div className="col-span-3 text-center">Carry Forward</div>
                 </div>
                 
@@ -892,11 +898,12 @@ export default function OrganizationSettingsPage() {
                   const carryForward = getLeaveTypeValue(lt, 'carryForwardAllowed') as boolean;
                   const daysPerYear = getLeaveTypeValue(lt, 'defaultDaysPerYear') as number;
                   const maxCarryDays = getLeaveTypeValue(lt, 'maxCarryForwardDays') as number | null;
+                  const accrualType = getLeaveTypeValue(lt, 'accrualType') as string || 'yearly';
                   
                   return (
                     <div 
                       key={lt.id}
-                      className={`grid grid-cols-12 gap-4 px-4 py-3 items-center transition-all ${
+                      className={`grid grid-cols-14 gap-4 px-4 py-3 items-center transition-all ${
                         index !== leaveTypes.length - 1 ? 'border-b' : ''
                       } ${!isActive ? 'bg-muted/30 opacity-60' : 'bg-background'}`}
                     >
@@ -950,6 +957,23 @@ export default function OrganizationSettingsPage() {
                         />
                       </div>
 
+                      {/* Accrual Type */}
+                      <div className="col-span-2 flex justify-center">
+                        <Select
+                          value={accrualType}
+                          onValueChange={(value) => updateLeaveTypeEdit(lt.id, 'accrualType', value)}
+                          disabled={!isActive || daysPerYear === 0}
+                        >
+                          <SelectTrigger className="w-28 h-8 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="yearly">Yearly</SelectItem>
+                            <SelectItem value="monthly">Monthly</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
                       {/* Carry Forward */}
                       <div className="col-span-3 flex justify-center items-center gap-3">
                         <div className="flex items-center gap-2">
@@ -990,7 +1014,7 @@ export default function OrganizationSettingsPage() {
             )}
 
             <p className="text-xs text-muted-foreground">
-              💡 Tip: Set annual quota to 0 for unlimited leave types like "Leave Without Pay". Carry forward allows unused leaves to roll over to next year.
+              💡 Tip: Set annual quota to 0 for unlimited leave types like "Leave Without Pay". Carry forward allows unused leaves to roll over to next year. "Monthly" accrual credits leaves gradually each month (days ÷ 12), while "Yearly" allocates the full balance at the start of the year.
             </p>
           </div>
 
