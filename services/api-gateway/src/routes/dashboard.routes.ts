@@ -218,7 +218,7 @@ router.get('/my-stats', async (req: DashboardRequest, res: Response, next: NextF
       // Calculate leave balance summary (only paid leaves count toward totals)
       const paidLeaveBalances = leaveBalances.filter((lb: any) => lb.leaveType?.isPaid === true);
       const totalLeaveAllotted = paidLeaveBalances.reduce(
-        (sum: number, lb: any) => sum + Number(lb.totalDays), 0
+        (sum: number, lb: any) => sum + Number(lb.totalDays) + Number(lb.carryForwardDays || 0) + Number(lb.adjustmentDays || 0), 0
       );
       const totalLeaveUsed = paidLeaveBalances.reduce(
         (sum: number, lb: any) => sum + Number(lb.usedDays), 0
@@ -305,15 +305,20 @@ router.get('/my-stats', async (req: DashboardRequest, res: Response, next: NextF
             totalPending: totalLeavePending,
             totalRemaining: Math.max(0, totalLeaveRemaining),
             pendingRequests: pendingLeaveRequests,
-            balances: leaveBalances.map((lb: any) => ({
-              leaveType: lb.leaveType.name,
-              leaveCode: lb.leaveType.code,
-              isPaid: lb.leaveType.isPaid ?? true,
-              total: Number(lb.totalDays),
-              used: Number(lb.usedDays),
-              pending: Number(lb.pendingDays),
-              remaining: Math.max(0, Number(lb.totalDays) - Number(lb.usedDays) - Number(lb.pendingDays)),
-            })),
+            balances: leaveBalances.map((lb: any) => {
+              const total = Number(lb.totalDays) + Number(lb.carryForwardDays || 0) + Number(lb.adjustmentDays || 0);
+              const used = Number(lb.usedDays);
+              const pending = Number(lb.pendingDays);
+              return {
+                leaveType: lb.leaveType.name,
+                leaveCode: lb.leaveType.code,
+                isPaid: lb.leaveType.isPaid ?? true,
+                total,
+                used,
+                pending,
+                remaining: Math.max(0, total - used - pending),
+              };
+            }),
           },
           tasks: {
             pending: pendingTodos || 0,
