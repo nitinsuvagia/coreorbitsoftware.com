@@ -45,15 +45,9 @@ print_step "Pulling latest changes..."
 git pull origin main
 print_success "Code updated"
 
-print_step "Installing dependencies..."
-npm install --production=false
-print_success "Dependencies installed"
-
-print_step "Regenerating Prisma client..."
-cd packages/database
-npx prisma generate
-cd ../..
-print_success "Prisma client regenerated"
+# Skip npm install on host - Docker build handles dependencies
+print_step "Skipping npm install (handled by Docker build)..."
+print_success "Dependencies will be installed during Docker build"
 
 print_step "Running migrations on tenant databases..."
 
