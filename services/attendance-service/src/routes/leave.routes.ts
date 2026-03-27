@@ -564,6 +564,7 @@ router.post(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const tenantSlug = (req as any).tenantSlug;
+      const tenantId = (req as any).tenantId;
       const prisma = await getTenantPrismaBySlug(tenantSlug);
       const { id } = req.params;
       const userId = (req as any).userId;
@@ -582,7 +583,7 @@ router.post(
         cancelledByEmployeeId: user?.employeeId || undefined,
         userRole: userRole || 'EMPLOYEE',
         reason,
-      });
+      }, { tenantId, tenantSlug });
       
       const message = leaveRequest.partialCancellation
         ? `Leave partially cancelled. ${leaveRequest.daysRefunded} day(s) refunded to your balance.`

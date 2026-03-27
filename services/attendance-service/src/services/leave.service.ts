@@ -18,6 +18,7 @@ import {
 import { getEventBus, SQS_QUEUES, SNS_TOPICS } from '@oms/event-bus';
 import { getMasterPrisma } from '@oms/database';
 import { logger } from '../utils/logger';
+import { recalculateDailyStatus } from './daily-status.service';
 
 /**
  * Parse a date-only string (YYYY-MM-DD) as UTC midnight.
@@ -858,6 +859,25 @@ export async function approveLeave(
     approvedBy: input.approverId,
   }, 'Leave approved');
   
+  // Recalculate daily status for the leave dates (non-fatal)
+  try {
+    await recalculateDailyStatus(
+      prisma,
+      tenantContext.tenantSlug,
+      leaveRequest.employeeId,
+      leaveRequest.fromDate,
+      leaveRequest.toDate
+    );
+    logger.info({
+      leaveRequestId: input.leaveRequestId,
+      employeeId: leaveRequest.employeeId,
+      from: format(leaveRequest.fromDate, 'yyyy-MM-dd'),
+      to: format(leaveRequest.toDate, 'yyyy-MM-dd'),
+    }, 'Daily status recalculated for approved leave');
+  } catch (dailyStatusError: any) {
+    logger.warn({ error: dailyStatusError.message, leaveRequestId: input.leaveRequestId }, 'Failed to recalculate daily status (non-fatal)');
+  }
+  
   return updated;
 }
 
@@ -958,6 +978,19 @@ export async function rejectLeave(
     logger.warn({ error: topicError.message, leaveRequestId: input.leaveRequestId }, 'Failed to publish leave.rejected event (non-fatal)');
   }
   
+  // Recalculate daily status in case pending leave was affecting calendar (non-fatal)
+  try {
+    await recalculateDailyStatus(
+      prisma,
+      tenantContext.tenantSlug,
+      leaveRequest.employeeId,
+      leaveRequest.fromDate,
+      leaveRequest.toDate
+    );
+  } catch (dailyStatusError: any) {
+    logger.warn({ error: dailyStatusError.message, leaveRequestId: input.leaveRequestId }, 'Failed to recalculate daily status (non-fatal)');
+  }
+  
   return updated;
 }
 
@@ -987,7 +1020,8 @@ export interface CancelLeaveInput {
 
 export async function cancelLeave(
   prisma: PrismaClient,
-  input: CancelLeaveInput
+  input: CancelLeaveInput,
+  tenantContext: { tenantId: string; tenantSlug: string }
 ): Promise<any> {
   const { leaveRequestId, cancelledByUserId, cancelledByEmployeeId, userRole, reason } = input;
   
@@ -1147,6 +1181,23 @@ export async function cancelLeave(
     daysRefunded: daysToRefund,
     partialCancellation,
   }, 'Leave cancelled');
+  
+  // Recalculate daily status for the cancelled leave dates (non-fatal)
+  try {
+    await recalculateDailyStatus(
+      prisma,
+      tenantContext.tenantSlug,
+      leaveRequest.employeeId,
+      leaveRequest.fromDate,
+      leaveRequest.toDate
+    );
+    logger.info({
+      leaveRequestId,
+      employeeId: leaveRequest.employeeId,
+    }, 'Daily status recalculated for cancelled leave');
+  } catch (dailyStatusError: any) {
+    logger.warn({ error: dailyStatusError.message, leaveRequestId }, 'Failed to recalculate daily status (non-fatal)');
+  }
   
   return {
     ...updated,

@@ -444,6 +444,7 @@ model Employee {
   employeeSkills           EmployeeSkill[]
   employeeNotes            EmployeeNote[]
   onboardingChecklist      OnboardingChecklist?
+  dailyStatuses            EmployeeDailyStatus[]
 
   @@index([email])
   @@index([employeeCode])
@@ -995,6 +996,40 @@ model Attendance {
   @@index([date])
   @@index([status])
   @@map("attendances")
+}
+
+// ============================================================================
+// EMPLOYEE DAILY STATUS (Pre-aggregated attendance summary for fast calendar)
+// ============================================================================
+model EmployeeDailyStatus {
+  id              String    @id @default(uuid())
+  employeeId      String    @map("employee_id")
+  employee        Employee  @relation(fields: [employeeId], references: [id])
+  date            DateTime  @db.Date
+  // Computed status: P=Present, A=Absent, HD=Half-Day, L=Leave, H=Holiday, WO=WeekOff
+  status          String    // P, A, HD, L, H, WO
+  // If on leave, store the leave type code (CL, SL, LWP, etc.)
+  leaveCode       String?   @map("leave_code")
+  leaveTypeId     String?   @map("leave_type_id")
+  // Attendance details (copied from raw attendance if present)
+  checkInTime     DateTime? @map("check_in_time")
+  checkOutTime    DateTime? @map("check_out_time")
+  workMinutes     Int       @default(0) @map("work_minutes")
+  isLate          Boolean   @default(false) @map("is_late")
+  isEarlyLeave    Boolean   @default(false) @map("is_early_leave")
+  isRemote        Boolean   @default(false) @map("is_remote")
+  // Metadata
+  sourceType      String    @default("computed") @map("source_type") // computed, manual_override
+  notes           String?
+  computedAt      DateTime  @default(now()) @map("computed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@unique([employeeId, date])
+  @@index([employeeId, date])
+  @@index([date])
+  @@index([status])
+  @@map("employee_daily_status")
 }
 
 // ============================================================================

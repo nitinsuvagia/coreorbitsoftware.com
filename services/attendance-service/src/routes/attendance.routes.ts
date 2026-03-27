@@ -454,6 +454,9 @@ router.post(
  * GET /attendance/admin/weekly
  * Get all employees' attendance for a date range (admin weekly monitor view)
  * Query params: dateFrom (YYYY-MM-DD), dateTo (YYYY-MM-DD)
+ * 
+ * OPTIMIZED: Uses pre-aggregated employee_daily_status table for historical data,
+ * raw attendance table for today's live data.
  */
 router.get(
   '/admin/weekly',
@@ -473,6 +476,10 @@ router.get(
       const [ty, tm, td] = dateTo.split('-').map(Number);
       const fromDate = new Date(Date.UTC(fy, fm - 1, fd));
       const toDate = new Date(Date.UTC(ty, tm - 1, td));
+      
+      // Determine today's date for splitting query
+      const today = new Date();
+      today.setUTCHours(0, 0, 0, 0);
 
       // Fetch active employees only — exclude TERMINATED, RESIGNED, RETIRED
       const employees = await prisma.employee.findMany({
@@ -484,15 +491,102 @@ router.get(
         orderBy: [{ firstName: 'asc' }],
       });
 
-      // Fetch all attendance records for all employees in range
-      const attendanceRecords = await prisma.attendance.findMany({
-        where: {
-          date: { gte: fromDate, lte: toDate },
-        },
-        orderBy: [{ employeeId: 'asc' }, { date: 'asc' }, { checkInTime: 'asc' }],
-      });
+      // Initialize result maps
+      const attendanceMap: Record<string, Record<string, any[]>> = {};
+      const leaveMap: Record<string, Record<string, { leaveName: string; leaveCode: string; halfDay: boolean }>> = {};
 
-      // Fetch approved leaves in range
+      // ========================================================================
+      // HISTORICAL DATA: Use pre-aggregated employee_daily_status table
+      // ========================================================================
+      const historicalToDate = toDate < today ? toDate : new Date(today.getTime() - 86400000); // yesterday or earlier
+      
+      if (fromDate <= historicalToDate) {
+        try {
+          const dailyStatuses = await prisma.employeeDailyStatus.findMany({
+            where: {
+              date: { gte: fromDate, lte: historicalToDate },
+            },
+            orderBy: [{ employeeId: 'asc' }, { date: 'asc' }],
+          });
+
+          // Build attendance map from pre-aggregated data
+          for (const status of dailyStatuses) {
+            const empId = status.employeeId;
+            const dateKey = status.date instanceof Date
+              ? status.date.toISOString().slice(0, 10)
+              : String(status.date).slice(0, 10);
+            
+            if (!attendanceMap[empId]) attendanceMap[empId] = {};
+            if (!attendanceMap[empId][dateKey]) attendanceMap[empId][dateKey] = [];
+            
+            // Convert aggregated status to session format for backwards compatibility
+            // P=present, A=absent (no session), HD=half_day, L=on_leave, H=holiday, WO=week-off
+            if (status.status === 'P' || status.status === 'HD') {
+              attendanceMap[empId][dateKey].push({
+                id: status.id,
+                checkIn: status.checkInTime,
+                checkOut: status.checkOutTime,
+                workMinutes: status.workMinutes,
+                status: status.status === 'P' ? 'present' : 'half_day',
+                isLate: status.isLate,
+                isEarlyLeave: status.isEarlyLeave,
+                isRemote: status.isRemote,
+                notes: status.notes,
+              });
+            }
+            
+            // If on leave, add to leave map
+            if ((status.status === 'L' || status.status === 'HD') && status.leaveCode) {
+              if (!leaveMap[empId]) leaveMap[empId] = {};
+              leaveMap[empId][dateKey] = {
+                leaveName: status.notes || 'Leave',
+                leaveCode: status.leaveCode,
+                halfDay: status.status === 'HD',
+              };
+            }
+          }
+          
+          logger.debug({ from: fromDate.toISOString(), to: historicalToDate.toISOString(), count: dailyStatuses.length }, 'Loaded historical data from employee_daily_status');
+        } catch (dailyStatusError) {
+          // Fallback: If employee_daily_status table doesn't exist yet (migration not run),
+          // the endpoint still works by falling through to the original query below
+          logger.warn({ error: (dailyStatusError as Error).message }, 'employee_daily_status table not available, falling back to raw data');
+        }
+      }
+
+      // ========================================================================
+      // TODAY'S LIVE DATA: Use raw attendance table
+      // ========================================================================
+      if (toDate >= today) {
+        const todayRecords = await prisma.attendance.findMany({
+          where: {
+            date: today,
+          },
+          orderBy: [{ employeeId: 'asc' }, { checkInTime: 'asc' }],
+        });
+
+        const todayKey = today.toISOString().slice(0, 10);
+        for (const rec of todayRecords) {
+          const empId = rec.employeeId;
+          if (!attendanceMap[empId]) attendanceMap[empId] = {};
+          if (!attendanceMap[empId][todayKey]) attendanceMap[empId][todayKey] = [];
+          attendanceMap[empId][todayKey].push({
+            id: rec.id,
+            checkIn: rec.checkInTime,
+            checkOut: rec.checkOutTime,
+            workMinutes: rec.workMinutes,
+            status: rec.status,
+            isLate: rec.isLate,
+            isEarlyLeave: rec.isEarlyLeave,
+            isRemote: rec.isRemote,
+            notes: rec.notes,
+          });
+        }
+      }
+
+      // ========================================================================
+      // LEAVES: Fetch approved leaves in range (for display, supplements daily status)
+      // ========================================================================
       const leaveRecords = await prisma.leaveRequest.findMany({
         where: {
           status: 'APPROVED',
@@ -504,45 +598,23 @@ router.get(
         },
       });
 
-      // Build lookup: employeeId -> date (YYYY-MM-DD) -> sessions[]
-      const attendanceMap: Record<string, Record<string, any[]>> = {};
-      for (const rec of attendanceRecords) {
-        const empId = rec.employeeId;
-        const dateKey = rec.date instanceof Date
-          ? rec.date.toISOString().slice(0, 10)
-          : String(rec.date).slice(0, 10);
-        if (!attendanceMap[empId]) attendanceMap[empId] = {};
-        if (!attendanceMap[empId][dateKey]) attendanceMap[empId][dateKey] = [];
-        attendanceMap[empId][dateKey].push({
-          id: rec.id,
-          checkIn: rec.checkInTime,
-          checkOut: rec.checkOutTime,
-          workMinutes: rec.workMinutes,
-          status: rec.status,
-          isLate: rec.isLate,
-          isEarlyLeave: rec.isEarlyLeave,
-          isRemote: rec.isRemote,
-          notes: rec.notes,
-        });
-      }
-
-      // Build lookup: employeeId -> date (YYYY-MM-DD) -> leave info
-      const leaveMap: Record<string, Record<string, { leaveName: string; leaveCode: string; halfDay: boolean }>> = {};
+      // Build leave lookup (may override/supplement pre-aggregated data for UI)
       for (const leave of leaveRecords) {
         const empId = leave.employeeId;
         const from = new Date(leave.fromDate);
         const to = new Date(leave.toDate);
         const halfDay = (leave as any).isHalfDay ?? false;
-        // Iterate days of leave
         const cur = new Date(from);
         while (cur <= to) {
           const dk = cur.toISOString().slice(0, 10);
           if (!leaveMap[empId]) leaveMap[empId] = {};
-          leaveMap[empId][dk] = {
-            leaveName: (leave.leaveType as any)?.name ?? 'Leave',
-            leaveCode: (leave.leaveType as any)?.code ?? 'LV',
-            halfDay,
-          };
+          if (!leaveMap[empId][dk]) {
+            leaveMap[empId][dk] = {
+              leaveName: (leave.leaveType as any)?.name ?? 'Leave',
+              leaveCode: (leave.leaveType as any)?.code ?? 'LV',
+              halfDay,
+            };
+          }
           cur.setDate(cur.getDate() + 1);
         }
       }
@@ -569,6 +641,91 @@ router.get(
       res.json({ success: true, data: result });
     } catch (error) {
       logger.error({ error: (error as Error).message }, 'Failed to get admin weekly attendance');
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /attendance/admin/aggregate
+ * Manually trigger daily status aggregation for a specific date
+ * Body: { date?: 'YYYY-MM-DD' } (defaults to yesterday)
+ * 
+ * Admin-only endpoint for re-computing daily status.
+ */
+router.post(
+  '/admin/aggregate',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const tenantSlug = (req as any).tenantSlug;
+      const tenantId = (req as any).tenantId;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
+
+      const dateStr = req.body.date as string | undefined;
+      let targetDate: Date;
+      
+      if (dateStr) {
+        const [y, m, d] = dateStr.split('-').map(Number);
+        targetDate = new Date(Date.UTC(y, m - 1, d));
+      } else {
+        // Default to yesterday
+        targetDate = new Date();
+        targetDate.setUTCDate(targetDate.getUTCDate() - 1);
+        targetDate.setUTCHours(0, 0, 0, 0);
+      }
+
+      // Import and call the aggregation function
+      const { aggregateDailyStatusForDate } = await import('../services/daily-status.service');
+      const result = await aggregateDailyStatusForDate(prisma, tenantSlug, targetDate);
+
+      res.json({
+        success: true,
+        message: `Daily status aggregation completed for ${targetDate.toISOString().slice(0, 10)}`,
+        data: result,
+      });
+    } catch (error) {
+      logger.error({ error: (error as Error).message }, 'Failed to trigger daily status aggregation');
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /attendance/admin/backfill
+ * Backfill daily status for a date range
+ * Body: { from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' }
+ * 
+ * Admin-only endpoint for backfilling historical data.
+ */
+router.post(
+  '/admin/backfill',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
+
+      const { from, to } = req.body;
+      
+      if (!from || !to) {
+        return res.status(400).json({ error: 'from and to dates are required (YYYY-MM-DD format)' });
+      }
+
+      const [fy, fm, fd] = from.split('-').map(Number);
+      const [ty, tm, td] = to.split('-').map(Number);
+      const fromDate = new Date(Date.UTC(fy, fm - 1, fd));
+      const toDate = new Date(Date.UTC(ty, tm - 1, td));
+
+      // Import and call the backfill function
+      const { backfillDailyStatus } = await import('../services/daily-status.service');
+      const result = await backfillDailyStatus(prisma, tenantSlug, fromDate, toDate);
+
+      res.json({
+        success: true,
+        message: `Backfill completed for ${from} to ${to}`,
+        data: result,
+      });
+    } catch (error) {
+      logger.error({ error: (error as Error).message }, 'Failed to backfill daily status');
       next(error);
     }
   }

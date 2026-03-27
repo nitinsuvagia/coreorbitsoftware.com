@@ -9,6 +9,7 @@ import { config } from './config';
 import { logger } from './utils/logger';
 import { initializeTenantDbManager, shutdownTenantDbManager } from '@oms/tenant-db-manager';
 import { initializeEventBus, shutdownEventBus } from '@oms/event-bus';
+import { initializeCronJobs, stopCronJobs } from './cron';
 
 // ============================================================================
 // SERVER STARTUP
@@ -45,6 +46,9 @@ async function bootstrap() {
         standardHours: config.workHours.standardHoursPerDay,
         graceMinutes: config.workHours.graceMinutesLate,
       }, 'Work schedule configuration:');
+      
+      // Initialize cron jobs after server is ready
+      initializeCronJobs();
     });
     
     // ========================================================================
@@ -61,6 +65,10 @@ async function bootstrap() {
         }
         
         try {
+          // Stop cron jobs first
+          logger.info('Stopping cron jobs...');
+          stopCronJobs();
+          
           // Shutdown event bus
           logger.info('Shutting down event bus...');
           await shutdownEventBus();
