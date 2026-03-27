@@ -81,7 +81,7 @@ import {
   useRejectLeave,
   useCancelLeave,
   useCreateLeave,
-  useAttendance,
+  useAdminWeeklyAttendance,
   useMyAttendance,
   useAdjustLeaveBalance,
   useLeaveBalance,
@@ -266,23 +266,52 @@ export default function LeaveManagementPage() {
   const holidays = (holidaysResponse as any)?.data || holidaysResponse || [];
 
   // Fetch attendance for calendar (all records for the month).
-  // Auto-refresh every 60 s when viewing the current month so today's check-ins appear live.
-  const isCurrentMonth = isSameMonth(calendarMonth, new Date());
-  // Admins use the all-attendance endpoint; employees use their own self-service endpoint.
-  const calendarDateFilters = {
-    startDate: format(startOfMonth(calendarMonth), 'yyyy-MM-dd'),
-    endDate: format(endOfMonth(calendarMonth), 'yyyy-MM-dd'),
-    limit: 5000,
-  };
-  const { data: adminAttendanceResponse } = useAttendance(
-    calendarDateFilters,
-    { refetchInterval: isCurrentMonth && canManageLeaves ? 60000 : undefined }
+  // Admins use the optimized admin weekly endpoint (pre-grouped by employee/date).
+  // Regular employees use their own self-service endpoint.
+  const calendarStartDate = format(startOfMonth(calendarMonth), 'yyyy-MM-dd');
+  const calendarEndDate = format(endOfMonth(calendarMonth), 'yyyy-MM-dd');
+  
+  // Admin weekly endpoint - optimized for calendar view (no N+1 queries)
+  const { data: adminWeeklyResponse } = useAdminWeeklyAttendance(
+    canManageLeaves ? calendarStartDate : '',
+    canManageLeaves ? calendarEndDate : ''
   );
+  
+  // Employee self-service endpoint
   const { data: myAttendanceResponse } = useMyAttendance(
-    calendarDateFilters,
+    !canManageLeaves ? { startDate: calendarStartDate, endDate: calendarEndDate, limit: 5000 } : {}
   );
-  const rawAttendanceResponse = canManageLeaves ? adminAttendanceResponse : myAttendanceResponse;
-  const attendanceRecords = (rawAttendanceResponse as any)?.data || (rawAttendanceResponse as any)?.items || [];
+  
+  // Transform admin weekly response to flat array format expected by calendar
+  const attendanceRecords = useMemo(() => {
+    if (canManageLeaves) {
+      // Admin weekly returns: { data: [{ employeeId, attendance: { 'YYYY-MM-DD': [...sessions] } }] }
+      const weeklyData = (adminWeeklyResponse as any)?.data || [];
+      const flat: any[] = [];
+      for (const emp of weeklyData) {
+        const attByDate = emp.attendance || {};
+        for (const [dateKey, sessions] of Object.entries(attByDate)) {
+          for (const sess of (sessions as any[])) {
+            flat.push({
+              employeeId: emp.employeeId,
+              date: dateKey,
+              status: sess.status,
+              checkInTime: sess.checkIn,
+              checkOutTime: sess.checkOut,
+              workMinutes: sess.workMinutes,
+              isLate: sess.isLate,
+              isEarlyLeave: sess.isEarlyLeave,
+              isRemote: sess.isRemote,
+            });
+          }
+        }
+      }
+      return flat;
+    } else {
+      // Employee response is already flat array
+      return (myAttendanceResponse as any)?.data?.items || (myAttendanceResponse as any)?.items || [];
+    }
+  }, [canManageLeaves, adminWeeklyResponse, myAttendanceResponse]);
 
   // Mutations
   const approveLeave = useApproveLeave();
