@@ -285,8 +285,9 @@ export default function LeaveManagementPage() {
   // Transform admin weekly response to flat array format expected by calendar
   const attendanceRecords = useMemo(() => {
     if (canManageLeaves) {
-      // Admin weekly returns: { data: [{ employeeId, attendance: { 'YYYY-MM-DD': [...sessions] } }] }
-      const weeklyData = (adminWeeklyResponse as any)?.data || [];
+      // Admin weekly returns array of employees with nested attendance/leaves
+      // Note: The `get` helper already unwraps response.data.data, so adminWeeklyResponse IS the array
+      const weeklyData = Array.isArray(adminWeeklyResponse) ? adminWeeklyResponse : [];
       const flat: any[] = [];
       for (const emp of weeklyData) {
         const attByDate = emp.attendance || {};
