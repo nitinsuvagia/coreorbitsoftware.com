@@ -554,7 +554,9 @@ export async function requestLeave(
     },
   });
   
-  if (!employee || employee.status !== 'ACTIVE') {
+  // Allow leave requests for employees in active employment statuses
+  const allowedStatuses = ['ACTIVE', 'ONBOARDING', 'PROBATION', 'ON_LEAVE', 'NOTICE_PERIOD'];
+  if (!employee || !allowedStatuses.includes(employee.status)) {
     throw new Error('Employee not found or inactive');
   }
   
