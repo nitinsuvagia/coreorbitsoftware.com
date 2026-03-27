@@ -282,6 +282,26 @@ export default function LeaveManagementPage() {
     !canManageLeaves ? { startDate: calendarStartDate, endDate: calendarEndDate, limit: 5000 } : {}
   );
   
+  // Extract employees with their attendance data from admin weekly response
+  // This ensures the calendar uses the same employee list that has attendance data
+  const calendarEmployeesFromWeekly = useMemo(() => {
+    if (!canManageLeaves) return null;
+    const weeklyData = Array.isArray(adminWeeklyResponse) ? adminWeeklyResponse : [];
+    return weeklyData.map((emp: any) => ({
+      id: emp.employeeId,
+      employeeId: emp.employeeCode,
+      firstName: emp.firstName || '',
+      lastName: emp.lastName || '',
+      avatar: emp.avatar,
+      department: emp.department,
+      designation: emp.designation,
+      status: emp.status,
+      // Include attendance and leaves from API response directly
+      attendance: emp.attendance || {},
+      leaves: emp.leaves || {},
+    }));
+  }, [canManageLeaves, adminWeeklyResponse]);
+
   // Transform admin weekly response to flat array format expected by calendar
   const attendanceRecords = useMemo(() => {
     if (canManageLeaves) {
@@ -1367,7 +1387,7 @@ export default function LeaveManagementPage() {
                 </thead>
                 <tbody>
                   {((canManageLeaves
-                    ? employees
+                    ? (calendarEmployeesFromWeekly || employees)
                     // For employees: build a single row from the authenticated user's profile
                     : (user ? [{
                         id: currentEmployeeId || user.id,
@@ -1377,6 +1397,8 @@ export default function LeaveManagementPage() {
                         email: user.email,
                         avatar: user.avatar,
                         status: 'ACTIVE',
+                        attendance: {}, // No direct attendance for self-service
+                        leaves: {},
                       }] : [])
                   ) as any[]).map((emp: any) => {
                     return (
@@ -1400,7 +1422,13 @@ export default function LeaveManagementPage() {
                           const dayIsWeekend = nonWorkingDays.includes(getDay(day));
                           const holiday = holidaysByDate[dateKey];
                           const empLeave = leavesByEmpDate[emp.id]?.[dateKey];
-                          const attendance = attendanceByEmpDate[emp.id]?.[dateKey];
+                          // Use attendance from emp.attendance directly if available (admin weekly response)
+                          // Fall back to attendanceByEmpDate for backwards compatibility
+                          const sessions: any[] = emp.attendance?.[dateKey] || [];
+                          const firstSession = sessions[0];
+                          const attendance = firstSession?.status?.replace(/_/g, '-') || attendanceByEmpDate[emp.id]?.[dateKey];
+                          // Also check API leaves (from admin weekly response) for leave status
+                          const apiLeave = emp.leaves?.[dateKey];
                           
                           // Priority:
                           //   Weekend > Holiday
@@ -1467,6 +1495,26 @@ export default function LeaveManagementPage() {
                             title = isHalfDayLeave
                               ? `Half Day Leave - ${getLeaveTypeName(empLeave.leave)} (${empLeave.leave.status})`
                               : `${getLeaveTypeName(empLeave.leave)} (${empLeave.leave.status})`;
+                          } else if (apiLeave) {
+                            // Leave from admin weekly response (pre-aggregated data)
+                            const leaveCode = apiLeave.leaveCode || 'LV';
+                            const isHalfDayLeave = apiLeave.halfDay;
+                            const displayCode = isHalfDayLeave ? 'HL' : leaveCode;
+                            const leaveColors = DEFAULT_LEAVE_COLORS[leaveCode] || { bg: 'bg-blue-100', text: 'text-blue-700' };
+                            cellContent = (
+                              <div
+                                className={`w-full h-6 rounded ${
+                                  isHalfDayLeave ? 'bg-orange-100' : leaveColors.bg
+                                } flex items-center justify-center text-xs ${
+                                  isHalfDayLeave ? 'text-orange-700' : leaveColors.text
+                                } font-bold`}
+                              >
+                                {displayCode}
+                              </div>
+                            );
+                            title = isHalfDayLeave
+                              ? `Half Day Leave - ${apiLeave.leaveName || 'Leave'}`
+                              : apiLeave.leaveName || 'Leave';
                           } else if (attendance === 'absent' || attendance === 'on-leave' || attendance === 'on_leave') {
                             // Explicit absent record in DB
                             cellContent = (
@@ -1509,7 +1557,7 @@ export default function LeaveManagementPage() {
               </table>
             </div>
 
-            {canManageLeaves && (employees as any[]).length === 0 && (
+            {canManageLeaves && (calendarEmployeesFromWeekly || employees as any[]).length === 0 && (
               <div className="text-center py-8 text-muted-foreground">
                 <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p>No employees to display in calendar</p>

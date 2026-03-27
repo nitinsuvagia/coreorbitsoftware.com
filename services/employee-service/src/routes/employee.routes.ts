@@ -3271,9 +3271,9 @@ router.get('/todos', async (req: Request, res: Response) => {
 
     const { status, priority, category, completed, search, page = '1', pageSize = '50' } = req.query;
 
-    // Build visibility filter: show todos assigned to me OR todos I created with no assignee
-    // (excludes tasks I created but assigned to someone else)
-    const visibilityFilter = { OR: [{ assigneeId: userId }, { userId, assigneeId: null }] };
+    // Build visibility filter: show todos assigned to me OR todos I created
+    // This shows: 1) tasks assigned to me (from anyone), 2) tasks I created (whether assigned to someone else or unassigned)
+    const visibilityFilter = { OR: [{ assigneeId: userId }, { userId }] };
 
     const buildWhere = (extra: Record<string, any> = {}) => {
       const base: any = { ...extra, ...visibilityFilter };

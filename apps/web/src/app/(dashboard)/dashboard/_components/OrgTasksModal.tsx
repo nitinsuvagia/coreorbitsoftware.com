@@ -241,7 +241,12 @@ export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
       setSelectedEmployee(null);
       setEmpSuggestions([]);
       setPage(1);
-      setSortConfig([{ field: 'dueDate', dir: 'asc' }, { field: 'priority', dir: 'asc' }]);
+      // Reset to default sort: Pending first, then Due Date asc, then Priority asc (URGENT first)
+      setSortConfig([
+        { field: 'status',   dir: 'asc' },
+        { field: 'dueDate',  dir: 'asc' },
+        { field: 'priority', dir: 'asc' },
+      ]);
     }
   }, [open]);
 
