@@ -5,7 +5,7 @@
 # ===========================================
 # 
 # Domain Structure:
-# - www.coreorbitsoftware.com → Public Website (port 3100)
+# - www.coreorbitsoftware.com → Public Website (port 2999)
 # - portal.coreorbitsoftware.com → Web Portal (port 3000)
 # - api.coreorbitsoftware.com → API Gateway (port 4000)
 #
@@ -539,12 +539,12 @@ services:
     container_name: oms-public-website
     restart: always
     expose:
-      - "3100"
+      - "2999"
     env_file:
       - .env
     environment:
       - NODE_ENV=production
-      - PORT=3100
+      - PORT=2999
     labels:
       - "traefik.enable=true"
       # Bare domain + www
@@ -556,7 +556,7 @@ services:
       # Wildcard cert covers all subdomains
       - "traefik.http.routers.coreorbit-public.tls.domains[0].main=coreorbitsoftware.com"
       - "traefik.http.routers.coreorbit-public.tls.domains[0].sans=*.coreorbitsoftware.com"
-      - "traefik.http.services.coreorbit-public.loadbalancer.server.port=3100"
+      - "traefik.http.services.coreorbit-public.loadbalancer.server.port=2999"
       # www → bare domain redirect
       - 'traefik.http.middlewares.coreorbit-www.redirectregex.regex=^https://www\.coreorbitsoftware\.com(.*)'
       - 'traefik.http.middlewares.coreorbit-www.redirectregex.replacement=https://coreorbitsoftware.com$${1}'
@@ -566,7 +566,7 @@ services:
       - oms-network
       - web
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3100', r => r.statusCode === 200 ? process.exit(0) : process.exit(1)).on('error', () => process.exit(1))\""]
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:2999', r => r.statusCode === 200 ? process.exit(0) : process.exit(1)).on('error', () => process.exit(1))\""]
       interval: 30s
       timeout: 10s
       retries: 5
