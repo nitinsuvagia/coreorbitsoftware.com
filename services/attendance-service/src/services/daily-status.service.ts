@@ -79,43 +79,10 @@ function computeStatus(params: {
 }): DailyStatusRecord {
   const { date, attendance, leave, holiday, isWeekOff } = params;
 
-  // Priority: WeekOff > Holiday > Present/Late > Half-Day > Leave > Absent
+  // Priority: Present/Late (actual attendance) > WeekOff > Holiday > Half-Day > Leave > Absent
+  // If employee actually worked (checked in), that takes priority over weekend/holiday
   
-  if (isWeekOff) {
-    return {
-      employeeId: '', // Will be set by caller
-      date,
-      status: 'WO',
-      leaveCode: null,
-      leaveTypeId: null,
-      checkInTime: null,
-      checkOutTime: null,
-      workMinutes: 0,
-      isLate: false,
-      isEarlyLeave: false,
-      isRemote: false,
-      notes: 'Week-off day',
-    };
-  }
-
-  if (holiday) {
-    return {
-      employeeId: '',
-      date,
-      status: 'H',
-      leaveCode: null,
-      leaveTypeId: null,
-      checkInTime: null,
-      checkOutTime: null,
-      workMinutes: 0,
-      isLate: false,
-      isEarlyLeave: false,
-      isRemote: false,
-      notes: holiday.name,
-    };
-  }
-
-  // If employee checked in (present or late), they came to work
+  // If employee checked in (present or late), they came to work - highest priority
   if (attendance && (attendance.status === 'present' || attendance.status === 'late')) {
     return {
       employeeId: '',
@@ -133,7 +100,7 @@ function computeStatus(params: {
     };
   }
 
-  // Half-day attendance or half-day leave
+  // Half-day attendance
   if (attendance?.status === 'half_day') {
     return {
       employeeId: '',
@@ -148,6 +115,42 @@ function computeStatus(params: {
       isEarlyLeave: attendance.isEarlyLeave || false,
       isRemote: attendance.isRemote || false,
       notes: attendance.notes,
+    };
+  }
+
+  // Week-off (if no attendance recorded)
+  if (isWeekOff) {
+    return {
+      employeeId: '',
+      date,
+      status: 'WO',
+      leaveCode: null,
+      leaveTypeId: null,
+      checkInTime: null,
+      checkOutTime: null,
+      workMinutes: 0,
+      isLate: false,
+      isEarlyLeave: false,
+      isRemote: false,
+      notes: 'Week-off day',
+    };
+  }
+
+  // Holiday (if no attendance recorded)
+  if (holiday) {
+    return {
+      employeeId: '',
+      date,
+      status: 'H',
+      leaveCode: null,
+      leaveTypeId: null,
+      checkInTime: null,
+      checkOutTime: null,
+      workMinutes: 0,
+      isLate: false,
+      isEarlyLeave: false,
+      isRemote: false,
+      notes: holiday.name,
     };
   }
 
