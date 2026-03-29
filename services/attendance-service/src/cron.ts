@@ -33,7 +33,7 @@ async function runDailyStatusAggregation(): Promise<void> {
       where: { 
         status: 'ACTIVE',
         subscription: {
-          status: { in: ['ACTIVE', 'TRIAL'] },
+          status: { in: ['ACTIVE', 'TRIALING'] },
         },
       },
       select: { id: true, slug: true, name: true },
