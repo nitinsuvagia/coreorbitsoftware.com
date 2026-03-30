@@ -112,70 +112,76 @@ function ReviewDetailDialog({ review, open, onOpenChange }: {
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-        <AlertDialogHeader>
-          <AlertDialogTitle className="flex items-center gap-2">
-            <ClipboardList className="h-5 w-5" />
-            Performance Review Details
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            {review.employee ? `${review.employee.firstName} ${review.employee.lastName}` : 'Employee'} — {review.reviewPeriod} ({review.reviewType})
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        
-        <div className="space-y-6 py-4">
-          {/* Status & Overall */}
-          <div className="flex items-center justify-between">
-            <Badge variant={review.status === 'submitted' ? 'default' : review.status === 'acknowledged' ? 'secondary' : 'outline'}>
-              {review.status.charAt(0).toUpperCase() + review.status.slice(1)}
-            </Badge>
-            {review.overallRating && (
-              <div className="flex items-center gap-2">
-                <Star className="h-5 w-5 text-yellow-500 fill-yellow-500" />
-                <span className="text-2xl font-bold">{review.overallRating}/10</span>
-              </div>
-            )}
-          </div>
-
-          {/* Category Ratings */}
-          <div>
-            <h4 className="font-medium mb-3">Category Ratings</h4>
-            <div className="grid grid-cols-2 gap-3">
-              {ratingCategories.map(cat => (
-                <div key={cat.label} className="flex items-center justify-between p-2 bg-muted/30 rounded-lg">
-                  <span className="text-sm">{cat.label}</span>
-                  <div className="flex items-center gap-1">
-                    <span className="font-bold text-sm">{cat.value || '-'}</span>
-                    <span className="text-xs text-muted-foreground">/10</span>
-                  </div>
+      <AlertDialogContent className="max-w-2xl h-[80vh] flex flex-col overflow-hidden">
+        {/* Fixed Header Section */}
+        <div className="flex-shrink-0">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <ClipboardList className="h-5 w-5" />
+              Performance Review Details
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {review.employee ? `${review.employee.firstName} ${review.employee.lastName}` : 'Employee'} — {review.reviewPeriod} ({review.reviewType})
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          
+          <div className="space-y-4 pt-4">
+            {/* Status & Overall */}
+            <div className="flex items-center justify-between">
+              <Badge variant={review.status === 'submitted' ? 'default' : review.status === 'acknowledged' ? 'secondary' : 'outline'}>
+                {review.status.charAt(0).toUpperCase() + review.status.slice(1)}
+              </Badge>
+              {review.overallRating && (
+                <div className="flex items-center gap-2">
+                  <Star className="h-5 w-5 text-yellow-500 fill-yellow-500" />
+                  <span className="text-2xl font-bold">{review.overallRating}/10</span>
                 </div>
-              ))}
+              )}
+            </div>
+
+            {/* Category Ratings */}
+            <div>
+              <h4 className="font-medium mb-3">Category Ratings</h4>
+              <div className="grid grid-cols-2 gap-3">
+                {ratingCategories.map(cat => (
+                  <div key={cat.label} className="flex items-center justify-between p-2 bg-muted/30 rounded-lg">
+                    <span className="text-sm">{cat.label}</span>
+                    <div className="flex items-center gap-1">
+                      <span className="font-bold text-sm">{cat.value || '-'}</span>
+                      <span className="text-xs text-muted-foreground">/10</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
+        </div>
 
+        {/* Scrollable Content Section */}
+        <div className="flex-1 overflow-y-auto min-h-0 py-4 space-y-4 border-t mt-4">
           {/* Text Feedback */}
           {review.strengths && (
             <div>
               <h4 className="font-medium mb-1 text-green-600">Strengths</h4>
-              <p className="text-sm text-muted-foreground bg-green-50 dark:bg-green-950/20 p-3 rounded-lg">{review.strengths}</p>
+              <p className="text-sm text-muted-foreground bg-green-50 dark:bg-green-950/20 p-3 rounded-lg whitespace-pre-wrap">{review.strengths}</p>
             </div>
           )}
           {review.areasForImprovement && (
             <div>
               <h4 className="font-medium mb-1 text-orange-600">Areas for Improvement</h4>
-              <p className="text-sm text-muted-foreground bg-orange-50 dark:bg-orange-950/20 p-3 rounded-lg">{review.areasForImprovement}</p>
+              <p className="text-sm text-muted-foreground bg-orange-50 dark:bg-orange-950/20 p-3 rounded-lg whitespace-pre-wrap">{review.areasForImprovement}</p>
             </div>
           )}
           {review.goalsNextPeriod && (
             <div>
               <h4 className="font-medium mb-1 text-blue-600">Goals for Next Period</h4>
-              <p className="text-sm text-muted-foreground bg-blue-50 dark:bg-blue-950/20 p-3 rounded-lg">{review.goalsNextPeriod}</p>
+              <p className="text-sm text-muted-foreground bg-blue-50 dark:bg-blue-950/20 p-3 rounded-lg whitespace-pre-wrap">{review.goalsNextPeriod}</p>
             </div>
           )}
           {review.additionalComments && (
             <div>
               <h4 className="font-medium mb-1">Additional Comments</h4>
-              <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-lg">{review.additionalComments}</p>
+              <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-lg whitespace-pre-wrap">{review.additionalComments}</p>
             </div>
           )}
 
@@ -188,7 +194,8 @@ function ReviewDetailDialog({ review, open, onOpenChange }: {
           </div>
         </div>
 
-        <AlertDialogFooter>
+        {/* Fixed Footer */}
+        <AlertDialogFooter className="flex-shrink-0 border-t pt-4">
           <AlertDialogCancel>Close</AlertDialogCancel>
         </AlertDialogFooter>
       </AlertDialogContent>

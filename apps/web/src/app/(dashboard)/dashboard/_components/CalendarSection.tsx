@@ -805,13 +805,13 @@ export function CalendarSection({ loading: parentLoading = false }: CalendarSect
 
           {/* Upcoming Events */}
           <Card className="h-[300px] flex flex-col">
-            <CardHeader className="pb-3 flex-shrink-0">
+            <CardHeader className="pb-2 px-4 flex-shrink-0">
               <CardTitle className="text-base flex items-center gap-2">
                 <Clock className="h-4 w-4 text-primary" />
                 Upcoming Events
               </CardTitle>
             </CardHeader>
-            <CardContent className="flex-1 overflow-hidden pb-4">
+            <CardContent className="flex-1 overflow-hidden px-4 pb-4">
               <ScrollArea className="h-full pr-2">
                 {upcomingEvents.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full py-8 gap-3">
@@ -878,13 +878,13 @@ export function CalendarSection({ loading: parentLoading = false }: CalendarSect
 
           {/* Stats */}
           <Card>
-            <CardHeader className="pb-3">
+            <CardHeader className="pb-2 px-4">
               <CardTitle className="text-base flex items-center gap-2">
                 <Briefcase className="h-4 w-4 text-primary" />
                 {MONTHS[month]} Overview
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-4 pb-4">
               <div className="grid grid-cols-2 gap-3">
                 {(Object.keys(EVENT_CONFIG) as Array<keyof typeof EVENT_CONFIG>).map((type) => {
                   const config = EVENT_CONFIG[type];

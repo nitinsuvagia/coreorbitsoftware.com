@@ -163,8 +163,9 @@ const getFeaturesList = (plan: SubscriptionPlan): string[] => {
 };
 
 export function PricingSection() {
-  const [plans, setPlans] = useState<SubscriptionPlan[]>(fallbackPlans);
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
 
   useEffect(() => {
@@ -200,14 +201,18 @@ export function PricingSection() {
 
             if (livePlans.length > 0) {
               setPlans(livePlans as SubscriptionPlan[]);
+              setError(false);
               return;
             }
           } catch {
             continue;
           }
         }
+        // All endpoints failed
+        setError(true);
       } catch (error) {
         console.error('Failed to fetch pricing plans:', error);
+        setError(true);
       } finally {
         setLoading(false);
       }
@@ -273,6 +278,19 @@ export function PricingSection() {
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+          </div>
+        ) : error || plans.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="bg-slate-100 dark:bg-slate-800 rounded-full p-4 mb-4">
+              <Loader2 className="w-8 h-8 text-slate-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">Pricing Unavailable</h3>
+            <p className="text-slate-600 dark:text-slate-400 max-w-md mb-4">
+              We're unable to load pricing information at the moment. Please try again later or contact us for details.
+            </p>
+            <a href="/contact" className="inline-flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors">
+              Contact Us
+            </a>
           </div>
         ) : (
           /* Pricing Cards */
