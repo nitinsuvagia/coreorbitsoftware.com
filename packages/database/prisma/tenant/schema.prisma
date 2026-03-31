@@ -1011,13 +1011,17 @@ model EmployeeDailyStatus {
   // If on leave, store the leave type code (CL, SL, LWP, etc.)
   leaveCode       String?   @map("leave_code")
   leaveTypeId     String?   @map("leave_type_id")
-  // Attendance details (copied from raw attendance if present)
-  checkInTime     DateTime? @map("check_in_time")
-  checkOutTime    DateTime? @map("check_out_time")
-  workMinutes     Int       @default(0) @map("work_minutes")
+  // Attendance details (aggregated from all sessions)
+  checkInTime     DateTime? @map("check_in_time")  // Earliest check-in
+  checkOutTime    DateTime? @map("check_out_time") // Latest check-out
+  workMinutes     Int       @default(0) @map("work_minutes") // Sum of all sessions
   isLate          Boolean   @default(false) @map("is_late")
   isEarlyLeave    Boolean   @default(false) @map("is_early_leave")
   isRemote        Boolean   @default(false) @map("is_remote")
+  // All sessions stored as JSON array for frontend display
+  // Format: [{ id, checkIn, checkOut, workMinutes, status, isLate, isEarlyLeave, isRemote, notes }]
+  sessions        Json?     @db.JsonB
+  sessionCount    Int       @default(1) @map("session_count")
   // Metadata
   sourceType      String    @default("computed") @map("source_type") // computed, manual_override
   notes           String?

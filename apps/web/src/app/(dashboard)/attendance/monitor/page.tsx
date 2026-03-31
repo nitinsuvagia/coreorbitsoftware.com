@@ -126,9 +126,22 @@ function fmtHM(minutes: number): string {
   return `${m}m`;
 }
 
+/**
+ * Calculate total work minutes from sessions.
+ * - For completed sessions (has checkOut): use stored workMinutes (aggregated correctly)
+ * - For active sessions (no checkOut): calculate elapsed time from checkIn to now
+ */
 function totalWorkMinutes(sessions: WeeklyAttendanceSession[], now: number): number {
   return sessions.reduce((acc, s) => {
     if (!s.checkIn) return acc;
+    
+    // If session is completed (has checkOut), use the stored workMinutes
+    // This is the correctly aggregated value from backend
+    if (s.checkOut && s.workMinutes > 0) {
+      return acc + s.workMinutes;
+    }
+    
+    // For active sessions (no checkOut), calculate elapsed time
     const start = new Date(s.checkIn).getTime();
     const end = s.checkOut ? new Date(s.checkOut).getTime() : now;
     return acc + Math.max(0, Math.floor((end - start) / 60000));

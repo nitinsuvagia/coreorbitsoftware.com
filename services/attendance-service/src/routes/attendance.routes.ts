@@ -522,17 +522,37 @@ router.get(
             // Convert aggregated status to session format for backwards compatibility
             // P=present, A=absent (no session), HD=half_day, L=on_leave, H=holiday, WO=week-off
             if (status.status === 'P' || status.status === 'HD') {
-              attendanceMap[empId][dateKey].push({
-                id: status.id,
-                checkIn: status.checkInTime,
-                checkOut: status.checkOutTime,
-                workMinutes: status.workMinutes,
-                status: status.status === 'P' ? 'present' : 'half_day',
-                isLate: status.isLate,
-                isEarlyLeave: status.isEarlyLeave,
-                isRemote: status.isRemote,
-                notes: status.notes,
-              });
+              // If sessions JSON is available, use it for full session details
+              const storedSessions = status.sessions as any[];
+              if (storedSessions && Array.isArray(storedSessions) && storedSessions.length > 0) {
+                // Return all sessions from the JSON field
+                for (const sess of storedSessions) {
+                  attendanceMap[empId][dateKey].push({
+                    id: sess.id,
+                    checkIn: sess.checkIn,
+                    checkOut: sess.checkOut,
+                    workMinutes: sess.workMinutes || 0,
+                    status: sess.status || 'present',
+                    isLate: sess.isLate || false,
+                    isEarlyLeave: sess.isEarlyLeave || false,
+                    isRemote: sess.isRemote || false,
+                    notes: sess.notes,
+                  });
+                }
+              } else {
+                // Fallback: create single session from aggregated data
+                attendanceMap[empId][dateKey].push({
+                  id: status.id,
+                  checkIn: status.checkInTime,
+                  checkOut: status.checkOutTime,
+                  workMinutes: status.workMinutes,
+                  status: status.status === 'P' ? 'present' : 'half_day',
+                  isLate: status.isLate,
+                  isEarlyLeave: status.isEarlyLeave,
+                  isRemote: status.isRemote,
+                  notes: status.notes,
+                });
+              }
             }
             
             // If on leave, add to leave map

@@ -30,6 +30,18 @@ import { getTenantPrismaBySlug } from '../utils/database';
 // TYPES
 // ============================================================================
 
+export interface SessionData {
+  id: string;
+  checkIn: string | null;
+  checkOut: string | null;
+  workMinutes: number;
+  status: string;
+  isLate: boolean;
+  isEarlyLeave: boolean;
+  isRemote: boolean;
+  notes: string | null;
+}
+
 export interface DailyStatusRecord {
   employeeId: string;
   date: Date;
@@ -43,6 +55,8 @@ export interface DailyStatusRecord {
   isEarlyLeave: boolean;
   isRemote: boolean;
   notes: string | null;
+  sessions: SessionData[];
+  sessionCount: number;
 }
 
 // ============================================================================
@@ -69,15 +83,29 @@ async function getNonWorkingDays(tenantSlug: string): Promise<number[]> {
 
 /**
  * Compute the daily status for a single employee on a single date
+ * attendance param now contains aggregated data with _sessions array
  */
 function computeStatus(params: {
   date: Date;
-  attendance: any | null; // Raw attendance record
+  attendance: any | null; // Aggregated attendance record with _sessions
   leave: any | null; // Approved leave covering this date
   holiday: any | null; // Holiday on this date
   isWeekOff: boolean;
 }): DailyStatusRecord {
   const { date, attendance, leave, holiday, isWeekOff } = params;
+
+  // Build sessions array from raw attendance data
+  const sessions: SessionData[] = attendance?._sessions?.map((s: any) => ({
+    id: s.id,
+    checkIn: s.checkInTime?.toISOString?.() || s.checkInTime || null,
+    checkOut: s.checkOutTime?.toISOString?.() || s.checkOutTime || null,
+    workMinutes: s.workMinutes || 0,
+    status: s.status || 'present',
+    isLate: s.isLate || false,
+    isEarlyLeave: s.isEarlyLeave || false,
+    isRemote: s.isRemote || false,
+    notes: s.notes || null,
+  })) || [];
 
   // Priority: Present/Late (actual attendance) > WeekOff > Holiday > Half-Day > Leave > Absent
   // If employee actually worked (checked in), that takes priority over weekend/holiday
@@ -97,6 +125,8 @@ function computeStatus(params: {
       isEarlyLeave: attendance.isEarlyLeave || false,
       isRemote: attendance.isRemote || false,
       notes: attendance.notes,
+      sessions,
+      sessionCount: sessions.length || 1,
     };
   }
 
@@ -115,6 +145,8 @@ function computeStatus(params: {
       isEarlyLeave: attendance.isEarlyLeave || false,
       isRemote: attendance.isRemote || false,
       notes: attendance.notes,
+      sessions,
+      sessionCount: sessions.length || 1,
     };
   }
 
@@ -133,6 +165,8 @@ function computeStatus(params: {
       isEarlyLeave: false,
       isRemote: false,
       notes: 'Week-off day',
+      sessions: [],
+      sessionCount: 0,
     };
   }
 
@@ -151,6 +185,8 @@ function computeStatus(params: {
       isEarlyLeave: false,
       isRemote: false,
       notes: holiday.name,
+      sessions: [],
+      sessionCount: 0,
     };
   }
 
@@ -170,6 +206,8 @@ function computeStatus(params: {
       isEarlyLeave: false,
       isRemote: false,
       notes: `${leave.leaveType?.name || 'Leave'}${isHalfDayLeave ? ' (half-day)' : ''}`,
+      sessions: [],
+      sessionCount: 0,
     };
   }
 
@@ -187,6 +225,8 @@ function computeStatus(params: {
     isEarlyLeave: false,
     isRemote: false,
     notes: null,
+    sessions: [],
+    sessionCount: 0,
   };
 }
 
@@ -343,6 +383,8 @@ export async function aggregateDailyStatusForDate(
           isLate: statusRecord.isLate,
           isEarlyLeave: statusRecord.isEarlyLeave,
           isRemote: statusRecord.isRemote,
+          sessions: statusRecord.sessions.length > 0 ? statusRecord.sessions : undefined,
+          sessionCount: statusRecord.sessionCount,
           sourceType: 'computed',
           notes: statusRecord.notes,
           computedAt: new Date(),
@@ -357,6 +399,8 @@ export async function aggregateDailyStatusForDate(
           isLate: statusRecord.isLate,
           isEarlyLeave: statusRecord.isEarlyLeave,
           isRemote: statusRecord.isRemote,
+          sessions: statusRecord.sessions.length > 0 ? statusRecord.sessions : undefined,
+          sessionCount: statusRecord.sessionCount,
           notes: statusRecord.notes,
           computedAt: new Date(),
           updatedAt: new Date(),
@@ -517,6 +561,8 @@ export async function recalculateDailyStatus(
           isLate: statusRecord.isLate,
           isEarlyLeave: statusRecord.isEarlyLeave,
           isRemote: statusRecord.isRemote,
+          sessions: statusRecord.sessions.length > 0 ? statusRecord.sessions : undefined,
+          sessionCount: statusRecord.sessionCount,
           sourceType: 'computed',
           notes: statusRecord.notes,
           computedAt: new Date(),
@@ -531,6 +577,8 @@ export async function recalculateDailyStatus(
           isLate: statusRecord.isLate,
           isEarlyLeave: statusRecord.isEarlyLeave,
           isRemote: statusRecord.isRemote,
+          sessions: statusRecord.sessions.length > 0 ? statusRecord.sessions : undefined,
+          sessionCount: statusRecord.sessionCount,
           notes: statusRecord.notes,
           computedAt: new Date(),
           updatedAt: new Date(),
