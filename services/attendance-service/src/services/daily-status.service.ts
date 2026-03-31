@@ -11,7 +11,7 @@
  *   WO = Week-Off (weekend or declared off day)
  */
 
-import { PrismaClient } from '.prisma/tenant-client';
+import { PrismaClient, Prisma } from '.prisma/tenant-client';
 import {
   format,
   parseISO,
@@ -383,7 +383,7 @@ export async function aggregateDailyStatusForDate(
           isLate: statusRecord.isLate,
           isEarlyLeave: statusRecord.isEarlyLeave,
           isRemote: statusRecord.isRemote,
-          sessions: statusRecord.sessions.length > 0 ? statusRecord.sessions : undefined,
+          sessions: statusRecord.sessions.length > 0 ? (statusRecord.sessions as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
           sessionCount: statusRecord.sessionCount,
           sourceType: 'computed',
           notes: statusRecord.notes,
@@ -399,7 +399,7 @@ export async function aggregateDailyStatusForDate(
           isLate: statusRecord.isLate,
           isEarlyLeave: statusRecord.isEarlyLeave,
           isRemote: statusRecord.isRemote,
-          sessions: statusRecord.sessions.length > 0 ? statusRecord.sessions : undefined,
+          sessions: statusRecord.sessions.length > 0 ? (statusRecord.sessions as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
           sessionCount: statusRecord.sessionCount,
           notes: statusRecord.notes,
           computedAt: new Date(),
@@ -561,7 +561,7 @@ export async function recalculateDailyStatus(
           isLate: statusRecord.isLate,
           isEarlyLeave: statusRecord.isEarlyLeave,
           isRemote: statusRecord.isRemote,
-          sessions: statusRecord.sessions.length > 0 ? statusRecord.sessions : undefined,
+          sessions: statusRecord.sessions.length > 0 ? (statusRecord.sessions as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
           sessionCount: statusRecord.sessionCount,
           sourceType: 'computed',
           notes: statusRecord.notes,
@@ -577,7 +577,7 @@ export async function recalculateDailyStatus(
           isLate: statusRecord.isLate,
           isEarlyLeave: statusRecord.isEarlyLeave,
           isRemote: statusRecord.isRemote,
-          sessions: statusRecord.sessions.length > 0 ? statusRecord.sessions : undefined,
+          sessions: statusRecord.sessions.length > 0 ? (statusRecord.sessions as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
           sessionCount: statusRecord.sessionCount,
           notes: statusRecord.notes,
           computedAt: new Date(),
