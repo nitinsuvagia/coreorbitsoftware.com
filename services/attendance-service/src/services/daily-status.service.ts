@@ -232,16 +232,54 @@ export async function aggregateDailyStatusForDate(
 
   const employeeIds = employees.map((e) => e.id);
 
-  // Fetch all attendance records for the date
+  // Fetch all attendance records for the date (can be multiple sessions per employee)
   const attendanceRecords = await prisma.attendance.findMany({
     where: {
       employeeId: { in: employeeIds },
       date: targetDate,
     },
+    orderBy: { checkInTime: 'asc' },
   });
-  const attendanceByEmployee = new Map(
-    attendanceRecords.map((a) => [a.employeeId, a])
-  );
+  
+  // Group attendance records by employee and aggregate multiple sessions
+  const attendanceByEmployee = new Map<string, any>();
+  for (const record of attendanceRecords) {
+    const existing = attendanceByEmployee.get(record.employeeId);
+    if (!existing) {
+      // First session - use as base
+      attendanceByEmployee.set(record.employeeId, {
+        ...record,
+        // Track all sessions for proper aggregation
+        _sessions: [record],
+      });
+    } else {
+      // Additional session - merge data
+      existing._sessions.push(record);
+      
+      // Use earliest check-in time
+      if (record.checkInTime && (!existing.checkInTime || record.checkInTime < existing.checkInTime)) {
+        existing.checkInTime = record.checkInTime;
+      }
+      
+      // Use latest check-out time
+      if (record.checkOutTime && (!existing.checkOutTime || record.checkOutTime > existing.checkOutTime)) {
+        existing.checkOutTime = record.checkOutTime;
+      }
+      
+      // Sum work minutes from all sessions
+      existing.workMinutes = (existing.workMinutes || 0) + (record.workMinutes || 0);
+      
+      // If any session is present/late, the day counts as present
+      if (record.status === 'present' || record.status === 'late') {
+        existing.status = record.status === 'late' ? 'late' : existing.status === 'late' ? 'late' : 'present';
+      }
+      
+      // Aggregate boolean flags (OR logic)
+      existing.isLate = existing.isLate || record.isLate;
+      existing.isRemote = existing.isRemote || record.isRemote;
+      existing.isEarlyLeave = existing.isEarlyLeave || record.isEarlyLeave;
+    }
+  }
 
   // Fetch all approved leaves covering this date
   const leaveRecords = await prisma.leaveRequest.findMany({
@@ -358,16 +396,52 @@ export async function recalculateDailyStatus(
   const nonWorkingDays = await getNonWorkingDays(tenantSlug);
   const days = eachDayOfInterval({ start: fromDate, end: toDate });
 
-  // Fetch all attendance records for the date range
+  // Fetch all attendance records for the date range (can be multiple sessions per day)
   const attendanceRecords = await prisma.attendance.findMany({
     where: {
       employeeId,
       date: { gte: fromDate, lte: toDate },
     },
+    orderBy: { checkInTime: 'asc' },
   });
-  const attendanceByDate = new Map(
-    attendanceRecords.map((a) => [format(a.date, 'yyyy-MM-dd'), a])
-  );
+  
+  // Group and aggregate multiple sessions per date
+  const attendanceByDate = new Map<string, any>();
+  for (const record of attendanceRecords) {
+    const dateKey = format(record.date, 'yyyy-MM-dd');
+    const existing = attendanceByDate.get(dateKey);
+    if (!existing) {
+      attendanceByDate.set(dateKey, {
+        ...record,
+        _sessions: [record],
+      });
+    } else {
+      existing._sessions.push(record);
+      
+      // Use earliest check-in time
+      if (record.checkInTime && (!existing.checkInTime || record.checkInTime < existing.checkInTime)) {
+        existing.checkInTime = record.checkInTime;
+      }
+      
+      // Use latest check-out time
+      if (record.checkOutTime && (!existing.checkOutTime || record.checkOutTime > existing.checkOutTime)) {
+        existing.checkOutTime = record.checkOutTime;
+      }
+      
+      // Sum work minutes from all sessions
+      existing.workMinutes = (existing.workMinutes || 0) + (record.workMinutes || 0);
+      
+      // If any session is present/late, the day counts as present
+      if (record.status === 'present' || record.status === 'late') {
+        existing.status = record.status === 'late' ? 'late' : existing.status === 'late' ? 'late' : 'present';
+      }
+      
+      // Aggregate boolean flags
+      existing.isLate = existing.isLate || record.isLate;
+      existing.isRemote = existing.isRemote || record.isRemote;
+      existing.isEarlyLeave = existing.isEarlyLeave || record.isEarlyLeave;
+    }
+  }
 
   // Fetch all approved leaves covering this date range
   const leaveRecords = await prisma.leaveRequest.findMany({
