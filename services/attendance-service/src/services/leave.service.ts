@@ -560,6 +560,24 @@ export async function requestLeave(
   if (!employee || !allowedStatuses.includes(employee.status)) {
     throw new Error('Employee not found or inactive');
   }
+
+  // Block all paid leaves for RESIGNED employees (only LWP allowed)
+  if (employee.status === 'RESIGNED' || employee.status === 'NOTICE_PERIOD') {
+    if (leaveType.isPaid) {
+      throw new Error('Resigned/notice-period employees can only apply for Leave Without Pay (LWP)');
+    }
+  }
+
+  // Block paid leaves for unconfirmed / probation employees (only LWP allowed)
+  // Employee is unconfirmed if: no confirmationDate OR confirmationDate is in the future
+  const isUnconfirmed = !employee.confirmationDate || new Date(employee.confirmationDate) > today;
+  if (isUnconfirmed && employee.status !== 'NOTICE_PERIOD') {
+    if (leaveType.isPaid) {
+      throw new Error(
+        'Employees on probation (not yet confirmed) cannot apply for paid leaves. Only Leave Without Pay (LWP) is allowed until confirmation.'
+      );
+    }
+  }
   
   // Initialize and get balance
   const year = fromDate.getFullYear();
@@ -1405,10 +1423,10 @@ export async function runMonthlyLeaveAccrual(
     };
   }
   
-  // 2. Get all active employees
+  // 2. Get all active employees (exclude resigned/terminated/retired)
   const employees = await prisma.employee.findMany({
     where: {
-      status: 'ACTIVE',
+      status: { in: ['ACTIVE', 'ON_LEAVE', 'PROBATION'] },
       deletedAt: null,
     },
     select: {
@@ -1437,27 +1455,16 @@ export async function runMonthlyLeaveAccrual(
   }> = [];
   
   for (const employee of employees) {
-    // 4. Check if probation is completed
-    let probationEndDate: Date;
+    // 4. Check if employee is confirmed
+    // An employee is confirmed ONLY if confirmationDate exists AND is on/before the accrual date.
+    // Unconfirmed / probation employees do NOT get any accrual (monthly) leaves.
+    const isConfirmed = employee.confirmationDate && new Date(employee.confirmationDate) <= accrualDate;
     
-    if (employee.probationEndDate) {
-      probationEndDate = new Date(employee.probationEndDate);
-    } else if (employee.confirmationDate) {
-      // If confirmed, probation is done — use confirmation date
-      probationEndDate = new Date(employee.confirmationDate);
-    } else {
-      // Default: joinDate + DEFAULT_PROBATION_MONTHS
-      const joinDate = new Date(employee.joinDate);
-      probationEndDate = new Date(joinDate);
-      probationEndDate.setMonth(probationEndDate.getMonth() + DEFAULT_PROBATION_MONTHS);
-    }
-    
-    // Employee must have completed probation by the accrual date
-    if (probationEndDate > accrualDate) {
+    if (!isConfirmed) {
       employeesSkipped++;
       logger.debug(
-        { employeeId: employee.id, probationEndDate: probationEndDate.toISOString() },
-        'Employee still in probation, skipping accrual'
+        { employeeId: employee.id, confirmationDate: employee.confirmationDate?.toISOString() || 'not set' },
+        'Employee not yet confirmed, skipping accrual'
       );
       continue;
     }
@@ -1651,10 +1658,13 @@ export async function processLeaveCarryForward(
     };
   }
 
-  // 2. Get all active employees
+  // 2. Get all active employees (exclude resigned/terminated)
   const employees = await prisma.employee.findMany({
-    where: { status: { in: ['active', 'Active', 'ACTIVE'] } },
-    select: { id: true, firstName: true, lastName: true },
+    where: {
+      status: { in: ['ACTIVE', 'ON_LEAVE', 'NOTICE_PERIOD'] },
+      deletedAt: null,
+    },
+    select: { id: true, firstName: true, lastName: true, confirmationDate: true },
   });
 
   let employeesProcessed = 0;
