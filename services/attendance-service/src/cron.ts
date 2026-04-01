@@ -3,12 +3,14 @@
  * 
  * Scheduled tasks:
  * - Midnight aggregation: Compute daily status for the previous day
+ * - Leave carry-forward: Process year-end leave carry-forward on April 1
  */
 
 import cron from 'node-cron';
 import { subDays, format } from 'date-fns';
 import { logger } from './utils/logger';
 import { aggregateDailyStatusForDate } from './services/daily-status.service';
+import { processLeaveCarryForward } from './services/leave.service';
 import { getMasterPrisma } from './utils/database';
 import { getTenantPrismaBySlug } from './utils/database';
 
@@ -80,6 +82,7 @@ async function runDailyStatusAggregation(): Promise<void> {
 // ============================================================================
 
 let midnightAggregationJob: cron.ScheduledTask | null = null;
+let leaveCarryForwardJob: cron.ScheduledTask | null = null;
 
 /**
  * Initialize all cron jobs
@@ -87,17 +90,31 @@ let midnightAggregationJob: cron.ScheduledTask | null = null;
 export function initializeCronJobs(): void {
   logger.info('Initializing attendance service cron jobs...');
   
-  // Run at 00:05 AM every day (server time - typically UTC)
-  // Cron expression: minute(5) hour(0) day(*) month(*) weekday(*)
+  // ---- Daily Status Aggregation ----
+  // Run at 00:05 AM IST every day (IST = UTC+5:30)
+  // This ensures Indian work-day check-outs are fully captured before aggregation
   midnightAggregationJob = cron.schedule('5 0 * * *', async () => {
-    logger.info('Midnight cron job triggered');
+    logger.info('Midnight cron job triggered (IST)');
     await runDailyStatusAggregation();
   }, {
     scheduled: true,
-    timezone: 'UTC', // Use UTC; tenant timezones handled in aggregation logic
+    timezone: 'Asia/Kolkata',
   });
   
-  logger.info('Cron jobs initialized: daily status aggregation scheduled at 00:05 UTC');
+  logger.info('Cron: daily status aggregation scheduled at 00:05 IST (18:35 UTC previous day)');
+
+  // ---- Leave Carry-Forward ----
+  // Run on April 1 at 01:00 AM IST every year (financial year starts April)
+  // Carries forward remaining leave balances from previous FY to new FY
+  leaveCarryForwardJob = cron.schedule('0 1 1 4 *', async () => {
+    logger.info('Leave carry-forward cron job triggered');
+    await runLeaveCarryForwardForAllTenants();
+  }, {
+    scheduled: true,
+    timezone: 'Asia/Kolkata',
+  });
+
+  logger.info('Cron: leave carry-forward scheduled at 01:00 IST on April 1 every year');
 }
 
 /**
@@ -110,8 +127,83 @@ export function stopCronJobs(): void {
     midnightAggregationJob.stop();
     midnightAggregationJob = null;
   }
+
+  if (leaveCarryForwardJob) {
+    leaveCarryForwardJob.stop();
+    leaveCarryForwardJob = null;
+  }
   
   logger.info('Cron jobs stopped');
+}
+
+// ============================================================================
+// LEAVE CARRY-FORWARD: AUTO-RUN FOR ALL TENANTS
+// ============================================================================
+
+/**
+ * Run leave carry-forward for ALL active tenants.
+ * Called automatically by the April 1 cron job.
+ * Previous year = currentYear - 1, new year = currentYear.
+ */
+async function runLeaveCarryForwardForAllTenants(): Promise<void> {
+  const now = new Date();
+  const newYear = now.getFullYear();     // e.g. 2026
+  const previousYear = newYear - 1;      // e.g. 2025
+
+  logger.info({ previousYear, newYear }, 'Starting leave carry-forward for all tenants');
+
+  try {
+    const masterPrisma = getMasterPrisma();
+    const tenants = await masterPrisma.tenant.findMany({
+      where: {
+        status: 'ACTIVE',
+        subscription: {
+          status: { in: ['ACTIVE', 'TRIALING'] },
+        },
+      },
+      select: { id: true, slug: true, name: true },
+    });
+
+    logger.info({ tenantCount: tenants.length }, 'Found active tenants for carry-forward');
+
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const tenant of tenants) {
+      try {
+        const tenantPrisma = await getTenantPrismaBySlug(tenant.slug);
+        const result = await processLeaveCarryForward(tenantPrisma, previousYear, newYear, false);
+
+        logger.info(
+          {
+            tenantSlug: tenant.slug,
+            previousYear,
+            newYear,
+            carryForwardsApplied: result.carryForwardsApplied,
+            employeesProcessed: result.employeesProcessed,
+          },
+          'Leave carry-forward completed for tenant'
+        );
+        successCount++;
+      } catch (error) {
+        logger.error(
+          { tenantSlug: tenant.slug, error: (error as Error).message },
+          'Failed to process leave carry-forward for tenant'
+        );
+        errorCount++;
+      }
+    }
+
+    logger.info(
+      { previousYear, newYear, successCount, errorCount, totalTenants: tenants.length },
+      'Leave carry-forward for all tenants complete'
+    );
+  } catch (error) {
+    logger.error(
+      { error: (error as Error).message },
+      'Critical error in leave carry-forward cron'
+    );
+  }
 }
 
 /**

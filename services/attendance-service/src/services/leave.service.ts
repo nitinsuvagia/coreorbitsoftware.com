@@ -1592,3 +1592,175 @@ export async function runMonthlyLeaveAccrual(
     details,
   };
 }
+
+// ============================================================================
+// LEAVE CARRY-FORWARD
+// ============================================================================
+
+/**
+ * Process leave carry-forward for all employees of a tenant.
+ *
+ * For each leave type where `carryForwardAllowed = true`:
+ *   1. Reads the remaining balance from `previousYear`
+ *      remaining = totalDays + carryForwardDays + adjustmentDays - usedDays - pendingDays
+ *   2. Caps it at `maxCarryForwardDays` (leave-type level, then env fallback)
+ *   3. Creates / updates the `newYear` LeaveBalance with `carryForwardDays` set
+ *
+ * @param prisma       Tenant-scoped Prisma client
+ * @param previousYear The financial year that just ended (e.g. 2025 for FY 2025-26)
+ * @param newYear      The financial year starting (e.g. 2026)
+ * @param dryRun       If true, only calculate – don't write to DB
+ */
+export async function processLeaveCarryForward(
+  prisma: PrismaClient,
+  previousYear: number,
+  newYear: number,
+  dryRun: boolean = false
+): Promise<{
+  previousYear: number;
+  newYear: number;
+  employeesProcessed: number;
+  carryForwardsApplied: number;
+  skippedNoBalance: number;
+  dryRun: boolean;
+  details: Array<{
+    employeeId: string;
+    employeeName: string;
+    leaveType: string;
+    leaveTypeCode: string;
+    remainingPrevYear: number;
+    maxCarryForward: number;
+    carriedForward: number;
+  }>;
+}> {
+  logger.info({ previousYear, newYear, dryRun }, 'Starting leave carry-forward processing');
+
+  // 1. Get all leave types that allow carry-forward
+  const carryForwardLeaveTypes = await prisma.leaveType.findMany({
+    where: {
+      isActive: true,
+      carryForwardAllowed: true,
+    },
+  });
+
+  if (carryForwardLeaveTypes.length === 0) {
+    logger.info('No leave types with carry-forward enabled. Nothing to process.');
+    return {
+      previousYear, newYear, employeesProcessed: 0,
+      carryForwardsApplied: 0, skippedNoBalance: 0, dryRun, details: [],
+    };
+  }
+
+  // 2. Get all active employees
+  const employees = await prisma.employee.findMany({
+    where: { status: { in: ['active', 'Active', 'ACTIVE'] } },
+    select: { id: true, firstName: true, lastName: true },
+  });
+
+  let employeesProcessed = 0;
+  let carryForwardsApplied = 0;
+  let skippedNoBalance = 0;
+  const details: Array<{
+    employeeId: string;
+    employeeName: string;
+    leaveType: string;
+    leaveTypeCode: string;
+    remainingPrevYear: number;
+    maxCarryForward: number;
+    carriedForward: number;
+  }> = [];
+
+  for (const employee of employees) {
+    employeesProcessed++;
+
+    for (const leaveType of carryForwardLeaveTypes) {
+      // 3. Get previous year balance
+      const prevBalance = await prisma.leaveBalance.findFirst({
+        where: {
+          employeeId: employee.id,
+          leaveTypeId: leaveType.id,
+          year: previousYear,
+        },
+      });
+
+      if (!prevBalance) {
+        skippedNoBalance++;
+        continue;
+      }
+
+      // 4. Calculate remaining
+      const total = Number(prevBalance.totalDays) + Number(prevBalance.carryForwardDays) + Number(prevBalance.adjustmentDays);
+      const used = Number(prevBalance.usedDays) + Number(prevBalance.pendingDays);
+      const remaining = Math.max(0, total - used);
+
+      if (remaining <= 0) {
+        skippedNoBalance++;
+        continue;
+      }
+
+      // 5. Cap at maxCarryForwardDays
+      const maxCF = leaveType.maxCarryForwardDays ?? config.leave.maxCarryForwardDays;
+      const carriedForward = Math.min(remaining, maxCF);
+
+      details.push({
+        employeeId: employee.id,
+        employeeName: `${employee.firstName} ${employee.lastName}`,
+        leaveType: leaveType.name,
+        leaveTypeCode: leaveType.code,
+        remainingPrevYear: remaining,
+        maxCarryForward: maxCF,
+        carriedForward,
+      });
+
+      if (dryRun) {
+        carryForwardsApplied++;
+        continue;
+      }
+
+      // 6. Upsert the new year's balance with carryForwardDays
+      const existingNewYearBalance = await prisma.leaveBalance.findFirst({
+        where: {
+          employeeId: employee.id,
+          leaveTypeId: leaveType.id,
+          year: newYear,
+        },
+      });
+
+      if (existingNewYearBalance) {
+        await prisma.leaveBalance.update({
+          where: { id: existingNewYearBalance.id },
+          data: {
+            carryForwardDays: carriedForward,
+            updatedAt: new Date(),
+          },
+        });
+      } else {
+        await prisma.leaveBalance.create({
+          data: {
+            id: uuidv4(),
+            employeeId: employee.id,
+            leaveTypeId: leaveType.id,
+            year: newYear,
+            totalDays: leaveType.defaultDaysPerYear,
+            usedDays: 0,
+            pendingDays: 0,
+            carryForwardDays: carriedForward,
+            adjustmentDays: 0,
+          },
+        });
+      }
+
+      carryForwardsApplied++;
+    }
+  }
+
+  logger.info({
+    previousYear, newYear, employeesProcessed,
+    carryForwardsApplied, skippedNoBalance, dryRun,
+  }, 'Leave carry-forward processing completed');
+
+  return {
+    previousYear, newYear, employeesProcessed,
+    carryForwardsApplied, skippedNoBalance, dryRun, details,
+  };
+}

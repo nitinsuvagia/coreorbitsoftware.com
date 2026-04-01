@@ -18,6 +18,7 @@ import {
   listLeaveRequests,
   getPendingApprovals,
   runMonthlyLeaveAccrual,
+  processLeaveCarryForward,
 } from '../services/leave.service';
 import { logger } from '../utils/logger';
 
@@ -644,6 +645,108 @@ router.post(
       });
     } catch (error) {
       logger.error({ error: (error as Error).message }, 'Monthly leave accrual failed');
+      next(error);
+    }
+  }
+);
+
+// ============================================================================
+// LEAVE CARRY-FORWARD ROUTES
+// ============================================================================
+
+/**
+ * POST /leaves/carry-forward
+ * Process leave carry-forward from previous financial year to new year.
+ * Reads remaining balances for each employee and carries forward as per
+ * leave type configuration (carryForwardAllowed, maxCarryForwardDays).
+ *
+ * Body:
+ *   previousYear: number  (the FY that ended, e.g. 2025)
+ *   newYear: number        (the FY starting, e.g. 2026)
+ *   dryRun?: boolean       (default false — set true to preview without writing)
+ */
+router.post(
+  '/carry-forward',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
+
+      const { previousYear, newYear, dryRun } = req.body;
+
+      if (!previousYear || !newYear) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'INVALID_INPUT', message: 'previousYear and newYear are required' },
+        });
+      }
+
+      if (newYear <= previousYear) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'INVALID_INPUT', message: 'newYear must be greater than previousYear' },
+        });
+      }
+
+      const result = await processLeaveCarryForward(
+        prisma,
+        parseInt(previousYear),
+        parseInt(newYear),
+        dryRun === true
+      );
+
+      res.json({
+        success: true,
+        message: dryRun
+          ? `Dry-run complete: ${result.carryForwardsApplied} carry-forwards would be applied`
+          : `Carry-forward complete: ${result.carryForwardsApplied} balances updated`,
+        data: result,
+      });
+    } catch (error) {
+      logger.error({ error: (error as Error).message }, 'Leave carry-forward failed');
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /leaves/carry-forward/preview
+ * Preview / dry-run of carry-forward (alias for carry-forward with dryRun=true)
+ *
+ * Body:
+ *   previousYear: number
+ *   newYear: number
+ */
+router.post(
+  '/carry-forward/preview',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const tenantSlug = (req as any).tenantSlug;
+      const prisma = await getTenantPrismaBySlug(tenantSlug);
+
+      const { previousYear, newYear } = req.body;
+
+      if (!previousYear || !newYear) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'INVALID_INPUT', message: 'previousYear and newYear are required' },
+        });
+      }
+
+      const result = await processLeaveCarryForward(
+        prisma,
+        parseInt(previousYear),
+        parseInt(newYear),
+        true // always dry-run
+      );
+
+      res.json({
+        success: true,
+        message: `Preview: ${result.carryForwardsApplied} carry-forwards would be applied`,
+        data: result,
+      });
+    } catch (error) {
+      logger.error({ error: (error as Error).message }, 'Leave carry-forward preview failed');
       next(error);
     }
   }
