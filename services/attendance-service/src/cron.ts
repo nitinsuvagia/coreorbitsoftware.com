@@ -33,7 +33,7 @@ async function runDailyStatusAggregation(): Promise<void> {
     const masterPrisma = getMasterPrisma();
     const tenants = await masterPrisma.tenant.findMany({
       where: { 
-        status: 'ACTIVE',
+        status: { in: ['ACTIVE', 'TRIAL'] },
         subscription: {
           status: { in: ['ACTIVE', 'TRIALING'] },
         },
@@ -156,7 +156,7 @@ async function runLeaveCarryForwardForAllTenants(): Promise<void> {
     const masterPrisma = getMasterPrisma();
     const tenants = await masterPrisma.tenant.findMany({
       where: {
-        status: 'ACTIVE',
+        status: { in: ['ACTIVE', 'TRIAL'] },
         subscription: {
           status: { in: ['ACTIVE', 'TRIALING'] },
         },
@@ -223,7 +223,7 @@ export async function triggerManualAggregation(targetDate?: Date): Promise<{
   const masterPrisma = getMasterPrisma();
   const tenants = await masterPrisma.tenant.findMany({
     where: { 
-      status: 'ACTIVE',
+      status: { in: ['ACTIVE', 'TRIAL'] },
       subscription: {
         status: { in: ['ACTIVE', 'TRIAL'] },
       },
