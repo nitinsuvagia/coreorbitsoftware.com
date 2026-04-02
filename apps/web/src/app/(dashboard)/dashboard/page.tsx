@@ -207,10 +207,10 @@ function AdminDashboard({ firstName }: { firstName?: string }) {
 
       {/* Content Grid - Schedule and Tasks */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-        {/* Today's Schedule - spans 4 columns */}
+        {/* Today's Schedule - spans 3 columns */}
         <TodaySchedule loading={loading} />
 
-        {/* My Tasks / Todo List - spans 3 columns */}
+        {/* My Tasks / Todo List - spans 4 columns */}
         <TodoList loading={loading} onTaskChange={refetch} />
       </div>
 
@@ -258,20 +258,22 @@ function EmployeeDashboard({ firstName }: { firstName?: string }) {
 
       {/* Content Grid - Schedule + Profile | Tasks */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-        {/* Today's Schedule - spans 4 columns */}
+        {/* Today's Schedule - spans 3 columns */}
         <TodaySchedule loading={loading} />
 
-        {/* My Tasks / Todo List - spans 3 columns */}
+        {/* My Tasks / Todo List - spans 4 columns */}
         <TodoList loading={loading} onTaskChange={refetch} />
       </div>
 
       {/* Profile Card + Calendar */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {/* Employee Profile & Leave Balances */}
-        <EmployeeInfoCard employee={employee} leave={leave} loading={loading} />
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {/* Employee Profile & Leave Balances - spans 1 column (25%) */}
+        <div className="lg:col-span-1">
+          <EmployeeInfoCard employee={employee} leave={leave} loading={loading} />
+        </div>
 
-        {/* Calendar - spans 2 columns */}
-        <div className="lg:col-span-2">
+        {/* Calendar - spans 3 columns (75%) */}
+        <div className="lg:col-span-3">
           <CalendarSection loading={loading} />
         </div>
       </div>

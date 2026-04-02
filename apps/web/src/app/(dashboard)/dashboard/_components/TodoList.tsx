@@ -701,7 +701,7 @@ export function TodoList({ loading: externalLoading, onTaskChange }: TodoListPro
 
   return (
     <>
-      <Card className="col-span-3">
+      <Card className="col-span-4">
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <div>
             <CardTitle className="flex items-center gap-2">
