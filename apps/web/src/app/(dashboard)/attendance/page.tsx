@@ -58,6 +58,14 @@ export default function AttendancePage() {
     limit: 50,
   });
 
+  // Always fetch today's attendance (independent of month navigation)
+  const todayStr = getTodayInTimezone(timezone);
+  const { data: todayAttendanceData } = useMyAttendance({
+    startDate: todayStr,
+    endDate: todayStr,
+    limit: 10,
+  });
+
   const { data: leaveBalanceRaw } = useLeaveBalance();
   const leaveBalance = Array.isArray(leaveBalanceRaw) ? leaveBalanceRaw : (leaveBalanceRaw as any)?.data || [];
   const { data: leavesDataRaw } = useMyLeaves({ status: 'pending', limit: 5 });
@@ -72,9 +80,10 @@ export default function AttendancePage() {
   const attendance = attendanceData?.items || [];
   const pendingLeaves = (leavesDataRaw as any)?.data || (Array.isArray(leavesDataRaw) ? leavesDataRaw : []);
 
-  // Calculate today's status — prefer the open (no checkout) session
-  const today = getTodayInTimezone(timezone);
-  const todayRecords = attendance.filter((r) => r.date?.slice(0, 10) === today);
+  // Calculate today's status from the dedicated today query (not affected by month navigation)
+  const today = todayStr;
+  const todayItems = todayAttendanceData?.items || [];
+  const todayRecords = todayItems.filter((r) => r.date?.slice(0, 10) === today);
   const todayRecord = todayRecords.find((r) => r.checkIn && !r.checkOut) || todayRecords[0] || null;
 
   const isCheckedIn = !!(todayRecord?.checkIn && !todayRecord?.checkOut);
