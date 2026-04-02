@@ -262,6 +262,13 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session):
       },
     });
   }
+
+  // Update tenant status to ACTIVE when subscription is activated
+  await masterPrisma.tenant.update({
+    where: { id: tenantId },
+    data: { status: 'ACTIVE', updatedAt: new Date() },
+  });
+  logger.info({ tenantId }, 'Tenant status updated to ACTIVE after checkout');
   
   // Get card details from payment intent
   let cardBrand: string | null = null;

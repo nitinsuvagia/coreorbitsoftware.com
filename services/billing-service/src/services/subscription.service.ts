@@ -730,6 +730,15 @@ export async function handleTrialsEnding(): Promise<number> {
         updatedAt: now,
       },
     });
+
+    // Update tenant status when trial converts to active
+    if (hasPaymentMethod) {
+      await masterPrisma.tenant.update({
+        where: { id: subscription.tenantId },
+        data: { status: 'ACTIVE', updatedAt: now },
+      });
+      logger.info({ tenantId: subscription.tenantId }, 'Tenant status updated to ACTIVE after trial ended');
+    }
     
     await publishEvent('subscription.trial_ended', {
       subscriptionId: subscription.id,
