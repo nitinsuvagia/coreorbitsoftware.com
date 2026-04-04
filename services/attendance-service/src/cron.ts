@@ -55,17 +55,37 @@ async function autoCloseOpenSessions(
     );
 
     for (const session of openSessions) {
-      // 9 hours + random 3-18 minutes
+      // Get all CLOSED sessions for this employee on the same date
+      const closedSessions = await prisma.attendance.findMany({
+        where: {
+          employeeId: session.employeeId,
+          date: new Date(dateKey),
+          checkOutTime: { not: null },
+        },
+        select: { workMinutes: true },
+      });
+
+      // Sum up already-worked minutes from closed sessions
+      const alreadyWorked = closedSessions.reduce(
+        (sum: number, s: any) => sum + (s.workMinutes || 0),
+        0
+      );
+
+      // Target: 540 min (9 hrs) + random 3-18 min for the whole day
       const randomMinutes = Math.floor(Math.random() * 16) + 3; // 3..18
-      const totalMinutes = 540 + randomMinutes; // 540 = 9 hours
+      const totalDayTarget = 540 + randomMinutes;
+
+      // This open session should fill the remaining gap
+      const sessionMinutes = Math.max(60, totalDayTarget - alreadyWorked); // min 1 hour
+
       const checkIn = new Date(session.checkInTime);
-      const checkOut = new Date(checkIn.getTime() + totalMinutes * 60000);
+      const checkOut = new Date(checkIn.getTime() + sessionMinutes * 60000);
 
       await prisma.attendance.update({
         where: { id: session.id },
         data: {
           checkOutTime: checkOut,
-          workMinutes: totalMinutes,
+          workMinutes: sessionMinutes,
           updatedAt: new Date(),
         },
       });
@@ -75,9 +95,11 @@ async function autoCloseOpenSessions(
           tenantSlug,
           employeeId: session.employeeId,
           date: dateKey,
+          alreadyWorked,
+          sessionMinutes,
+          totalDay: alreadyWorked + sessionMinutes,
           checkIn: checkIn.toISOString(),
           checkOut: checkOut.toISOString(),
-          workMinutes: totalMinutes,
         },
         'Auto-closed open session'
       );
