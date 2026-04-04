@@ -4549,22 +4549,24 @@ router.patch('/:id/onboarding-checklist/tasks/:taskId', async (req: Request, res
       data: updateData,
     });
 
-    // Check if all tasks are now completed - if so, activate the employee
+    // Check if all tasks (except OTHER category) are completed - if so, activate the employee
     if (status === 'COMPLETED') {
       const allTasks = await prisma.onboardingTask.findMany({
         where: { checklistId: checklist.id },
-        select: { status: true },
+        select: { status: true, category: true },
       });
       
-      const allCompleted = allTasks.every(t => t.status === 'COMPLETED');
+      // Only consider non-OTHER tasks for activation
+      const requiredTasks = allTasks.filter(t => t.category !== 'OTHER');
+      const allRequiredCompleted = requiredTasks.length > 0 && requiredTasks.every(t => t.status === 'COMPLETED');
       
-      if (allCompleted) {
+      if (allRequiredCompleted) {
         // Change employee status from ONBOARDING to ACTIVE
         await prisma.employee.update({
           where: { id },
           data: { status: 'ACTIVE' },
         });
-        logger.info({ employeeId: id }, 'All onboarding tasks completed - employee status changed to ACTIVE');
+        logger.info({ employeeId: id }, 'All required onboarding tasks completed (excluding OTHER) - employee status changed to ACTIVE');
       }
     }
 
