@@ -26,6 +26,75 @@ function getNowInIST(): Date {
   return new Date(utcMs + 330 * 60000);
 }
 
+/**
+ * Auto-close open attendance sessions for a given date.
+ * If an employee checked in but never checked out, set:
+ *   check_out_time = check_in_time + 9 hours + random(3..18) minutes
+ *   work_minutes   = 540 + that same random offset
+ */
+async function autoCloseOpenSessions(
+  prisma: any,
+  tenantSlug: string,
+  dateKey: string
+): Promise<void> {
+  try {
+    const openSessions = await prisma.attendance.findMany({
+      where: {
+        date: new Date(dateKey),
+        checkOutTime: null,
+        checkInTime: { not: null },
+      },
+      select: { id: true, employeeId: true, checkInTime: true },
+    });
+
+    if (openSessions.length === 0) return;
+
+    logger.info(
+      { tenantSlug, date: dateKey, count: openSessions.length },
+      'Auto-closing open attendance sessions'
+    );
+
+    for (const session of openSessions) {
+      // 9 hours + random 3-18 minutes
+      const randomMinutes = Math.floor(Math.random() * 16) + 3; // 3..18
+      const totalMinutes = 540 + randomMinutes; // 540 = 9 hours
+      const checkIn = new Date(session.checkInTime);
+      const checkOut = new Date(checkIn.getTime() + totalMinutes * 60000);
+
+      await prisma.attendance.update({
+        where: { id: session.id },
+        data: {
+          checkOutTime: checkOut,
+          workMinutes: totalMinutes,
+          updatedAt: new Date(),
+        },
+      });
+
+      logger.debug(
+        {
+          tenantSlug,
+          employeeId: session.employeeId,
+          date: dateKey,
+          checkIn: checkIn.toISOString(),
+          checkOut: checkOut.toISOString(),
+          workMinutes: totalMinutes,
+        },
+        'Auto-closed open session'
+      );
+    }
+
+    logger.info(
+      { tenantSlug, date: dateKey, closed: openSessions.length },
+      'Auto-close open sessions complete'
+    );
+  } catch (error) {
+    logger.error(
+      { tenantSlug, date: dateKey, error: (error as Error).message },
+      'Failed to auto-close open sessions'
+    );
+  }
+}
+
 // ============================================================================
 // CRON JOB: MIDNIGHT DAILY STATUS AGGREGATION
 // ============================================================================
@@ -63,6 +132,11 @@ async function runDailyStatusAggregation(): Promise<void> {
     for (const tenant of tenants) {
       try {
         const tenantPrisma = await getTenantPrismaBySlug(tenant.slug);
+
+        // Auto-checkout: close any open sessions (check_out_time IS NULL) for yesterday
+        // Sets checkout = check_in + 9hrs + random 3-18 min, work_minutes accordingly
+        await autoCloseOpenSessions(tenantPrisma, tenant.slug, dateKey);
+
         const result = await aggregateDailyStatusForDate(tenantPrisma, tenant.slug, yesterday);
         
         logger.info(
