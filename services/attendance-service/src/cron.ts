@@ -14,6 +14,18 @@ import { processLeaveCarryForward } from './services/leave.service';
 import { getMasterPrisma } from './utils/database';
 import { getTenantPrismaBySlug } from './utils/database';
 
+/**
+ * Get the current date/time in IST (UTC+5:30).
+ * The cron runs in IST timezone, so we need IST "now" to correctly
+ * compute "yesterday" relative to the Indian business day.
+ */
+function getNowInIST(): Date {
+  const now = new Date();
+  // IST offset = +5:30 = +330 minutes
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+  return new Date(utcMs + 330 * 60000);
+}
+
 // ============================================================================
 // CRON JOB: MIDNIGHT DAILY STATUS AGGREGATION
 // ============================================================================
@@ -23,7 +35,9 @@ import { getTenantPrismaBySlug } from './utils/database';
  * Triggered at 00:05 AM every day (5 minutes after midnight to ensure all check-outs are recorded)
  */
 async function runDailyStatusAggregation(): Promise<void> {
-  const yesterday = subDays(new Date(), 1);
+  // Use IST "now" so that subDays gives yesterday in IST, not UTC
+  const nowInIST = getNowInIST();
+  const yesterday = subDays(nowInIST, 1);
   const dateKey = format(yesterday, 'yyyy-MM-dd');
   
   logger.info({ date: dateKey }, 'Starting scheduled daily status aggregation for all tenants');
@@ -91,17 +105,17 @@ export function initializeCronJobs(): void {
   logger.info('Initializing attendance service cron jobs...');
   
   // ---- Daily Status Aggregation ----
-  // Run at 00:05 AM IST every day (IST = UTC+5:30)
-  // This ensures Indian work-day check-outs are fully captured before aggregation
+  // Run at 00:05 AM UTC every day
+  // Date calculation uses IST to determine "yesterday" for Indian business day
   midnightAggregationJob = cron.schedule('5 0 * * *', async () => {
-    logger.info('Midnight cron job triggered (IST)');
+    logger.info('Midnight cron job triggered (UTC)');
     await runDailyStatusAggregation();
   }, {
     scheduled: true,
-    timezone: 'Asia/Kolkata',
+    timezone: 'UTC',
   });
   
-  logger.info('Cron: daily status aggregation scheduled at 00:05 IST (18:35 UTC previous day)');
+  logger.info('Cron: daily status aggregation scheduled at 00:05 UTC (05:35 IST)');
 
   // ---- Leave Carry-Forward ----
   // Run on April 1 at 01:00 AM IST every year (financial year starts April)
