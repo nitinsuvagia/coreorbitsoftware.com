@@ -1377,7 +1377,7 @@ export function TodoList({ loading: externalLoading, onTaskChange, firstName }: 
           onShowCompleted={handleShowCompleted}
           onClose={() => setExpanded(false)}
         />
-      )
+      )}
 
       {/* Completed Tasks Dialog */}
       <Dialog open={completedDialogOpen} onOpenChange={setCompletedDialogOpen}>
