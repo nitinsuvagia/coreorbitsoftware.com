@@ -8,6 +8,12 @@
 -- Ensure uuid support (gen_random_uuid is built-in for PG13+, but enable extension as fallback)
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
+-- Drop tables from any failed previous run (safe — CASCADE only drops FKs, not other tables)
+DROP TABLE IF EXISTS "offboarding_checklist_items" CASCADE;
+DROP TABLE IF EXISTS "offboardings" CASCADE;
+DROP TABLE IF EXISTS "resignations" CASCADE;
+DROP TABLE IF EXISTS "offboarding_checklist_templates" CASCADE;
+
 -- Resignation Status Enum
 DO $$ BEGIN
   CREATE TYPE "ResignationStatus" AS ENUM (
@@ -45,14 +51,14 @@ END $$;
 -- RESIGNATIONS TABLE
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS "resignations" (
-    "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    "employee_id" UUID NOT NULL REFERENCES "employees"("id") ON DELETE CASCADE,
+    "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    "employee_id" TEXT NOT NULL REFERENCES "employees"("id") ON DELETE CASCADE,
     
     -- Status tracking
     "status" "ResignationStatus" NOT NULL DEFAULT 'ACTIVATED',
     
     -- HR Activation
-    "activated_by" UUID NOT NULL,                       -- HR/Admin who activated
+    "activated_by" TEXT NOT NULL,                       -- HR/Admin who activated
     "activated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "activation_notes" TEXT,                             -- HR notes when activating
     
@@ -63,7 +69,7 @@ CREATE TABLE IF NOT EXISTS "resignations" (
     "resignation_letter_url" TEXT,                       -- Uploaded resignation letter
     
     -- HR Review & Finalization
-    "reviewed_by" UUID,                                  -- HR who reviewed
+    "reviewed_by" TEXT,                                  -- HR who reviewed
     "reviewed_at" TIMESTAMPTZ,
     "hr_summary" TEXT,                                   -- HR summary from discussion with PM/TL/Employee
     "hr_notes" TEXT,                                     -- Additional HR notes
@@ -75,7 +81,7 @@ CREATE TABLE IF NOT EXISTS "resignations" (
     "withdrawn_at" TIMESTAMPTZ,
     "withdrawal_reason" TEXT,
     "cancelled_at" TIMESTAMPTZ,
-    "cancelled_by" UUID,
+    "cancelled_by" TEXT,
     "cancellation_reason" TEXT,
     
     -- Metadata
@@ -93,19 +99,19 @@ CREATE INDEX IF NOT EXISTS "idx_resignations_activated_at" ON "resignations"("ac
 -- OFFBOARDING TABLE (linked to resignation)
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS "offboardings" (
-    "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    "employee_id" UUID NOT NULL REFERENCES "employees"("id") ON DELETE CASCADE,
-    "resignation_id" UUID REFERENCES "resignations"("id") ON DELETE SET NULL,
+    "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    "employee_id" TEXT NOT NULL REFERENCES "employees"("id") ON DELETE CASCADE,
+    "resignation_id" TEXT REFERENCES "resignations"("id") ON DELETE SET NULL,
     
     -- Status
     "status" "OffboardingStatus" NOT NULL DEFAULT 'NOT_STARTED',
     
     -- Initiated by HR
-    "started_by" UUID,
+    "started_by" TEXT,
     "started_at" TIMESTAMPTZ,
     
     -- Completion
-    "completed_by" UUID,
+    "completed_by" TEXT,
     "completed_at" TIMESTAMPTZ,
     "completion_notes" TEXT,
     
@@ -123,8 +129,8 @@ CREATE INDEX IF NOT EXISTS "idx_offboardings_status" ON "offboardings"("status")
 -- OFFBOARDING CHECKLIST ITEMS
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS "offboarding_checklist_items" (
-    "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    "offboarding_id" UUID NOT NULL REFERENCES "offboardings"("id") ON DELETE CASCADE,
+    "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    "offboarding_id" TEXT NOT NULL REFERENCES "offboardings"("id") ON DELETE CASCADE,
     
     -- Item details
     "category" VARCHAR(100) NOT NULL,             -- e.g., 'IT', 'HR', 'Finance', 'Admin', 'Knowledge Transfer'
@@ -134,7 +140,7 @@ CREATE TABLE IF NOT EXISTS "offboarding_checklist_items" (
     
     -- Status
     "status" "ChecklistItemStatus" NOT NULL DEFAULT 'PENDING',
-    "completed_by" UUID,
+    "completed_by" TEXT,
     "completed_at" TIMESTAMPTZ,
     "notes" TEXT,
     
@@ -149,7 +155,7 @@ CREATE INDEX IF NOT EXISTS "idx_offboarding_checklist_offboarding_id" ON "offboa
 -- (Used to seed default items when offboarding is started)
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS "offboarding_checklist_templates" (
-    "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     "category" VARCHAR(100) NOT NULL,
     "title" VARCHAR(500) NOT NULL,
     "description" TEXT,
