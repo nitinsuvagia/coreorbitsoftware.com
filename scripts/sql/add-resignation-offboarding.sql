@@ -5,6 +5,9 @@
 -- Flow: HR activates → Employee submits → HR reviews & finalizes → Notice period → Offboarding → Deactivation
 -- =============================================================================
 
+-- Ensure uuid support (gen_random_uuid is built-in for PG13+, but enable extension as fallback)
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
 -- Resignation Status Enum
 DO $$ BEGIN
   CREATE TYPE "ResignationStatus" AS ENUM (
@@ -42,7 +45,7 @@ END $$;
 -- RESIGNATIONS TABLE
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS "resignations" (
-    "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     "employee_id" UUID NOT NULL REFERENCES "employees"("id") ON DELETE CASCADE,
     
     -- Status tracking
@@ -90,7 +93,7 @@ CREATE INDEX IF NOT EXISTS "idx_resignations_activated_at" ON "resignations"("ac
 -- OFFBOARDING TABLE (linked to resignation)
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS "offboardings" (
-    "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     "employee_id" UUID NOT NULL REFERENCES "employees"("id") ON DELETE CASCADE,
     "resignation_id" UUID REFERENCES "resignations"("id") ON DELETE SET NULL,
     
@@ -120,7 +123,7 @@ CREATE INDEX IF NOT EXISTS "idx_offboardings_status" ON "offboardings"("status")
 -- OFFBOARDING CHECKLIST ITEMS
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS "offboarding_checklist_items" (
-    "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     "offboarding_id" UUID NOT NULL REFERENCES "offboardings"("id") ON DELETE CASCADE,
     
     -- Item details
@@ -146,7 +149,7 @@ CREATE INDEX IF NOT EXISTS "idx_offboarding_checklist_offboarding_id" ON "offboa
 -- (Used to seed default items when offboarding is started)
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS "offboarding_checklist_templates" (
-    "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     "category" VARCHAR(100) NOT NULL,
     "title" VARCHAR(500) NOT NULL,
     "description" TEXT,
