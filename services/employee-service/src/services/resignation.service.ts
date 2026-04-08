@@ -80,7 +80,7 @@ export async function activateResignation(
     FROM employees e
     LEFT JOIN departments d ON e.department_id = d.id
     LEFT JOIN designations des ON e.designation_id = des.id
-    WHERE e.id = ${employeeId}::uuid AND e.deleted_at IS NULL
+    WHERE e.id = ${employeeId} AND e.deleted_at IS NULL
   `;
 
   if (!employee || (employee as any[]).length === 0) {
@@ -96,7 +96,7 @@ export async function activateResignation(
   // Check if there's already an active resignation
   const existingResignation = await (prisma as any).$queryRaw`
     SELECT id, status FROM resignations 
-    WHERE employee_id = ${employeeId}::uuid 
+    WHERE employee_id = ${employeeId} 
       AND status NOT IN ('WITHDRAWN', 'CANCELLED')
     LIMIT 1
   `;
@@ -108,7 +108,7 @@ export async function activateResignation(
   // Create resignation record
   const result = await (prisma as any).$queryRaw`
     INSERT INTO resignations (employee_id, status, activated_by, activated_at, activation_notes)
-    VALUES (${employeeId}::uuid, 'ACTIVATED', ${performedBy}::uuid, NOW(), ${activationNotes})
+    VALUES (${employeeId}, 'ACTIVATED', ${performedBy}, NOW(), ${activationNotes})
     RETURNING *
   `;
 
@@ -147,7 +147,7 @@ export async function submitResignation(
     SELECT r.*, e.display_name, e.employee_code
     FROM resignations r
     JOIN employees e ON r.employee_id = e.id
-    WHERE r.id = ${resignationId}::uuid
+    WHERE r.id = ${resignationId}
   `;
 
   if ((resignations as any[]).length === 0) {
@@ -169,7 +169,7 @@ export async function submitResignation(
       personal_reason = ${input.personalReason || null},
       resignation_letter_url = ${input.resignationLetterUrl || null},
       updated_at = NOW()
-    WHERE id = ${resignationId}::uuid
+    WHERE id = ${resignationId}
     RETURNING *
   `;
 
@@ -205,7 +205,7 @@ export async function approveResignation(
     SELECT r.*, e.display_name, e.employee_code, e.id as emp_id
     FROM resignations r
     JOIN employees e ON r.employee_id = e.id
-    WHERE r.id = ${resignationId}::uuid
+    WHERE r.id = ${resignationId}
   `;
 
   if ((resignations as any[]).length === 0) {
@@ -234,7 +234,7 @@ export async function approveResignation(
   await (prisma as any).$executeRaw`
     UPDATE resignations SET
       status = 'APPROVED',
-      reviewed_by = ${performedBy}::uuid,
+      reviewed_by = ${performedBy},
       reviewed_at = NOW(),
       hr_summary = ${input.hrSummary},
       hr_notes = ${input.hrNotes || null},
@@ -242,7 +242,7 @@ export async function approveResignation(
       notice_period_days = ${noticePeriodDays},
       notice_period_start_date = CURRENT_DATE,
       updated_at = NOW()
-    WHERE id = ${resignationId}::uuid
+    WHERE id = ${resignationId}
   `;
 
   // Set employee status to NOTICE_PERIOD with exit date
@@ -252,12 +252,12 @@ export async function approveResignation(
       exit_date = ${input.lastWorkingDate}::date,
       exit_reason = 'Resignation',
       updated_at = NOW()
-    WHERE id = ${resignation.emp_id}::uuid
+    WHERE id = ${resignation.emp_id}
   `;
 
   // Fetch updated resignation
   const updated = await (prisma as any).$queryRaw`
-    SELECT * FROM resignations WHERE id = ${resignationId}::uuid
+    SELECT * FROM resignations WHERE id = ${resignationId}
   `;
 
   // Emit event
@@ -302,7 +302,7 @@ export async function withdrawResignation(
     SELECT r.*, e.display_name, e.employee_code
     FROM resignations r
     JOIN employees e ON r.employee_id = e.id
-    WHERE r.id = ${resignationId}::uuid
+    WHERE r.id = ${resignationId}
   `;
 
   if ((resignations as any[]).length === 0) {
@@ -321,7 +321,7 @@ export async function withdrawResignation(
       withdrawn_at = NOW(),
       withdrawal_reason = ${input.withdrawalReason},
       updated_at = NOW()
-    WHERE id = ${resignationId}::uuid
+    WHERE id = ${resignationId}
     RETURNING *
   `;
 
@@ -353,7 +353,7 @@ export async function cancelResignation(
     SELECT r.*, e.display_name, e.employee_code, e.id as emp_id
     FROM resignations r
     JOIN employees e ON r.employee_id = e.id
-    WHERE r.id = ${resignationId}::uuid
+    WHERE r.id = ${resignationId}
   `;
 
   if ((resignations as any[]).length === 0) {
@@ -374,7 +374,7 @@ export async function cancelResignation(
         exit_date = NULL,
         exit_reason = NULL,
         updated_at = NOW()
-      WHERE id = ${resignation.emp_id}::uuid
+      WHERE id = ${resignation.emp_id}
     `;
   }
 
@@ -382,10 +382,10 @@ export async function cancelResignation(
     UPDATE resignations SET
       status = 'CANCELLED',
       cancelled_at = NOW(),
-      cancelled_by = ${performedBy}::uuid,
+      cancelled_by = ${performedBy},
       cancellation_reason = ${input.cancellationReason},
       updated_at = NOW()
-    WHERE id = ${resignationId}::uuid
+    WHERE id = ${resignationId}
     RETURNING *
   `;
 
@@ -429,7 +429,7 @@ export async function getResignation(
     LEFT JOIN designations des ON e.designation_id = des.id
     LEFT JOIN employees activator ON r.activated_by = activator.id
     LEFT JOIN employees reviewer ON r.reviewed_by = reviewer.id
-    WHERE r.id = ${resignationId}::uuid
+    WHERE r.id = ${resignationId}
   `;
 
   if ((results as any[]).length === 0) {
@@ -460,7 +460,7 @@ export async function getResignationByEmployeeId(
     JOIN employees e ON r.employee_id = e.id
     LEFT JOIN departments d ON e.department_id = d.id
     LEFT JOIN designations des ON e.designation_id = des.id
-    WHERE r.employee_id = ${employeeId}::uuid
+    WHERE r.employee_id = ${employeeId}
       AND r.status NOT IN ('WITHDRAWN', 'CANCELLED')
     ORDER BY r.created_at DESC
     LIMIT 1
@@ -565,7 +565,7 @@ export async function startOffboarding(
     SELECT r.*, e.display_name, e.employee_code, e.id as emp_id, e.status as emp_status
     FROM resignations r
     JOIN employees e ON r.employee_id = e.id
-    WHERE r.id = ${resignationId}::uuid
+    WHERE r.id = ${resignationId}
   `;
 
   if ((resignations as any[]).length === 0) {
@@ -581,7 +581,7 @@ export async function startOffboarding(
   // Check if offboarding already exists
   const existingOffboarding = await (prisma as any).$queryRaw`
     SELECT id FROM offboardings 
-    WHERE resignation_id = ${resignationId}::uuid AND status != 'COMPLETED'
+    WHERE resignation_id = ${resignationId} AND status != 'COMPLETED'
     LIMIT 1
   `;
 
@@ -592,7 +592,7 @@ export async function startOffboarding(
   // Create offboarding record
   const offboardingResult = await (prisma as any).$queryRaw`
     INSERT INTO offboardings (employee_id, resignation_id, status, started_by, started_at)
-    VALUES (${resignation.emp_id}::uuid, ${resignationId}::uuid, 'IN_PROGRESS', ${performedBy}::uuid, NOW())
+    VALUES (${resignation.emp_id}, ${resignationId}, 'IN_PROGRESS', ${performedBy}, NOW())
     RETURNING *
   `;
 
@@ -602,7 +602,7 @@ export async function startOffboarding(
   await (prisma as any).$executeRaw`
     INSERT INTO offboarding_checklist_items (offboarding_id, category, title, description, sort_order, status)
     SELECT 
-      ${offboarding.id}::uuid,
+      ${offboarding.id},
       category,
       title,
       description,
@@ -616,7 +616,7 @@ export async function startOffboarding(
   // Fetch checklist items
   const checklistItems = await (prisma as any).$queryRaw`
     SELECT * FROM offboarding_checklist_items 
-    WHERE offboarding_id = ${offboarding.id}::uuid
+    WHERE offboarding_id = ${offboarding.id}
     ORDER BY sort_order
   `;
 
@@ -684,7 +684,7 @@ export async function getOffboarding(
     LEFT JOIN designations des ON e.designation_id = des.id
     LEFT JOIN resignations r ON o.resignation_id = r.id
     LEFT JOIN employees starter ON o.started_by = starter.id
-    WHERE o.id = ${offboardingId}::uuid
+    WHERE o.id = ${offboardingId}
   `;
 
   if ((results as any[]).length === 0) {
@@ -698,7 +698,7 @@ export async function getOffboarding(
     SELECT ci.*, completer.display_name as completed_by_name
     FROM offboarding_checklist_items ci
     LEFT JOIN employees completer ON ci.completed_by = completer.id
-    WHERE ci.offboarding_id = ${offboardingId}::uuid
+    WHERE ci.offboarding_id = ${offboardingId}
     ORDER BY ci.sort_order
   `;
 
@@ -719,7 +719,7 @@ export async function getOffboardingByResignationId(
     SELECT o.*, r.last_working_date, r.status as resignation_status
     FROM offboardings o
     LEFT JOIN resignations r ON o.resignation_id = r.id
-    WHERE o.resignation_id = ${resignationId}::uuid
+    WHERE o.resignation_id = ${resignationId}
     ORDER BY o.created_at DESC
     LIMIT 1
   `;
@@ -734,7 +734,7 @@ export async function getOffboardingByResignationId(
     SELECT ci.*, completer.display_name as completed_by_name
     FROM offboarding_checklist_items ci
     LEFT JOIN employees completer ON ci.completed_by = completer.id
-    WHERE ci.offboarding_id = ${offboarding.id}::uuid
+    WHERE ci.offboarding_id = ${offboarding.id}
     ORDER BY ci.sort_order
   `;
 
@@ -759,11 +759,11 @@ export async function updateChecklistItem(
   const result = await (prisma as any).$queryRaw`
     UPDATE offboarding_checklist_items SET
       status = ${input.status}::"ChecklistItemStatus",
-      completed_by = ${completedBy}::uuid,
+      completed_by = ${completedBy},
       completed_at = CASE WHEN ${input.status} = 'COMPLETED' THEN NOW() ELSE NULL END,
       notes = COALESCE(${input.notes || null}, notes),
       updated_at = NOW()
-    WHERE id = ${itemId}::uuid
+    WHERE id = ${itemId}
     RETURNING *
   `;
 
@@ -787,14 +787,14 @@ export async function addChecklistItem(
   const maxOrder = await (prisma as any).$queryRaw`
     SELECT COALESCE(MAX(sort_order), 0) + 1 as next_order
     FROM offboarding_checklist_items
-    WHERE offboarding_id = ${offboardingId}::uuid
+    WHERE offboarding_id = ${offboardingId}
   `;
 
   const nextOrder = (maxOrder as any[])[0]?.next_order || 1;
 
   const result = await (prisma as any).$queryRaw`
     INSERT INTO offboarding_checklist_items (offboarding_id, category, title, description, sort_order, status)
-    VALUES (${offboardingId}::uuid, ${input.category}, ${input.title}, ${input.description || null}, ${nextOrder}, 'PENDING')
+    VALUES (${offboardingId}, ${input.category}, ${input.title}, ${input.description || null}, ${nextOrder}, 'PENDING')
     RETURNING *
   `;
 
@@ -818,7 +818,7 @@ export async function completeOffboarding(
     SELECT o.*, e.id as emp_id, e.display_name, e.employee_code
     FROM offboardings o
     JOIN employees e ON o.employee_id = e.id
-    WHERE o.id = ${offboardingId}::uuid
+    WHERE o.id = ${offboardingId}
   `;
 
   if ((offboardings as any[]).length === 0) {
@@ -835,7 +835,7 @@ export async function completeOffboarding(
   const pendingItems = await (prisma as any).$queryRaw`
     SELECT COUNT(*) as pending_count
     FROM offboarding_checklist_items
-    WHERE offboarding_id = ${offboardingId}::uuid AND status = 'PENDING'
+    WHERE offboarding_id = ${offboardingId} AND status = 'PENDING'
   `;
 
   const pendingCount = parseInt((pendingItems as any[])[0]?.pending_count || '0', 10);
@@ -848,11 +848,11 @@ export async function completeOffboarding(
   await (prisma as any).$executeRaw`
     UPDATE offboardings SET
       status = 'COMPLETED',
-      completed_by = ${performedBy}::uuid,
+      completed_by = ${performedBy},
       completed_at = NOW(),
       completion_notes = ${input.completionNotes || null},
       updated_at = NOW()
-    WHERE id = ${offboardingId}::uuid
+    WHERE id = ${offboardingId}
   `;
 
   // 2. Update employee status to RESIGNED
@@ -860,7 +860,7 @@ export async function completeOffboarding(
     UPDATE employees SET
       status = 'RESIGNED',
       updated_at = NOW()
-    WHERE id = ${offboarding.emp_id}::uuid
+    WHERE id = ${offboarding.emp_id}
   `;
 
   // 3. Deactivate user account
@@ -868,7 +868,7 @@ export async function completeOffboarding(
     UPDATE users SET
       status = 'INACTIVE',
       updated_at = NOW()
-    WHERE employee_id = ${offboarding.emp_id}::uuid
+    WHERE employee_id = ${offboarding.emp_id}
   `;
 
   // Emit event
