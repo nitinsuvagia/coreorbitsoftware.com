@@ -21,8 +21,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   CheckSquare,
   Search,
-  ChevronLeft,
-  ChevronRight,
+  Loader2,
   CalendarDays,
   User,
   X,
@@ -60,7 +59,6 @@ type SortField = 'dueDate' | 'priority' | 'title' | 'status' | 'assignee' | 'cre
 type SortDir = 'asc' | 'desc';
 type SortConfig = { field: SortField; dir: SortDir };
 
-// Custom status sort order: PENDING first, then IN_PROGRESS, COMPLETED, CANCELLED
 const STATUS_ORDER: Record<string, number> = {
   PENDING:     1,
   IN_PROGRESS: 2,
@@ -102,6 +100,8 @@ interface OrgTasksModalProps {
   onClose: () => void;
 }
 
+const PAGE_SIZE = 30;
+
 export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
   // ---- Filter state --------------------------------------------------------
   const [search, setSearch]             = useState('');
@@ -109,9 +109,8 @@ export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
   const [status, setStatus]             = useState('');
   const [dueDateFrom, setDueDateFrom]   = useState('');
   const [dueDateTo, setDueDateTo]       = useState('');
-  const [page, setPage]                 = useState(1);
 
-  // ---- Sorting state (default: Pending first, then Due Date asc, then Priority) -----------
+  // ---- Sorting state -------------------------------------------------------
   const [sortConfig, setSortConfig] = useState<SortConfig[]>([
     { field: 'status',   dir: 'asc' },
     { field: 'dueDate',  dir: 'asc' },
@@ -126,24 +125,27 @@ export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
   const [loadingEmp, setLoadingEmp]             = useState(false);
   const empDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ---- Data state ----------------------------------------------------------
-  const [todos, setTodos]                 = useState<Todo[]>([]);
-  const [pagination, setPagination]       = useState({ page: 1, limit: 20, total: 0, pages: 0 });
-  const [loading, setLoading]             = useState(false);
+  // ---- Data state (infinite scroll) ----------------------------------------
+  const [todos, setTodos]           = useState<Todo[]>([]);
+  const [total, setTotal]           = useState(0);
+  const [loading, setLoading]       = useState(false);    // initial / filter load
+  const [loadingMore, setLoadingMore] = useState(false);  // appending more
+  const [hasMore, setHasMore]       = useState(true);
+  const nextPage = useRef(1);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const filterVersion = useRef(0); // track filter changes to discard stale responses
 
   // ---- Sorting logic -------------------------------------------------------
   function toggleSort(field: SortField) {
     setSortConfig((prev) => {
       const existing = prev.find((s) => s.field === field);
       if (existing) {
-        // Cycle: asc -> desc -> remove
         if (existing.dir === 'asc') {
           return prev.map((s) => (s.field === field ? { ...s, dir: 'desc' as SortDir } : s));
         } else {
           return prev.filter((s) => s.field !== field);
         }
       } else {
-        // Add new sort field
         return [...prev, { field, dir: 'asc' }];
       }
     });
@@ -160,7 +162,7 @@ export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
     return idx >= 0 ? idx + 1 : null;
   }
 
-  // Sort todos client-side
+  // Client-side sort on accumulated items
   const sortedTodos = [...todos].sort((a, b) => {
     for (const { field, dir } of sortConfig) {
       let cmp = 0;
@@ -198,38 +200,73 @@ export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
     return 0;
   });
 
-  // ---- Load todos ----------------------------------------------------------
-  const loadTodos = useCallback(async (filters: OrgTodoFilters) => {
-    setLoading(true);
-    try {
-      const data = await fetchOrgTodos(filters);
-      setTodos(data.items);
-      setPagination(data.pagination);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // ---- Build current filters object ----------------------------------------
+  const buildFilters = useCallback(
+    (page: number): OrgTodoFilters => ({
+      page,
+      limit: PAGE_SIZE,
+      ...(search            ? { search }            : {}),
+      ...(selectedEmployee?.userId ? { userId: selectedEmployee.userId } : {}),
+      ...(priority          ? { priority }          : {}),
+      ...(status            ? { status }            : {}),
+      ...(dueDateFrom       ? { dueDateFrom }       : {}),
+      ...(dueDateTo         ? { dueDateTo }         : {}),
+    }),
+    [search, selectedEmployee, priority, status, dueDateFrom, dueDateTo],
+  );
 
-  // Reload when any filter or page changes
+  // ---- Initial load / filter change: reset and fetch page 1 ----------------
   useEffect(() => {
     if (!open) return;
-    const filters: OrgTodoFilters = {
-      page,
-      limit: 20,
-      ...(search      ? { search }      : {}),
-      ...(selectedEmployee?.userId ? { userId: selectedEmployee.userId } : {}),
-      ...(priority    ? { priority }    : {}),
-      ...(status      ? { status }      : {}),
-      ...(dueDateFrom ? { dueDateFrom } : {}),
-      ...(dueDateTo   ? { dueDateTo }   : {}),
-    };
-    loadTodos(filters);
-  }, [open, page, search, selectedEmployee, priority, status, dueDateFrom, dueDateTo, loadTodos]);
+    filterVersion.current += 1;
+    const version = filterVersion.current;
 
-  // Reset to page 1 when filters change
-  useEffect(() => { setPage(1); }, [search, selectedEmployee, priority, status, dueDateFrom, dueDateTo]);
+    setTodos([]);
+    setHasMore(true);
+    nextPage.current = 1;
+    setLoading(true);
 
-  // Reset state when dialog closed
+    fetchOrgTodos(buildFilters(1)).then((data) => {
+      if (filterVersion.current !== version) return; // stale, discard
+      setTodos(data.items);
+      setTotal(data.pagination.total);
+      setHasMore(data.pagination.page < data.pagination.pages);
+      nextPage.current = 2;
+    }).finally(() => {
+      if (filterVersion.current === version) setLoading(false);
+    });
+  }, [open, buildFilters]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---- Load more (called by scroll) ----------------------------------------
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    const version = filterVersion.current;
+    const page = nextPage.current;
+
+    try {
+      const data = await fetchOrgTodos(buildFilters(page));
+      if (filterVersion.current !== version) return;
+      setTodos((prev) => [...prev, ...data.items]);
+      setTotal(data.pagination.total);
+      setHasMore(data.pagination.page < data.pagination.pages);
+      nextPage.current = page + 1;
+    } finally {
+      if (filterVersion.current === version) setLoadingMore(false);
+    }
+  }, [loadingMore, hasMore, buildFilters]);
+
+  // ---- Scroll handler: load more when near bottom -------------------------
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el || loading || loadingMore || !hasMore) return;
+    // Trigger when within 200px of the bottom
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 200) {
+      loadMore();
+    }
+  }, [loading, loadingMore, hasMore, loadMore]);
+
+  // ---- Reset state when dialog closed --------------------------------------
   useEffect(() => {
     if (!open) {
       setSearch('');
@@ -240,8 +277,11 @@ export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
       setEmpSearch('');
       setSelectedEmployee(null);
       setEmpSuggestions([]);
-      setPage(1);
-      // Reset to default sort: Pending first, then Due Date asc, then Priority asc (URGENT first)
+      setTodos([]);
+      setTotal(0);
+      setHasMore(true);
+      nextPage.current = 1;
+      filterVersion.current = 0;
       setSortConfig([
         { field: 'status',   dir: 'asc' },
         { field: 'dueDate',  dir: 'asc' },
@@ -287,9 +327,9 @@ export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
   // ---- Render --------------------------------------------------------------
   const totalText = loading
     ? '…'
-    : pagination.total === 0
+    : total === 0
     ? 'No tasks'
-    : `${pagination.total} task${pagination.total === 1 ? '' : 's'}`;
+    : `${total} task${total === 1 ? '' : 's'}`;
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -302,7 +342,12 @@ export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
             </div>
             <div>
               <DialogTitle className="text-lg font-semibold">Organisation Tasks</DialogTitle>
-              <p className="text-sm text-muted-foreground mt-0.5">{totalText}</p>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                {totalText}
+                {!loading && todos.length > 0 && todos.length < total && (
+                  <span className="ml-1">· Showing {todos.length}</span>
+                )}
+              </p>
             </div>
           </div>
         </DialogHeader>
@@ -445,8 +490,12 @@ export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
           </div>
         </div>
 
-        {/* Table */}
-        <div className="flex-1 overflow-y-auto">
+        {/* Table with infinite scroll */}
+        <div
+          ref={scrollRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-y-auto"
+        >
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-muted/60 backdrop-blur-sm z-10">
               <tr>
@@ -507,8 +556,9 @@ export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
-              {loading && Array.from({ length: 8 }).map((_, i) => (
-                <tr key={i}>
+              {/* Initial loading skeleton */}
+              {loading && Array.from({ length: 10 }).map((_, i) => (
+                <tr key={`skel-${i}`}>
                   <td className="px-4 py-3"><Skeleton className="h-4 w-full" /></td>
                   <td className="px-4 py-3"><Skeleton className="h-4 w-20" /></td>
                   <td className="px-4 py-3"><Skeleton className="h-4 w-20" /></td>
@@ -518,6 +568,7 @@ export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
                 </tr>
               ))}
 
+              {/* Empty state */}
               {!loading && todos.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-4 py-16 text-center text-muted-foreground">
@@ -527,6 +578,7 @@ export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
                 </tr>
               )}
 
+              {/* Task rows */}
               {!loading && sortedTodos.map((todo) => {
                 const pc   = PRIORITY_CONFIG[todo.priority as keyof typeof PRIORITY_CONFIG];
                 const due  = formatDueDate(todo.dueDate);
@@ -534,7 +586,6 @@ export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
 
                 return (
                   <tr key={todo.id} className={`hover:bg-muted/40 transition-colors ${todo.isCompleted ? 'opacity-60' : ''}`}>
-                    {/* Task title */}
                     <td className="px-4 py-3">
                       <div className="flex items-start gap-2">
                         <span className="mt-0.5 shrink-0">{statusIcon}</span>
@@ -548,15 +599,11 @@ export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
                         </div>
                       </div>
                     </td>
-
-                    {/* Creator */}
                     <td className="px-4 py-3">
                       <span className="text-sm text-muted-foreground truncate block max-w-[110px]">
                         {todo.creatorName || '—'}
                       </span>
                     </td>
-
-                    {/* Assignee */}
                     <td className="px-4 py-3">
                       {todo.assigneeName ? (
                         <div className="flex items-center gap-1.5">
@@ -571,8 +618,6 @@ export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
                         <span className="text-sm text-muted-foreground">—</span>
                       )}
                     </td>
-
-                    {/* Priority */}
                     <td className="px-4 py-3">
                       {pc ? (
                         <Badge className={`text-[11px] px-2 py-0.5 font-medium border-0 ${pc.color}`}>
@@ -582,8 +627,6 @@ export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
                         <span className="text-muted-foreground">—</span>
                       )}
                     </td>
-
-                    {/* Due Date */}
                     <td className="px-4 py-3">
                       {due ? (
                         <span className={`text-xs ${due.overdue ? 'text-red-600 font-medium' : 'text-muted-foreground'}`}>
@@ -594,8 +637,6 @@ export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
                         <span className="text-xs text-muted-foreground">—</span>
                       )}
                     </td>
-
-                    {/* Status */}
                     <td className="px-4 py-3">
                       <span className="text-xs capitalize text-muted-foreground">
                         {todo.isCompleted
@@ -606,38 +647,30 @@ export function OrgTasksModal({ open, onClose }: OrgTasksModalProps) {
                   </tr>
                 );
               })}
+
+              {/* Loading-more indicator row */}
+              {loadingMore && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-4 text-center">
+                    <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading more tasks…
+                    </div>
+                  </td>
+                </tr>
+              )}
+
+              {/* End-of-list indicator */}
+              {!loading && !loadingMore && !hasMore && todos.length > 0 && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-3 text-center">
+                    <span className="text-xs text-muted-foreground">All {total} tasks loaded</span>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
-
-        {/* Pagination footer */}
-        {pagination.pages > 1 && (
-          <div className="px-6 py-3 border-t bg-muted/30 flex items-center justify-between shrink-0">
-            <p className="text-xs text-muted-foreground">
-              Page {pagination.page} of {pagination.pages} · {pagination.total} tasks
-            </p>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                disabled={page <= 1 || loading}
-                onClick={() => setPage((p) => p - 1)}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                disabled={page >= pagination.pages || loading}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        )}
       </DialogContent>
     </Dialog>
   );

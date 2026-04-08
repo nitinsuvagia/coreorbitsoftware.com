@@ -123,6 +123,11 @@ export const SQS_QUEUES = {
   EMPLOYEE_UPDATED: 'oms-employee-updated',
   EMPLOYEE_OFFBOARDED: 'oms-employee-offboarded',
   EMPLOYEE_DEPARTMENT_CHANGED: 'oms-employee-department-changed',
+  EMPLOYEE_RESIGNATION_ACTIVATED: 'oms-employee-resignation-activated',
+  EMPLOYEE_RESIGNATION_SUBMITTED: 'oms-employee-resignation-submitted',
+  EMPLOYEE_RESIGNATION_APPROVED: 'oms-employee-resignation-approved',
+  EMPLOYEE_OFFBOARDING_STARTED: 'oms-employee-offboarding-started',
+  EMPLOYEE_OFFBOARDING_COMPLETED: 'oms-employee-offboarding-completed',
   
   // Attendance Events
   ATTENDANCE_CHECK_IN: 'oms-attendance-check-in',

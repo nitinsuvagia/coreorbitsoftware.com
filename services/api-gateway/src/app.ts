@@ -1448,6 +1448,28 @@ app.use('/api/v1/employees',
   })
 );
 
+// Resignation service proxy (employee-service)
+app.use('/api/v1/resignations',
+  requireAuth,
+  requireTenantContext,
+  requireAnyPermission('employees:read', 'employees:write'),
+  createProxyMiddleware({
+    target: config.employeeServiceUrl,
+    changeOrigin: true,
+    pathRewrite: { '^/api/v1/resignations': '/api/v1/resignations' },
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+    },
+    onProxyRes: (proxyRes, req) => {
+      const origin = req.headers.origin;
+      if (origin) {
+        proxyRes.headers['access-control-allow-origin'] = origin;
+        proxyRes.headers['access-control-allow-credentials'] = 'true';
+      }
+    },
+  })
+);
+
 // Department service proxy (employee-service)
 app.use('/api/v1/departments', 
   requireAuth,

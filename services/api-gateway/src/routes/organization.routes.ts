@@ -3032,7 +3032,7 @@ router.get('/todos', async (req: TenantRequest, res: Response, next: NextFunctio
       (tenantPrisma as any).userTodo.count({ where }),
       (tenantPrisma as any).userTodo.findMany({
         where,
-        orderBy: [{ dueDate: 'asc' }, { priority: 'asc' }, { createdAt: 'desc' }],
+        orderBy: [{ isCompleted: 'asc' }, { dueDate: 'asc' }, { priority: 'asc' }, { createdAt: 'desc' }],
         skip,
         take: limit,
         select: {

@@ -211,7 +211,7 @@ function AdminDashboard({ firstName }: { firstName?: string }) {
         <TodaySchedule loading={loading} />
 
         {/* My Tasks / Todo List - spans 4 columns */}
-        <TodoList loading={loading} onTaskChange={refetch} />
+        <TodoList loading={loading} onTaskChange={refetch} firstName={firstName} />
       </div>
 
       {/* Alerts and Recent Activity */}
@@ -262,7 +262,7 @@ function EmployeeDashboard({ firstName }: { firstName?: string }) {
         <TodaySchedule loading={loading} />
 
         {/* My Tasks / Todo List - spans 4 columns */}
-        <TodoList loading={loading} onTaskChange={refetch} />
+        <TodoList loading={loading} onTaskChange={refetch} firstName={firstName} />
       </div>
 
       {/* Profile Card + Calendar */}

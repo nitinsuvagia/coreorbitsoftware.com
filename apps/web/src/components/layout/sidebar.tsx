@@ -33,6 +33,7 @@ import {
   User,
   CalendarClock,
   MonitorCheck,
+  UserMinus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState, useMemo } from 'react';
@@ -85,6 +86,7 @@ const categories: NavCategory[] = [
       { title: 'Holidays', href: '/hr/holidays', icon: CalendarDays, permission: 'holidays:read' },
       { title: 'Leave Management', href: '/hr/leave-management', icon: CalendarClock, permission: ['leave:read', 'leave:self'] },
       { title: 'Performance', href: '/hr/performance-reviews', icon: ClipboardList, permission: ['performance:read', 'performance:self'] },
+      { title: 'Resignations', href: '/hr/resignations', icon: UserMinus, permission: 'employees:read' },
       { title: 'Documents', href: '/documents', icon: File, permission: ['documents:read', 'documents:self'] },
     ],
   },

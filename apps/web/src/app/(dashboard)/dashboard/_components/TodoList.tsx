@@ -48,7 +48,23 @@ import {
   UserPlus,
   X,
   User,
+  Maximize2,
+  Minimize2,
+  LogIn,
+  LogOut,
+  Timer,
+  History,
 } from 'lucide-react';
+import { useMyAttendance, useCheckIn, useCheckOut } from '@/hooks/use-attendance';
+import { useOrgSettings } from '@/hooks/use-org-settings';
+import { getTodayInTimezone } from '@/lib/format';
+import { formatDate, formatTime } from '@/lib/utils';
+import {
+  SessionHistoryDialog,
+  getTotalWorkedSeconds,
+  formatWorkedSeconds,
+  formatElapsedHMS,
+} from '@/components/attendance/session-history-dialog';
 import {
   getTodos,
   createTodo,
@@ -69,6 +85,7 @@ import { toast } from 'sonner';
 interface TodoListProps {
   loading?: boolean;
   onTaskChange?: () => void;
+  firstName?: string;
 }
 
 const priorityConfig: Record<TodoPriority, { label: string; color: string; bgColor: string }> = {
@@ -487,7 +504,426 @@ function TodoDialog({ open, onOpenChange, todo, onSave }: TodoDialogProps) {
   );
 }
 
-export function TodoList({ loading: externalLoading, onTaskChange }: TodoListProps) {
+// ============================================================================
+// FULLSCREEN CHECK-IN CARD (self-contained for expanded overlay)
+// ============================================================================
+
+function ExpandedCheckInCard() {
+  const { timezone } = useOrgSettings();
+  const today = getTodayInTimezone(timezone);
+  const { data: myAttendanceData } = useMyAttendance({
+    startDate: today,
+    endDate: today,
+    limit: 10,
+  });
+  const checkInMutation = useCheckIn();
+  const checkOutMutation = useCheckOut();
+
+  const todayItems = myAttendanceData?.items || [];
+  const todayRecord = todayItems.find((r: any) => r.checkIn && !r.checkOut) || todayItems[0] || null;
+  const isCheckedIn = !!(todayRecord?.checkIn && !todayRecord?.checkOut);
+  const hasAnySessions = todayItems.length > 0;
+
+  const [totalElapsed, setTotalElapsed] = useState(0);
+  useEffect(() => {
+    function tick() {
+      setTotalElapsed(getTotalWorkedSeconds(todayItems));
+    }
+    tick();
+    if (isCheckedIn) {
+      const id = setInterval(tick, 1000);
+      return () => clearInterval(id);
+    }
+  }, [todayItems, isCheckedIn]);
+
+  async function handleCheckIn() {
+    try {
+      await checkInMutation.mutateAsync({});
+      toast.success('Checked in successfully!');
+    } catch (error: any) {
+      const msg = error.response?.data?.error?.message || error.response?.data?.error || 'Failed to check in';
+      toast.error(typeof msg === 'string' ? msg : 'Failed to check in');
+    }
+  }
+
+  async function handleCheckOut() {
+    try {
+      await checkOutMutation.mutateAsync({});
+      toast.success('Checked out successfully!');
+    } catch (error: any) {
+      const msg = error.response?.data?.error?.message || error.response?.data?.error || 'Failed to check out';
+      toast.error(typeof msg === 'string' ? msg : 'Failed to check out');
+    }
+  }
+
+  return (
+    <Card className="bg-gradient-to-r from-primary/10 to-primary/5">
+      <CardContent className="p-6">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">
+              {formatDate(new Date())}
+            </p>
+            {!hasAnySessions && (
+              <h3 className="text-2xl font-bold">You haven&apos;t checked in yet</h3>
+            )}
+            {isCheckedIn && todayRecord && (
+              <>
+                <h3 className="text-2xl font-bold flex items-center gap-2">
+                  <Clock className="h-5 w-5 text-green-600" />
+                  Checked in at {formatTime(todayRecord.checkIn!)}
+                </h3>
+                <div className="flex items-center gap-2 text-lg font-mono tabular-nums text-primary">
+                  <Timer className="h-4 w-4 animate-pulse" />
+                  {formatElapsedHMS(totalElapsed)}
+                  <span className="text-xs font-sans text-muted-foreground ml-1">total today</span>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Remember to check out before you leave
+                </p>
+              </>
+            )}
+            {hasAnySessions && !isCheckedIn && (
+              <>
+                <h3 className="text-2xl font-bold">
+                  Worked for {formatWorkedSeconds(totalElapsed)}
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  {todayItems.length} session{todayItems.length !== 1 ? 's' : ''} today
+                </p>
+              </>
+            )}
+            {hasAnySessions && (
+              <SessionHistoryDialog>
+                <button className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-1">
+                  <History className="h-3 w-3" />
+                  View all sessions
+                </button>
+              </SessionHistoryDialog>
+            )}
+          </div>
+          <div className="flex gap-3">
+            <Button
+              size="lg"
+              onClick={handleCheckIn}
+              disabled={isCheckedIn || checkInMutation.isPending}
+            >
+              <LogIn className="mr-2 h-5 w-5" />
+              {checkInMutation.isPending ? 'Checking in...' : 'Check In'}
+            </Button>
+            <Button
+              size="lg"
+              variant={isCheckedIn ? 'default' : 'outline'}
+              onClick={handleCheckOut}
+              disabled={!isCheckedIn || checkOutMutation.isPending}
+            >
+              <LogOut className="mr-2 h-5 w-5" />
+              {checkOutMutation.isPending ? 'Checking out...' : 'Check Out'}
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================================
+// FULLSCREEN EXPANDED OVERLAY
+// ============================================================================
+
+interface ExpandedTasksOverlayProps {
+  firstName?: string;
+  todos: Todo[];
+  summary?: TodosResponse['summary'];
+  currentUserId?: string;
+  isLoading: boolean;
+  error: string | null;
+  quickAddValue: string;
+  quickAddAssignee: EmployeeSearchResult | null;
+  quickAddRef: React.RefObject<HTMLInputElement | null>;
+  showMentionDropdown: boolean;
+  loadingMention: boolean;
+  mentionSuggestions: EmployeeSearchResult[];
+  onQuickAddChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onQuickAddKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  onMentionBlur: () => void;
+  selectMentionEmployee: (emp: EmployeeSearchResult) => void;
+  clearQuickAddAssignee: () => void;
+  onToggle: (id: string) => void;
+  onEdit: (todo: Todo) => void;
+  onDelete: (id: string) => void;
+  onRefresh: () => void;
+  onAddClick: () => void;
+  onShowCompleted: () => void;
+  onClose: () => void;
+}
+
+function ExpandedTasksOverlay({
+  firstName,
+  todos,
+  summary,
+  currentUserId,
+  isLoading,
+  error,
+  quickAddValue,
+  quickAddAssignee,
+  quickAddRef,
+  showMentionDropdown,
+  loadingMention,
+  mentionSuggestions,
+  onQuickAddChange,
+  onQuickAddKeyDown,
+  onMentionBlur,
+  selectMentionEmployee,
+  clearQuickAddAssignee,
+  onToggle,
+  onEdit,
+  onDelete,
+  onRefresh,
+  onAddClick,
+  onShowCompleted,
+  onClose,
+}: ExpandedTasksOverlayProps) {
+  // Close on Escape key
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  // Prevent body scroll when overlay is open
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-background flex flex-col overflow-hidden">
+      {/* Full-screen container with padding */}
+      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {/* Welcome Header */}
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-3xl font-bold tracking-tight">
+              Welcome back, {firstName}!
+            </h2>
+            <p className="text-muted-foreground">
+              Here&apos;s your personal dashboard for today.
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClose}
+            title="Exit full screen"
+            className="shrink-0"
+          >
+            <Minimize2 className="h-5 w-5" />
+          </Button>
+        </div>
+
+        {/* Check In / Check Out */}
+        <ExpandedCheckInCard />
+
+        {/* My Tasks — full width and remaining height */}
+        <Card className="flex-1 flex flex-col">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                My Tasks
+                {summary && summary.pending > 0 && (
+                  <Badge variant="secondary" className="ml-2">
+                    {summary.pending} pending
+                  </Badge>
+                )}
+                {summary && summary.overdue > 0 && (
+                  <Badge variant="destructive" className="ml-2">
+                    {summary.overdue} overdue
+                  </Badge>
+                )}
+              </CardTitle>
+              <CardDescription>
+                Your personal to-do list
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="icon" onClick={onRefresh} disabled={isLoading}>
+                <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
+              </Button>
+              <Button variant="ghost" size="icon" onClick={onAddClick}>
+                <Plus className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="icon" onClick={onClose} title="Exit full screen">
+                <Minimize2 className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="flex-1">
+            {/* Quick Add */}
+            <div className="mb-4">
+              <div className="relative">
+                <Plus className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  ref={quickAddRef}
+                  value={quickAddValue}
+                  onChange={onQuickAddChange}
+                  onKeyDown={onQuickAddKeyDown}
+                  onBlur={onMentionBlur}
+                  placeholder="Add a task… type @ to assign to someone"
+                  className={cn(
+                    'pl-9 pr-3',
+                    quickAddAssignee && 'border-purple-300 dark:border-purple-700 ring-1 ring-purple-200 dark:ring-purple-800'
+                  )}
+                  autoComplete="off"
+                />
+
+                {showMentionDropdown && (
+                  <div className="absolute z-50 left-0 right-0 top-full mt-1 rounded-md border bg-popover shadow-lg max-h-48 overflow-y-auto">
+                    {loadingMention ? (
+                      <div className="flex items-center gap-2 px-3 py-2.5 text-sm text-muted-foreground">
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        Searching employees…
+                      </div>
+                    ) : mentionSuggestions.length === 0 ? (
+                      <div className="px-3 py-2.5 text-sm text-muted-foreground">
+                        {quickAddValue.match(/@(\S+)$/)?.[1]
+                          ? 'No employees found'
+                          : 'Type a name after @'}
+                      </div>
+                    ) : (
+                      mentionSuggestions.map((emp) => {
+                        const name = emp.displayName || `${emp.firstName} ${emp.lastName}`;
+                        return (
+                          <button
+                            key={emp.id}
+                            type="button"
+                            onMouseDown={() => selectMentionEmployee(emp)}
+                            className="w-full text-left px-3 py-2 hover:bg-accent transition-colors flex items-center gap-2.5"
+                          >
+                            <div className="h-7 w-7 rounded-full bg-purple-100 dark:bg-purple-900 flex items-center justify-center shrink-0">
+                              <span className="text-xs font-semibold text-purple-700 dark:text-purple-300">
+                                {name.charAt(0).toUpperCase()}
+                              </span>
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium leading-tight truncate">{name}</p>
+                              {((emp.designation as any)?.name || (emp.department as any)?.name) && (
+                                <p className="text-xs text-muted-foreground leading-tight">
+                                  {(emp.designation as any)?.name}
+                                  {(emp.department as any)?.name ? ` · ${(emp.department as any).name}` : ''}
+                                </p>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {quickAddAssignee && (
+                <div className="flex items-center gap-1.5 mt-1.5 px-1">
+                  <span className="text-xs text-muted-foreground">Assign to:</span>
+                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 border border-purple-200 dark:border-purple-700">
+                    <User className="h-3 w-3" />
+                    {quickAddAssignee.displayName ||
+                      `${quickAddAssignee.firstName} ${quickAddAssignee.lastName}`}
+                    <button
+                      type="button"
+                      onClick={clearQuickAddAssignee}
+                      className="ml-0.5 hover:text-purple-900 dark:hover:text-white transition-colors"
+                      tabIndex={-1}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Task List — full height in expanded mode */}
+            {isLoading ? (
+              <div className="space-y-4">
+                {[1, 2, 3, 4, 5, 6].map((i) => (
+                  <div key={i} className="flex items-center gap-4">
+                    <Skeleton className="h-5 w-5 rounded" />
+                    <div className="flex-1">
+                      <Skeleton className="h-4 w-40 mb-2" />
+                      <Skeleton className="h-3 w-24" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : error ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <ListTodo className="h-12 w-12 mx-auto mb-4 opacity-50 text-red-400" />
+                <p className="text-red-500">{error}</p>
+                <Button variant="outline" size="sm" className="mt-2" onClick={onRefresh}>
+                  Try Again
+                </Button>
+              </div>
+            ) : todos.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <CheckCircle2 className="h-12 w-12 mx-auto mb-4 opacity-50 text-green-500" />
+                <p>All tasks completed!</p>
+                <p className="text-sm mt-1">Add a new task to get started</p>
+              </div>
+            ) : (
+              <ScrollArea className="h-[calc(100vh-480px)] pr-4">
+                <div className="space-y-1">
+                  {todos.map((todo) => (
+                    <TodoItem
+                      key={todo.id}
+                      todo={todo}
+                      currentUserId={currentUserId}
+                      onToggle={onToggle}
+                      onEdit={onEdit}
+                      onDelete={onDelete}
+                    />
+                  ))}
+                </div>
+              </ScrollArea>
+            )}
+
+            {/* Summary */}
+            {!isLoading && !error && summary && (
+              <div className="flex items-center justify-between mt-4 pt-4 border-t text-sm text-muted-foreground">
+                <div className="flex items-center gap-4">
+                  <span className="flex items-center gap-1">
+                    <Circle className="h-3 w-3 text-blue-500" />
+                    {summary.pending} pending
+                  </span>
+                  <button
+                    onClick={onShowCompleted}
+                    className="flex items-center gap-1 hover:text-green-600 transition-colors cursor-pointer"
+                  >
+                    <CheckCircle2 className="h-3 w-3 text-green-500" />
+                    {summary.completed} completed
+                  </button>
+                </div>
+                {summary.overdue > 0 && (
+                  <span className="flex items-center gap-1 text-red-500">
+                    <Clock className="h-3 w-3" />
+                    {summary.overdue} overdue
+                  </span>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// MAIN EXPORT
+// ============================================================================
+
+export function TodoList({ loading: externalLoading, onTaskChange, firstName }: TodoListProps) {
   const { user } = useAuth();
   const currentUserId = user?.id;
   const [todosData, setTodosData] = useState<TodosResponse | null>(null);
@@ -499,6 +935,7 @@ export function TodoList({ loading: externalLoading, onTaskChange }: TodoListPro
   const [completedDialogOpen, setCompletedDialogOpen] = useState(false);
   const [completedTodos, setCompletedTodos] = useState<Todo[]>([]);
   const [loadingCompleted, setLoadingCompleted] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   // @mention assignee state for quick-add
   const [quickAddAssignee, setQuickAddAssignee] = useState<EmployeeSearchResult | null>(null);
@@ -737,6 +1174,14 @@ export function TodoList({ loading: externalLoading, onTaskChange }: TodoListPro
             >
               <Plus className="h-4 w-4" />
             </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setExpanded(true)}
+              title="Expand to full screen"
+            >
+              <Maximize2 className="h-4 w-4" />
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
@@ -903,6 +1348,36 @@ export function TodoList({ loading: externalLoading, onTaskChange }: TodoListPro
         todo={editingTodo}
         onSave={handleSave}
       />
+
+      {/* Fullscreen Expanded View */}
+      {expanded && (
+        <ExpandedTasksOverlay
+          firstName={firstName || user?.firstName}
+          todos={todos}
+          summary={summary || undefined}
+          currentUserId={currentUserId}
+          isLoading={isLoading}
+          error={error}
+          quickAddValue={quickAddValue}
+          quickAddAssignee={quickAddAssignee}
+          quickAddRef={quickAddRef}
+          showMentionDropdown={showMentionDropdown}
+          loadingMention={loadingMention}
+          mentionSuggestions={mentionSuggestions}
+          onQuickAddChange={handleQuickAddChange}
+          onQuickAddKeyDown={handleQuickAdd}
+          onMentionBlur={() => setTimeout(() => setShowMentionDropdown(false), 200)}
+          selectMentionEmployee={selectMentionEmployee}
+          clearQuickAddAssignee={clearQuickAddAssignee}
+          onToggle={handleToggle}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+          onRefresh={fetchTodos}
+          onAddClick={handleAddClick}
+          onShowCompleted={handleShowCompleted}
+          onClose={() => setExpanded(false)}
+        />
+      )
 
       {/* Completed Tasks Dialog */}
       <Dialog open={completedDialogOpen} onOpenChange={setCompletedDialogOpen}>

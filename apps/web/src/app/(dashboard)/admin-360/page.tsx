@@ -360,6 +360,129 @@ function ChartCard({ title, data, type, maxValue: propMaxValue, formatValue, scr
   );
 }
 
+// ============================================================================
+// SYNCED-SCROLL DEPARTMENT CHARTS
+// ============================================================================
+// Both "Salaries by Department" and "Department Performance Scores" show the
+// same set of departments, so scrolling one card scrolls the other in sync.
+
+interface SyncedDepartmentChartsProps {
+  salaryTitle: string;
+  salaryData: { label: string; value: number; color?: string }[];
+  formatSalary: (value: number) => string;
+  performanceData: { label: string; value: number; color?: string }[];
+}
+
+function SyncedDepartmentCharts({
+  salaryTitle,
+  salaryData,
+  formatSalary,
+  performanceData,
+}: SyncedDepartmentChartsProps) {
+  const leftRef = useRef<HTMLDivElement>(null);
+  const rightRef = useRef<HTMLDivElement>(null);
+  const isSyncing = useRef(false);
+
+  const handleScroll = (source: 'left' | 'right') => {
+    if (isSyncing.current) return;
+    isSyncing.current = true;
+
+    const from = source === 'left' ? leftRef.current : rightRef.current;
+    const to = source === 'left' ? rightRef.current : leftRef.current;
+
+    if (from && to) {
+      // Sync by scroll ratio so it works even if content heights differ slightly
+      const ratio = from.scrollTop / (from.scrollHeight - from.clientHeight || 1);
+      to.scrollTop = ratio * (to.scrollHeight - to.clientHeight || 1);
+    }
+
+    // Use rAF to release the sync lock after the browser paints
+    requestAnimationFrame(() => {
+      isSyncing.current = false;
+    });
+  };
+
+  const renderBar = (
+    data: { label: string; value: number; color?: string }[],
+    formatter?: (v: number) => string,
+  ) => {
+    if (data.length === 0) {
+      return (
+        <div className="text-center py-8 text-muted-foreground">
+          <BarChart3 className="h-12 w-12 mx-auto mb-3 opacity-50" />
+          <p>No data available</p>
+        </div>
+      );
+    }
+    const max = Math.max(...data.map((d) => d.value), 1);
+    return (
+      <div className="space-y-4">
+        {data.map((item, index) => {
+          const isZero = item.value === 0;
+          const display = formatter ? formatter(item.value) : item.value;
+          return (
+            <div key={index} className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium truncate flex-1">{item.label}</span>
+                <span className="text-muted-foreground ml-2">{display}</span>
+              </div>
+              <div className={`w-full rounded-full h-2 ${isZero ? 'bg-gray-200 dark:bg-gray-700' : 'bg-muted'}`}>
+                {!isZero && (
+                  <div
+                    className="h-2 rounded-full transition-all"
+                    style={{
+                      width: `${(item.value / max) * 100}%`,
+                      backgroundColor: item.color || 'hsl(var(--primary))',
+                    }}
+                  />
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      {/* Salaries by Department */}
+      <Card className="flex flex-col">
+        <CardHeader>
+          <CardTitle className="text-lg">{salaryTitle}</CardTitle>
+        </CardHeader>
+        <CardContent className="flex-1 p-0">
+          <div
+            ref={leftRef}
+            onScroll={() => handleScroll('left')}
+            className="overflow-y-auto px-6 pb-4"
+            style={{ height: 320 }}
+          >
+            {renderBar(salaryData, formatSalary)}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Department Performance Scores */}
+      <Card className="flex flex-col">
+        <CardHeader>
+          <CardTitle className="text-lg">Department Performance Scores</CardTitle>
+        </CardHeader>
+        <CardContent className="flex-1 p-0">
+          <div
+            ref={rightRef}
+            onScroll={() => handleScroll('right')}
+            className="overflow-y-auto px-6 pb-4"
+            style={{ height: 320 }}
+          >
+            {renderBar(performanceData)}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 // Simple Stat Card for attendance and quick stats
 interface SimpleStatCardProps {
   title: string;
@@ -876,31 +999,21 @@ export default function TenantAdmin360Page() {
             </Card>
           </div>
 
-          {/* Revenue & Performance */}
-          <div className="grid gap-4 md:grid-cols-2">
-            <ChartCard
-              title={`Salaries by Department (Annual) - ${currencyCode}`}
-              type="bar"
-              scrollHeight={320}
-              data={(financial.departmentSalaries || []).map((dept, idx) => ({
-                label: dept.name,
-                value: dept.annualSalary,
-                color: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'][idx % 5],
-              }))}
-              formatValue={(value) => formatCurrency(value)}
-            />
-
-            <ChartCard
-              title="Department Performance Scores"
-              type="bar"
-              scrollHeight={320}
-              data={performance.departmentScores.map((dept, idx) => ({
-                label: dept.dept,
-                value: dept.score,
-                color: ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ec4899', '#06b6d4'][idx],
-              }))}
-            />
-          </div>
+          {/* Revenue & Performance — synced scroll */}
+          <SyncedDepartmentCharts
+            salaryTitle={`Salaries by Department (Annual) - ${currencyCode}`}
+            salaryData={(financial.departmentSalaries || []).map((dept, idx) => ({
+              label: dept.name,
+              value: dept.annualSalary,
+              color: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'][idx % 5],
+            }))}
+            formatSalary={(value) => formatCurrency(value)}
+            performanceData={performance.departmentScores.map((dept, idx) => ({
+              label: dept.dept,
+              value: dept.score,
+              color: ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ec4899', '#06b6d4'][idx],
+            }))}
+          />
 
           {/* Skill Matrix Cards */}
           <div className="grid gap-4 md:grid-cols-2">

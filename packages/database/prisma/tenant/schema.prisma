@@ -445,6 +445,8 @@ model Employee {
   employeeNotes            EmployeeNote[]
   onboardingChecklist      OnboardingChecklist?
   dailyStatuses            EmployeeDailyStatus[]
+  resignations             Resignation[]
+  offboardings             Offboarding[]
 
   @@index([email])
   @@index([employeeCode])
@@ -2287,4 +2289,145 @@ model AiMessage {
   @@index([conversationId])
   @@index([createdAt])
   @@map("ai_messages")
+}
+
+// ============================================================================
+// RESIGNATION & OFFBOARDING
+// ============================================================================
+
+enum ResignationStatus {
+  ACTIVATED
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  WITHDRAWN
+  CANCELLED
+}
+
+enum OffboardingStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum ChecklistItemStatus {
+  PENDING
+  COMPLETED
+  NOT_APPLICABLE
+}
+
+model Resignation {
+  id         String            @id @default(uuid())
+  employeeId String            @map("employee_id")
+  status     ResignationStatus @default(ACTIVATED)
+
+  // Activation (HR triggers)
+  activatedBy     String?   @map("activated_by")
+  activatedAt     DateTime  @default(now()) @map("activated_at")
+  activationNotes String?   @map("activation_notes")
+
+  // Submission (Employee submits)
+  submittedAt          DateTime? @map("submitted_at")
+  resignationReason    String?   @map("resignation_reason")
+  personalReason       String?   @map("personal_reason")
+  resignationLetterUrl String?   @map("resignation_letter_url")
+
+  // Review & Approval (HR reviews)
+  reviewedBy           String?   @map("reviewed_by")
+  reviewedAt           DateTime? @map("reviewed_at")
+  hrSummary            String?   @map("hr_summary")
+  hrNotes              String?   @map("hr_notes")
+  lastWorkingDate      DateTime? @map("last_working_date") @db.Date
+  noticePeriodDays     Int?      @map("notice_period_days")
+  noticePeriodStartDate DateTime? @map("notice_period_start_date") @db.Date
+
+  // Withdrawal
+  withdrawnAt      DateTime? @map("withdrawn_at")
+  withdrawalReason String?   @map("withdrawal_reason")
+
+  // Cancellation
+  cancelledAt        DateTime? @map("cancelled_at")
+  cancelledBy        String?   @map("cancelled_by")
+  cancellationReason String?   @map("cancellation_reason")
+
+  // Timestamps
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  employee     Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  offboardings Offboarding[]
+
+  @@index([employeeId])
+  @@index([status])
+  @@index([activatedAt])
+  @@index([lastWorkingDate])
+  @@map("resignations")
+}
+
+model Offboarding {
+  id             String            @id @default(uuid())
+  employeeId     String            @map("employee_id")
+  resignationId  String?           @map("resignation_id")
+  status         OffboardingStatus @default(NOT_STARTED)
+
+  // Process tracking
+  startedBy       String?   @map("started_by")
+  startedAt       DateTime? @map("started_at")
+  completedBy     String?   @map("completed_by")
+  completedAt     DateTime? @map("completed_at")
+  completionNotes String?   @map("completion_notes")
+
+  // Timestamps
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  employee       Employee                  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  resignation    Resignation?              @relation(fields: [resignationId], references: [id])
+  checklistItems OffboardingChecklistItem[]
+
+  @@index([employeeId])
+  @@index([resignationId])
+  @@index([status])
+  @@map("offboardings")
+}
+
+model OffboardingChecklistItem {
+  id            String              @id @default(uuid())
+  offboardingId String              @map("offboarding_id")
+  category      String
+  title         String
+  description   String?
+  sortOrder     Int                 @default(0) @map("sort_order")
+  status        ChecklistItemStatus @default(PENDING)
+  completedBy   String?             @map("completed_by")
+  completedAt   DateTime?           @map("completed_at")
+  notes         String?
+
+  // Timestamps
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  offboarding Offboarding @relation(fields: [offboardingId], references: [id], onDelete: Cascade)
+
+  @@index([offboardingId])
+  @@index([status])
+  @@map("offboarding_checklist_items")
+}
+
+model OffboardingChecklistTemplate {
+  id          String  @id @default(uuid())
+  category    String
+  title       String
+  description String?
+  sortOrder   Int     @default(0) @map("sort_order")
+  isActive    Boolean @default(true) @map("is_active")
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("offboarding_checklist_templates")
 }

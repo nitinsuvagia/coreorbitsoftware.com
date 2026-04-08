@@ -567,6 +567,9 @@ export class TenantDbManager {
     
     // Create default document folders (needs admin user for createdBy)
     await this.createDefaultFolders(client, adminUserId);
+    
+    // Create default offboarding checklist templates
+    await this.createDefaultOffboardingTemplates(client);
   }
   
   private async createDefaultDepartments(client: PrismaClient): Promise<void> {
@@ -1107,6 +1110,42 @@ export class TenantDbManager {
     }
   }
   
+  private async createDefaultOffboardingTemplates(client: PrismaClient): Promise<void> {
+    const existingCount = await (client as any).offboardingChecklistTemplate.count();
+    if (existingCount > 0) return;
+
+    const templates = [
+      // IT
+      { category: 'IT', title: 'Revoke system access & SSO', description: 'Disable all application and SSO accounts', sortOrder: 1 },
+      { category: 'IT', title: 'Collect laptop / equipment', description: 'Retrieve company-issued hardware', sortOrder: 2 },
+      { category: 'IT', title: 'Revoke email access', description: 'Disable or forward email account', sortOrder: 3 },
+      { category: 'IT', title: 'Remove from Slack / Teams channels', description: 'Remove from all communication channels', sortOrder: 4 },
+      { category: 'IT', title: 'Revoke VPN & remote access', description: 'Disable VPN credentials and remote access', sortOrder: 5 },
+      { category: 'IT', title: 'Transfer file ownership', description: 'Transfer Google Drive / OneDrive files to manager', sortOrder: 6 },
+      // HR
+      { category: 'HR', title: 'Conduct exit interview', description: 'Schedule and complete exit interview', sortOrder: 7 },
+      { category: 'HR', title: 'Process final settlement', description: 'Calculate and process final pay, leave encashment', sortOrder: 8 },
+      { category: 'HR', title: 'Issue experience / relieving letter', description: 'Prepare and provide official letters', sortOrder: 9 },
+      { category: 'HR', title: 'Update employee records', description: 'Mark employee as exited in HRMS', sortOrder: 10 },
+      { category: 'HR', title: 'Recover ID card & access badges', description: 'Collect all physical ID and access cards', sortOrder: 11 },
+      // Finance
+      { category: 'Finance', title: 'Settle expense claims', description: 'Process any pending reimbursements', sortOrder: 12 },
+      { category: 'Finance', title: 'Recover company credit card', description: 'Cancel and collect company credit cards', sortOrder: 13 },
+      { category: 'Finance', title: 'Process final payroll', description: 'Run final payroll with all adjustments', sortOrder: 14 },
+      // Knowledge Transfer
+      { category: 'Knowledge Transfer', title: 'Document ongoing projects', description: 'Create handover documentation for all active work', sortOrder: 15 },
+      { category: 'Knowledge Transfer', title: 'Transfer project responsibilities', description: 'Formally hand over projects to designated successors', sortOrder: 16 },
+      { category: 'Knowledge Transfer', title: 'Share credentials & access info', description: 'Transfer any shared account credentials securely', sortOrder: 17 },
+      // Admin
+      { category: 'Admin', title: 'Return parking pass / keys', description: 'Collect all office keys, parking passes, etc.', sortOrder: 18 },
+      { category: 'Admin', title: 'Notify relevant teams', description: 'Inform security, reception, and facilities', sortOrder: 19 },
+    ];
+
+    for (const template of templates) {
+      await (client as any).offboardingChecklistTemplate.create({ data: template });
+    }
+  }
+
   // ==========================================================================
   // CLEANUP
   // ==========================================================================
