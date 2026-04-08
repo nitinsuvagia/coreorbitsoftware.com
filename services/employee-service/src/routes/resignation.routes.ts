@@ -40,6 +40,12 @@ import {
   updateChecklistItem,
   addChecklistItem,
   completeOffboarding,
+  type ActivateResignationInput,
+  type SubmitResignationInput,
+  type ReviewResignationInput,
+  type WithdrawResignationInput,
+  type CancelResignationInput,
+  type UpdateChecklistItemInput,
 } from '../services/resignation.service';
 
 function getPrismaFromRequest(req: Request): PrismaClient {
@@ -207,7 +213,7 @@ router.get('/:id', async (req: Request, res: Response) => {
  */
 router.post('/activate', async (req: Request, res: Response) => {
   try {
-    const data = activateSchema.parse(req.body);
+    const data = activateSchema.parse(req.body) as ActivateResignationInput;
     const prisma = getPrismaFromRequest(req);
     const userId = (req as any).userId;
     const tenantContext = {
@@ -248,7 +254,7 @@ router.post('/activate', async (req: Request, res: Response) => {
  */
 router.post('/:id/submit', async (req: Request, res: Response) => {
   try {
-    const data = submitSchema.parse(req.body);
+    const data = submitSchema.parse(req.body) as SubmitResignationInput;
     const prisma = getPrismaFromRequest(req);
     const userId = (req as any).userId;
 
@@ -284,7 +290,7 @@ router.post('/:id/submit', async (req: Request, res: Response) => {
  */
 router.post('/:id/approve', async (req: Request, res: Response) => {
   try {
-    const data = approveSchema.parse(req.body);
+    const data = approveSchema.parse(req.body) as ReviewResignationInput;
     const prisma = getPrismaFromRequest(req);
     const userId = (req as any).userId;
     const tenantContext = {
@@ -325,7 +331,7 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
  */
 router.post('/:id/withdraw', async (req: Request, res: Response) => {
   try {
-    const data = withdrawSchema.parse(req.body);
+    const data = withdrawSchema.parse(req.body) as WithdrawResignationInput;
     const prisma = getPrismaFromRequest(req);
     const userId = (req as any).userId;
 
@@ -357,7 +363,7 @@ router.post('/:id/withdraw', async (req: Request, res: Response) => {
  */
 router.post('/:id/cancel', async (req: Request, res: Response) => {
   try {
-    const data = cancelSchema.parse(req.body);
+    const data = cancelSchema.parse(req.body) as CancelResignationInput;
     const prisma = getPrismaFromRequest(req);
     const userId = (req as any).userId;
 
@@ -450,7 +456,7 @@ router.get('/:id/offboarding', async (req: Request, res: Response) => {
  */
 router.patch('/offboarding/checklist/:itemId', async (req: Request, res: Response) => {
   try {
-    const data = updateChecklistSchema.parse(req.body);
+    const data = updateChecklistSchema.parse(req.body) as UpdateChecklistItemInput;
     const prisma = getPrismaFromRequest(req);
     const userId = (req as any).userId;
 
@@ -482,7 +488,7 @@ router.patch('/offboarding/checklist/:itemId', async (req: Request, res: Respons
  */
 router.post('/offboarding/:offboardingId/checklist', async (req: Request, res: Response) => {
   try {
-    const data = addChecklistItemSchema.parse(req.body);
+    const data = addChecklistItemSchema.parse(req.body) as { category: string; title: string; description?: string };
     const prisma = getPrismaFromRequest(req);
     const userId = (req as any).userId;
 
