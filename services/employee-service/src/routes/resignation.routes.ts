@@ -71,10 +71,12 @@ function isManagerRole(req: Request): boolean {
   return roles.some(r => ['tenant_admin', 'hr_admin', 'hr_manager', 'project_manager'].includes(r));
 }
 
-/** Look up the employee record ID for the current auth user */
-async function getEmployeeRecordId(prisma: PrismaClient, authUserId: string): Promise<string | null> {
+/** Look up the employee record ID for the current auth user (via email header) */
+async function getEmployeeRecordId(prisma: PrismaClient, req: Request): Promise<string | null> {
+  const email = req.headers['x-user-email'] as string;
+  if (!email) return null;
   const rows = await (prisma as any).$queryRaw`
-    SELECT id FROM employees WHERE user_id = ${authUserId} AND deleted_at IS NULL LIMIT 1
+    SELECT id FROM employees WHERE email = ${email} AND deleted_at IS NULL LIMIT 1
   `;
   return (rows as any[])?.[0]?.id || null;
 }
@@ -201,7 +203,7 @@ router.get('/employee/:employeeId', async (req: Request, res: Response) => {
     // Non-managers can only query their own
     if (!isManagerRole(req)) {
       const userId = (req as any).userId;
-      const myEmployeeId = await getEmployeeRecordId(prisma, userId);
+      const myEmployeeId = await getEmployeeRecordId(prisma, req);
       if (myEmployeeId !== req.params.employeeId) {
         return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Access denied' } });
       }
@@ -234,7 +236,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     // Non-managers can only view their own resignation
     if (!isManagerRole(req)) {
       const userId = (req as any).userId;
-      const myEmployeeId = await getEmployeeRecordId(prisma, userId);
+      const myEmployeeId = await getEmployeeRecordId(prisma, req);
       if ((resignation as any).employee_id !== myEmployeeId) {
         return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Access denied' } });
       }
@@ -313,7 +315,7 @@ router.post('/:id/submit', async (req: Request, res: Response) => {
     // Verify ownership for non-HR users
     if (!isHRRole(req)) {
       const resignation = await getResignation(prisma, req.params.id);
-      const myEmployeeId = await getEmployeeRecordId(prisma, userId);
+      const myEmployeeId = await getEmployeeRecordId(prisma, req);
       if ((resignation as any).employee_id !== myEmployeeId) {
         return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'You can only submit your own resignation' } });
       }
@@ -402,7 +404,7 @@ router.post('/:id/withdraw', async (req: Request, res: Response) => {
     // Verify ownership for non-HR users
     if (!isHRRole(req)) {
       const resignation = await getResignation(prisma, req.params.id);
-      const myEmployeeId = await getEmployeeRecordId(prisma, userId);
+      const myEmployeeId = await getEmployeeRecordId(prisma, req);
       if ((resignation as any).employee_id !== myEmployeeId) {
         return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'You can only withdraw your own resignation' } });
       }
