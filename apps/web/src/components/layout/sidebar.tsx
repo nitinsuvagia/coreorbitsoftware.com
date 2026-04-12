@@ -141,10 +141,21 @@ export function Sidebar({ className }: SidebarProps) {
 
   // For TL/Employee: check if they have an active resignation
   const employeeId = user?.employeeRecordId || '';
-  const { data: myResignation } = useEmployeeResignation(
+  const { data: myResignation, error: resignationError } = useEmployeeResignation(
     // Only query if NOT a resignation manager (HR/Admin/PM always see it)
     !isResignationManager ? employeeId : ''
   );
+
+  // Debug — remove after confirmed working
+  if (employeeId && !isResignationManager) {
+    console.log('[Sidebar] resignation check:', {
+      employeeId,
+      myResignation,
+      resignationError: (resignationError as any)?.message || resignationError,
+      hasId: !!(myResignation as any)?.id,
+    });
+  }
+
   const hasActiveResignation = !!(myResignation as any)?.id;
 
   // Should the Resignations sidebar item be visible?
