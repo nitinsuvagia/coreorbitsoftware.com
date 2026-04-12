@@ -1449,10 +1449,11 @@ app.use('/api/v1/employees',
 );
 
 // Resignation service proxy (employee-service)
+// Auth only — no permission gate. Role-based access enforced by employee-service.
+// All authenticated users can check their own resignation; HR/PM see all.
 app.use('/api/v1/resignations',
   requireAuth,
   requireTenantContext,
-  requireAnyPermission('employees:read', 'employees:write'),
   createProxyMiddleware({
     target: config.employeeServiceUrl,
     changeOrigin: true,

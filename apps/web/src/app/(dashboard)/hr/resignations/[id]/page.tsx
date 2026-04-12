@@ -103,9 +103,13 @@ export default function ResignationDetailPage() {
   const { isAdmin, hasAnyRole } = usePermissions();
   const { user } = useAuth();
   const isHR = hasAnyRole('hr_admin', 'hr_manager', 'tenant_admin');
+  const isPM = hasAnyRole('project_manager');
 
   const { data: resignation, isLoading, refetch } = useResignation(resignationId);
   const { data: offboarding, refetch: refetchOffboarding } = useResignationOffboarding(resignationId);
+
+  // Check if this is the logged-in employee's own resignation
+  const isOwnResignation = !!user?.employeeRecordId && user.employeeRecordId === (resignation as any)?.employee_id;
 
   // Dialog states
   const [submitDialogOpen, setSubmitDialogOpen] = useState(false);
@@ -332,9 +336,12 @@ export default function ResignationDetailPage() {
         <div className="flex gap-2">
           {resignation.status === 'ACTIVATED' && (
             <>
-              <Button size="sm" onClick={() => setSubmitDialogOpen(true)}>
-                <Send className="mr-1 h-3 w-3" /> Submit Resignation
-              </Button>
+              {/* Submit: employee's own or HR */}
+              {(isOwnResignation || isHR) && (
+                <Button size="sm" onClick={() => setSubmitDialogOpen(true)}>
+                  <Send className="mr-1 h-3 w-3" /> Submit Resignation
+                </Button>
+              )}
               {isHR && (
                 <Button size="sm" variant="outline" onClick={() => setCancelDialogOpen(true)}>
                   <Ban className="mr-1 h-3 w-3" /> Cancel
@@ -352,7 +359,8 @@ export default function ResignationDetailPage() {
               </Button>
             </>
           )}
-          {['ACTIVATED', 'SUBMITTED', 'UNDER_REVIEW'].includes(resignation.status) && (
+          {/* Withdraw: employee's own or HR */}
+          {['ACTIVATED', 'SUBMITTED', 'UNDER_REVIEW'].includes(resignation.status) && (isOwnResignation || isHR) && (
             <Button size="sm" variant="outline" onClick={() => setWithdrawDialogOpen(true)}>
               <Undo2 className="mr-1 h-3 w-3" /> Withdraw
             </Button>
@@ -604,7 +612,7 @@ export default function ResignationDetailPage() {
                           item.status === 'NOT_APPLICABLE' && 'opacity-40'
                         )}
                       >
-                        {offboarding.status === 'IN_PROGRESS' ? (
+                        {offboarding.status === 'IN_PROGRESS' && isHR ? (
                           <Checkbox
                             checked={item.status === 'COMPLETED'}
                             onCheckedChange={() => handleToggleChecklistItem(item)}
@@ -640,7 +648,7 @@ export default function ResignationDetailPage() {
                             </p>
                           )}
                         </div>
-                        {offboarding.status === 'IN_PROGRESS' && item.status === 'PENDING' && (
+                        {offboarding.status === 'IN_PROGRESS' && isHR && item.status === 'PENDING' && (
                           <Button
                             variant="ghost"
                             size="sm"

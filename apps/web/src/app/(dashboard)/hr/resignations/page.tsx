@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { useResignations, useResignationStats, useActivateResignation, Resignation, ResignationStatus } from '@/hooks/use-resignation';
+import { useResignations, useResignationStats, useActivateResignation, useEmployeeResignation, Resignation, ResignationStatus } from '@/hooks/use-resignation';
 import { useEmployees, Employee } from '@/hooks/use-employees';
 import { usePermissions } from '@/hooks/use-permissions';
+import { useAuth } from '@/lib/auth/auth-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -49,6 +50,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  ShieldAlert,
 } from 'lucide-react';
 import Link from 'next/link';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -67,8 +69,118 @@ type StatusTab = 'all' | 'active' | 'ACTIVATED' | 'SUBMITTED' | 'APPROVED' | 'cl
 
 export default function ResignationsPage() {
   const { isAdmin, hasAnyRole } = usePermissions();
-  const isHR = hasAnyRole('hr_admin', 'hr_manager', 'tenant_admin');
+  const { user } = useAuth();
 
+  // Role classification
+  const isHR = hasAnyRole('hr_admin', 'hr_manager', 'tenant_admin');
+  const isPM = hasAnyRole('project_manager');
+  // HR/Admin/PM see the admin list view
+  const canViewAllResignations = isHR || isPM;
+  // Only HR/Admin can activate, approve, cancel
+  const canManageResignations = isHR;
+
+  // For TL/Employee: fetch their own active resignation
+  const employeeId = user?.employeeRecordId || '';
+  const { data: myResignationData, isLoading: loadingMyResignation } = useEmployeeResignation(
+    !canViewAllResignations ? employeeId : ''
+  );
+  const myResignation = (myResignationData as any)?.data || myResignationData;
+
+  // If user is TL/Employee, show self-only view
+  if (!canViewAllResignations) {
+    return <EmployeeSelfView resignation={myResignation} loading={loadingMyResignation} />;
+  }
+
+  // HR/Admin/PM: show full admin list view
+  return <AdminResignationsView canManage={canManageResignations} />;
+}
+
+// ============================================================================
+// EMPLOYEE SELF-VIEW (Tech Lead / Employee)
+// Only shows their own resignation if activated
+// ============================================================================
+
+function EmployeeSelfView({ resignation, loading }: { resignation: any; loading: boolean }) {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!resignation?.id) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Resignations</h1>
+          <p className="text-muted-foreground">Your resignation status</p>
+        </div>
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-16">
+            <ShieldAlert className="h-12 w-12 text-muted-foreground/50" />
+            <p className="mt-4 text-lg font-medium text-muted-foreground">No active resignation</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              You don&apos;t have an active resignation process at the moment.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Employee has an active resignation — link to detail page
+  const config = STATUS_CONFIG[resignation.status as ResignationStatus] || STATUS_CONFIG.ACTIVATED;
+  const Icon = config.icon;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">My Resignation</h1>
+        <p className="text-muted-foreground">Your resignation process details</p>
+      </div>
+
+      <Link href={`/hr/resignations/${resignation.id}`}>
+        <Card className="hover:shadow-md transition-shadow cursor-pointer">
+          <CardContent className="p-6">
+            <div className="flex items-center gap-4">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-2">
+                  <p className="text-lg font-semibold">{resignation.employee_name}</p>
+                  <Badge variant={config.variant}>
+                    <Icon className="mr-1 h-3 w-3" />
+                    {config.label}
+                  </Badge>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {resignation.department_name} · {resignation.designation_name}
+                </p>
+                {resignation.last_working_date && (
+                  <p className="text-sm mt-2">
+                    <span className="text-muted-foreground">Last Working Day:</span>{' '}
+                    <span className="font-medium">{format(new Date(resignation.last_working_date), 'MMM dd, yyyy')}</span>
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground mt-2">
+                  Activated {formatDistanceToNow(new Date(resignation.activated_at), { addSuffix: true })}
+                </p>
+              </div>
+              <ArrowRight className="h-5 w-5 text-muted-foreground shrink-0" />
+            </div>
+          </CardContent>
+        </Card>
+      </Link>
+    </div>
+  );
+}
+
+// ============================================================================
+// ADMIN RESIGNATIONS VIEW (HR / Admin / Tenant Admin / Project Manager)
+// PM: read-only (no activate/approve/cancel buttons)
+// HR/Admin: full management
+// ============================================================================
+
+function AdminResignationsView({ canManage }: { canManage: boolean }) {
   const [search, setSearch] = useState('');
   const [statusTab, setStatusTab] = useState<StatusTab>('active');
   const [page, setPage] = useState(1);
@@ -77,9 +189,8 @@ export default function ResignationsPage() {
   const [activationNotes, setActivationNotes] = useState('');
   const [employeeSearch, setEmployeeSearch] = useState('');
 
-  // Map tab to filter status
   const statusFilter = statusTab === 'all' ? undefined :
-    statusTab === 'active' ? undefined : // special handling below
+    statusTab === 'active' ? undefined :
     statusTab === 'closed' ? undefined :
     statusTab;
 
@@ -93,7 +204,6 @@ export default function ResignationsPage() {
   const { data: stats } = useResignationStats();
   const activateResignation = useActivateResignation();
 
-  // Employees for activation dialog
   const { data: employeesData } = useEmployees({
     search: employeeSearch || undefined,
     excludeStatuses: 'TERMINATED,RESIGNED,RETIRED,NOTICE_PERIOD',
@@ -101,7 +211,6 @@ export default function ResignationsPage() {
     enabled: activateDialogOpen,
   });
 
-  // Filter active resignations on client side
   const resignations = resignationsData?.items?.filter((r) => {
     if (statusTab === 'active') return !['WITHDRAWN', 'CANCELLED'].includes(r.status);
     if (statusTab === 'closed') return ['WITHDRAWN', 'CANCELLED'].includes(r.status);
@@ -138,9 +247,11 @@ export default function ResignationsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Resignations</h1>
-          <p className="text-muted-foreground">Manage employee resignations and offboarding</p>
+          <p className="text-muted-foreground">
+            {canManage ? 'Manage employee resignations and offboarding' : 'View employee resignations'}
+          </p>
         </div>
-        {isHR && (
+        {canManage && (
           <Button onClick={() => setActivateDialogOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />
             Activate Resignation
@@ -232,7 +343,7 @@ export default function ResignationsPage() {
       ) : (
         <div className="space-y-3">
           {resignations.map((resignation) => (
-            <ResignationCard key={resignation.id} resignation={resignation} isHR={isHR} />
+            <ResignationCard key={resignation.id} resignation={resignation} isHR={canManage} />
           ))}
         </div>
       )}
@@ -255,78 +366,80 @@ export default function ResignationsPage() {
         </div>
       )}
 
-      {/* Activate Resignation Dialog */}
-      <Dialog open={activateDialogOpen} onOpenChange={setActivateDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Activate Resignation</DialogTitle>
-            <DialogDescription>
-              Select an employee to activate the resignation process. The employee will then be able to submit their resignation.
-            </DialogDescription>
-          </DialogHeader>
+      {/* Activate Resignation Dialog — only for HR/Admin */}
+      {canManage && (
+        <Dialog open={activateDialogOpen} onOpenChange={setActivateDialogOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Activate Resignation</DialogTitle>
+              <DialogDescription>
+                Select an employee to activate the resignation process. The employee will then be able to submit their resignation.
+              </DialogDescription>
+            </DialogHeader>
 
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Search Employee</Label>
-              <Input
-                placeholder="Search by name..."
-                value={employeeSearch}
-                onChange={(e) => setEmployeeSearch(e.target.value)}
-              />
-            </div>
-
-            {employeesData && (
-              <div className="max-h-48 overflow-y-auto rounded-md border">
-                {(employeesData as any)?.items?.length === 0 ? (
-                  <p className="p-3 text-sm text-muted-foreground">No employees found</p>
-                ) : (
-                  ((employeesData as any)?.items || []).map((emp: Employee) => (
-                    <button
-                      key={emp.id}
-                      type="button"
-                      className={cn(
-                        'flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-muted/50 transition-colors',
-                        selectedEmployee === emp.id && 'bg-primary/10 border-l-2 border-primary'
-                      )}
-                      onClick={() => setSelectedEmployee(emp.id)}
-                    >
-                      <Avatar className="h-8 w-8">
-                        <AvatarImage src={emp.avatar || undefined} />
-                        <AvatarFallback>{getInitials(`${emp.firstName} ${emp.lastName}`)}</AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{emp.firstName} {emp.lastName}</p>
-                        <p className="text-xs text-muted-foreground">{emp.employeeCode} · {emp.designation?.name}</p>
-                      </div>
-                    </button>
-                  ))
-                )}
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Search Employee</Label>
+                <Input
+                  placeholder="Search by name..."
+                  value={employeeSearch}
+                  onChange={(e) => setEmployeeSearch(e.target.value)}
+                />
               </div>
-            )}
 
-            <div className="space-y-2">
-              <Label>Notes (optional)</Label>
-              <Textarea
-                placeholder="Any notes about this resignation activation..."
-                value={activationNotes}
-                onChange={(e) => setActivationNotes(e.target.value)}
-                rows={3}
-              />
+              {employeesData && (
+                <div className="max-h-48 overflow-y-auto rounded-md border">
+                  {(employeesData as any)?.items?.length === 0 ? (
+                    <p className="p-3 text-sm text-muted-foreground">No employees found</p>
+                  ) : (
+                    ((employeesData as any)?.items || []).map((emp: Employee) => (
+                      <button
+                        key={emp.id}
+                        type="button"
+                        className={cn(
+                          'flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-muted/50 transition-colors',
+                          selectedEmployee === emp.id && 'bg-primary/10 border-l-2 border-primary'
+                        )}
+                        onClick={() => setSelectedEmployee(emp.id)}
+                      >
+                        <Avatar className="h-8 w-8">
+                          <AvatarImage src={emp.avatar || undefined} />
+                          <AvatarFallback>{getInitials(`${emp.firstName} ${emp.lastName}`)}</AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{emp.firstName} {emp.lastName}</p>
+                          <p className="text-xs text-muted-foreground">{emp.employeeCode} · {emp.designation?.name}</p>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label>Notes (optional)</Label>
+                <Textarea
+                  placeholder="Any notes about this resignation activation..."
+                  value={activationNotes}
+                  onChange={(e) => setActivationNotes(e.target.value)}
+                  rows={3}
+                />
+              </div>
             </div>
-          </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setActivateDialogOpen(false)}>Cancel</Button>
-            <Button
-              onClick={handleActivate}
-              disabled={!selectedEmployee || activateResignation.isPending}
-            >
-              {activateResignation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Activate Resignation
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setActivateDialogOpen(false)}>Cancel</Button>
+              <Button
+                onClick={handleActivate}
+                disabled={!selectedEmployee || activateResignation.isPending}
+              >
+                {activateResignation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Activate Resignation
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

@@ -56,6 +56,29 @@ function getPrismaFromRequest(req: Request): PrismaClient {
   return prisma;
 }
 
+// Role helpers
+function getUserRoles(req: Request): string[] {
+  return ((req.headers['x-user-roles'] as string) || '').split(',').map(r => r.trim().toLowerCase()).filter(Boolean);
+}
+
+function isHRRole(req: Request): boolean {
+  const roles = getUserRoles(req);
+  return roles.some(r => ['tenant_admin', 'hr_admin', 'hr_manager'].includes(r));
+}
+
+function isManagerRole(req: Request): boolean {
+  const roles = getUserRoles(req);
+  return roles.some(r => ['tenant_admin', 'hr_admin', 'hr_manager', 'project_manager'].includes(r));
+}
+
+/** Look up the employee record ID for the current auth user */
+async function getEmployeeRecordId(prisma: PrismaClient, authUserId: string): Promise<string | null> {
+  const rows = await (prisma as any).$queryRaw`
+    SELECT id FROM employees WHERE user_id = ${authUserId} AND deleted_at IS NULL LIMIT 1
+  `;
+  return (rows as any[])?.[0]?.id || null;
+}
+
 const router = Router();
 
 // ============================================================================
@@ -119,10 +142,13 @@ const listFilterSchema = z.object({
 // ============================================================================
 
 /**
- * GET /resignations/stats - Dashboard statistics
+ * GET /resignations/stats - Dashboard statistics (HR/Admin/PM only)
  */
 router.get('/stats', async (req: Request, res: Response) => {
   try {
+    if (!isManagerRole(req)) {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Access denied' } });
+    }
     const prisma = getPrismaFromRequest(req);
     const stats = await getResignationStats(prisma);
 
@@ -137,10 +163,13 @@ router.get('/stats', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /resignations - List all resignations
+ * GET /resignations - List all resignations (HR/Admin/PM only)
  */
 router.get('/', async (req: Request, res: Response) => {
   try {
+    if (!isManagerRole(req)) {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Access denied' } });
+    }
     const filters = listFilterSchema.parse(req.query);
     const prisma = getPrismaFromRequest(req);
     const result = await listResignations(prisma, filters);
@@ -163,10 +192,20 @@ router.get('/', async (req: Request, res: Response) => {
 
 /**
  * GET /resignations/employee/:employeeId - Get active resignation for an employee
+ * Managers can query any employee; employees can only query themselves.
  */
 router.get('/employee/:employeeId', async (req: Request, res: Response) => {
   try {
     const prisma = getPrismaFromRequest(req);
+
+    // Non-managers can only query their own
+    if (!isManagerRole(req)) {
+      const userId = (req as any).userId;
+      const myEmployeeId = await getEmployeeRecordId(prisma, userId);
+      if (myEmployeeId !== req.params.employeeId) {
+        return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Access denied' } });
+      }
+    }
     const resignation = await getResignationByEmployeeId(prisma, req.params.employeeId);
 
     if (!resignation) {
@@ -185,11 +224,21 @@ router.get('/employee/:employeeId', async (req: Request, res: Response) => {
 
 /**
  * GET /resignations/:id - Get resignation details
+ * Managers can view any; employees can view own only.
  */
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const prisma = getPrismaFromRequest(req);
     const resignation = await getResignation(prisma, req.params.id);
+
+    // Non-managers can only view their own resignation
+    if (!isManagerRole(req)) {
+      const userId = (req as any).userId;
+      const myEmployeeId = await getEmployeeRecordId(prisma, userId);
+      if ((resignation as any).employee_id !== myEmployeeId) {
+        return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Access denied' } });
+      }
+    }
 
     res.json({ success: true, data: resignation });
   } catch (error) {
@@ -209,10 +258,13 @@ router.get('/:id', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /resignations/activate - HR activates resignation for an employee
+ * POST /resignations/activate - HR activates resignation for an employee (HR only)
  */
 router.post('/activate', async (req: Request, res: Response) => {
   try {
+    if (!isHRRole(req)) {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Only HR can activate resignations' } });
+    }
     const data = activateSchema.parse(req.body) as ActivateResignationInput;
     const prisma = getPrismaFromRequest(req);
     const userId = (req as any).userId;
@@ -250,13 +302,22 @@ router.post('/activate', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /resignations/:id/submit - Employee submits resignation
+ * POST /resignations/:id/submit - Employee submits resignation (own or HR)
  */
 router.post('/:id/submit', async (req: Request, res: Response) => {
   try {
     const data = submitSchema.parse(req.body) as SubmitResignationInput;
     const prisma = getPrismaFromRequest(req);
     const userId = (req as any).userId;
+
+    // Verify ownership for non-HR users
+    if (!isHRRole(req)) {
+      const resignation = await getResignation(prisma, req.params.id);
+      const myEmployeeId = await getEmployeeRecordId(prisma, userId);
+      if ((resignation as any).employee_id !== myEmployeeId) {
+        return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'You can only submit your own resignation' } });
+      }
+    }
 
     const result = await submitResignation(prisma, req.params.id, data, userId);
 
@@ -286,10 +347,13 @@ router.post('/:id/submit', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /resignations/:id/approve - HR approves resignation with last working day
+ * POST /resignations/:id/approve - HR approves resignation with last working day (HR only)
  */
 router.post('/:id/approve', async (req: Request, res: Response) => {
   try {
+    if (!isHRRole(req)) {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Only HR can approve resignations' } });
+    }
     const data = approveSchema.parse(req.body) as ReviewResignationInput;
     const prisma = getPrismaFromRequest(req);
     const userId = (req as any).userId;
@@ -327,13 +391,22 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /resignations/:id/withdraw - Employee withdraws resignation
+ * POST /resignations/:id/withdraw - Employee withdraws resignation (own or HR)
  */
 router.post('/:id/withdraw', async (req: Request, res: Response) => {
   try {
     const data = withdrawSchema.parse(req.body) as WithdrawResignationInput;
     const prisma = getPrismaFromRequest(req);
     const userId = (req as any).userId;
+
+    // Verify ownership for non-HR users
+    if (!isHRRole(req)) {
+      const resignation = await getResignation(prisma, req.params.id);
+      const myEmployeeId = await getEmployeeRecordId(prisma, userId);
+      if ((resignation as any).employee_id !== myEmployeeId) {
+        return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'You can only withdraw your own resignation' } });
+      }
+    }
 
     const result = await withdrawResignation(prisma, req.params.id, data, userId);
 
@@ -359,10 +432,13 @@ router.post('/:id/withdraw', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /resignations/:id/cancel - HR cancels resignation
+ * POST /resignations/:id/cancel - HR cancels resignation (HR only)
  */
 router.post('/:id/cancel', async (req: Request, res: Response) => {
   try {
+    if (!isHRRole(req)) {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Only HR can cancel resignations' } });
+    }
     const data = cancelSchema.parse(req.body) as CancelResignationInput;
     const prisma = getPrismaFromRequest(req);
     const userId = (req as any).userId;
@@ -395,10 +471,13 @@ router.post('/:id/cancel', async (req: Request, res: Response) => {
 // ============================================================================
 
 /**
- * POST /resignations/:id/offboarding/start - Start offboarding process
+ * POST /resignations/:id/offboarding/start - Start offboarding process (HR only)
  */
 router.post('/:id/offboarding/start', async (req: Request, res: Response) => {
   try {
+    if (!isHRRole(req)) {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Only HR can start offboarding' } });
+    }
     const prisma = getPrismaFromRequest(req);
     const userId = (req as any).userId;
     const tenantContext = {
@@ -452,10 +531,13 @@ router.get('/:id/offboarding', async (req: Request, res: Response) => {
 });
 
 /**
- * PATCH /offboarding/checklist/:itemId - Update checklist item status
+ * PATCH /offboarding/checklist/:itemId - Update checklist item status (HR only)
  */
 router.patch('/offboarding/checklist/:itemId', async (req: Request, res: Response) => {
   try {
+    if (!isHRRole(req)) {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Only HR can update checklist items' } });
+    }
     const data = updateChecklistSchema.parse(req.body) as UpdateChecklistItemInput;
     const prisma = getPrismaFromRequest(req);
     const userId = (req as any).userId;
@@ -484,10 +566,13 @@ router.patch('/offboarding/checklist/:itemId', async (req: Request, res: Respons
 });
 
 /**
- * POST /offboarding/:offboardingId/checklist - Add custom checklist item
+ * POST /offboarding/:offboardingId/checklist - Add custom checklist item (HR only)
  */
 router.post('/offboarding/:offboardingId/checklist', async (req: Request, res: Response) => {
   try {
+    if (!isHRRole(req)) {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Only HR can add checklist items' } });
+    }
     const data = addChecklistItemSchema.parse(req.body) as { category: string; title: string; description?: string };
     const prisma = getPrismaFromRequest(req);
     const userId = (req as any).userId;
@@ -515,10 +600,13 @@ router.post('/offboarding/:offboardingId/checklist', async (req: Request, res: R
 });
 
 /**
- * POST /offboarding/:offboardingId/complete - Complete offboarding
+ * POST /offboarding/:offboardingId/complete - Complete offboarding (HR only)
  */
 router.post('/offboarding/:offboardingId/complete', async (req: Request, res: Response) => {
   try {
+    if (!isHRRole(req)) {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Only HR can complete offboarding' } });
+    }
     const data = completeOffboardingSchema.parse(req.body);
     const prisma = getPrismaFromRequest(req);
     const userId = (req as any).userId;

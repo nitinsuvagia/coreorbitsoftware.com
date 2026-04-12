@@ -43,6 +43,8 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { usePermissions } from '@/hooks/use-permissions';
+import { useAuth } from '@/lib/auth/auth-context';
+import { useEmployeeResignation } from '@/hooks/use-resignation';
 
 interface NavItem {
   title: string;
@@ -86,7 +88,7 @@ const categories: NavCategory[] = [
       { title: 'Holidays', href: '/hr/holidays', icon: CalendarDays, permission: 'holidays:read' },
       { title: 'Leave Management', href: '/hr/leave-management', icon: CalendarClock, permission: ['leave:read', 'leave:self'] },
       { title: 'Performance', href: '/hr/performance-reviews', icon: ClipboardList, permission: ['performance:read', 'performance:self'] },
-      { title: 'Resignations', href: '/hr/resignations', icon: UserMinus, permission: 'employees:read' },
+      // Resignations is added dynamically based on role + active resignation
       { title: 'Documents', href: '/documents', icon: File, permission: ['documents:read', 'documents:self'] },
     ],
   },
@@ -131,7 +133,22 @@ export function Sidebar({ className }: SidebarProps) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [openCategories, setOpenCategories] = useState<string[]>(['HR']);
-  const { can, canAny, isAdmin } = usePermissions();
+  const { can, canAny, isAdmin, hasAnyRole } = usePermissions();
+  const { user } = useAuth();
+
+  // Roles that always see the Resignations menu
+  const isResignationManager = hasAnyRole('hr_admin', 'hr_manager', 'tenant_admin', 'project_manager');
+
+  // For TL/Employee: check if they have an active resignation
+  const employeeId = user?.employeeRecordId || '';
+  const { data: myResignation } = useEmployeeResignation(
+    // Only query if NOT a resignation manager (HR/Admin/PM always see it)
+    !isResignationManager ? employeeId : ''
+  );
+  const hasActiveResignation = !!(myResignation as any)?.data?.id || !!(myResignation as any)?.id;
+
+  // Should the Resignations sidebar item be visible?
+  const showResignations = isResignationManager || hasActiveResignation;
 
   // Filter nav items based on permissions (supports string or string[] for OR logic)
   const filterItems = (items: NavItem[]) =>
@@ -146,11 +163,29 @@ export function Sidebar({ className }: SidebarProps) {
     });
 
   const filteredStandalone = useMemo(() => filterItems(standaloneItems), [can, canAny, isAdmin]);
-  const filteredCategories = useMemo(() =>
-    categories
-      .map((cat) => ({ ...cat, items: filterItems(cat.items) }))
-      .filter((cat) => cat.items.length > 0),
-    [can, canAny, isAdmin]
+  const filteredCategories = useMemo(() => {
+    const result = categories
+      .map((cat) => {
+        let items = filterItems(cat.items);
+        // Dynamically inject Resignations into HR category
+        if (cat.title === 'HR' && showResignations) {
+          const docsIndex = items.findIndex((i) => i.href === '/documents');
+          const resignationItem: NavItem = {
+            title: 'Resignations',
+            href: '/hr/resignations',
+            icon: UserMinus,
+          };
+          if (docsIndex >= 0) {
+            items = [...items.slice(0, docsIndex), resignationItem, ...items.slice(docsIndex)];
+          } else {
+            items = [...items, resignationItem];
+          }
+        }
+        return { ...cat, items };
+      })
+      .filter((cat) => cat.items.length > 0);
+    return result;
+  }, [can, canAny, isAdmin, showResignations]
   );
   const filteredAfterCategory = useMemo(() => filterItems(afterCategoryItems), [can, canAny]);
   const filteredSecondary = useMemo(() => filterItems(secondaryNavItems), [can, canAny]);
