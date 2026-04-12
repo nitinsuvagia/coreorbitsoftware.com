@@ -162,6 +162,7 @@ export function useEmployeeResignation(employeeId: string) {
     queryKey: ['resignation', 'employee', employeeId],
     queryFn: () => get<Resignation | null>(`/api/v1/resignations/employee/${employeeId}`),
     enabled: !!employeeId,
+    retry: false, // Don't retry on 403/404
   });
 }
 
