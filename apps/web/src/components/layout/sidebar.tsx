@@ -43,6 +43,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { usePermissions } from '@/hooks/use-permissions';
+import { useAuth } from '@/lib/auth/auth-context';
 
 interface NavItem {
   title: string;
@@ -131,7 +132,12 @@ export function Sidebar({ className }: SidebarProps) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [openCategories, setOpenCategories] = useState<string[]>(['HR']);
-  const { can, canAny, isAdmin } = usePermissions();
+  const { can, canAny, isAdmin, hasAnyRole } = usePermissions();
+  const { user } = useAuth();
+
+  // HR/Admin/PM always see Resignations; others only if they have an active resignation
+  const isResignationManager = hasAnyRole('hr_admin', 'hr_manager', 'tenant_admin', 'project_manager');
+  const showResignations = isResignationManager || !!user?.hasActiveResignation;
 
   // Filter nav items based on permissions (supports string or string[] for OR logic)
   const filterItems = (items: NavItem[]) =>
@@ -140,17 +146,19 @@ export function Sidebar({ className }: SidebarProps) {
       if (item.employeeOnly && isAdmin) return false;
       // Hide admin-only items for non-admin users
       if (item.adminOnly && !isAdmin) return false;
+      // Resignations: dynamic visibility based on role/resignation status
+      if (item.href === '/hr/resignations') return showResignations;
       if (!item.permission) return true;
       if (Array.isArray(item.permission)) return canAny(...item.permission);
       return can(item.permission);
     });
 
-  const filteredStandalone = useMemo(() => filterItems(standaloneItems), [can, canAny, isAdmin]);
+  const filteredStandalone = useMemo(() => filterItems(standaloneItems), [can, canAny, isAdmin, showResignations]);
   const filteredCategories = useMemo(() =>
     categories
       .map((cat) => ({ ...cat, items: filterItems(cat.items) }))
       .filter((cat) => cat.items.length > 0),
-    [can, canAny, isAdmin]
+    [can, canAny, isAdmin, showResignations]
   );
   const filteredAfterCategory = useMemo(() => filterItems(afterCategoryItems), [can, canAny]);
   const filteredSecondary = useMemo(() => filterItems(secondaryNavItems), [can, canAny]);

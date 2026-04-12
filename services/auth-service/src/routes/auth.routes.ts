@@ -779,6 +779,23 @@ router.get('/me', async (req: Request, res: Response, next: NextFunction) => {
     const tenantInfo = await dbManager.getTenantBySlug(tenantSlug);
     const role = tenantProfile.roles?.[0] || 'tenant_user';
 
+    // Check if user has an active resignation (for sidebar visibility)
+    let hasActiveResignation = false;
+    if (tenantProfile.employeeRecordId) {
+      try {
+        const tenantPrisma = await dbManager.getClientBySlug(tenantSlug);
+        const rows = await (tenantPrisma as any).$queryRaw`
+          SELECT id FROM resignations
+          WHERE employee_id = ${tenantProfile.employeeRecordId}
+            AND status NOT IN ('WITHDRAWN', 'CANCELLED')
+          LIMIT 1
+        `;
+        hasActiveResignation = (rows as any[])?.length > 0;
+      } catch {
+        // Table may not exist yet — ignore
+      }
+    }
+
     res.json({
       success: true,
       data: {
@@ -794,6 +811,7 @@ router.get('/me', async (req: Request, res: Response, next: NextFunction) => {
         tenantSlug: tenantInfo.slug,
         isPlatformAdmin: false,
         employeeRecordId: tenantProfile.employeeRecordId || undefined,
+        hasActiveResignation,
       },
     });
   } catch (error) {

@@ -20,6 +20,7 @@ export interface User {
   tenantSlug?: string;
   isPlatformAdmin: boolean;
   employeeRecordId?: string; // Employee record UUID for API lookups
+  hasActiveResignation?: boolean; // Whether employee has an active resignation
 }
 
 interface AuthContextType {
