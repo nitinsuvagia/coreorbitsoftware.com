@@ -145,7 +145,7 @@ export function Sidebar({ className }: SidebarProps) {
     // Only query if NOT a resignation manager (HR/Admin/PM always see it)
     !isResignationManager ? employeeId : ''
   );
-  const hasActiveResignation = !!(myResignation as any)?.data?.id || !!(myResignation as any)?.id;
+  const hasActiveResignation = !!(myResignation as any)?.id;
 
   // Should the Resignations sidebar item be visible?
   const showResignations = isResignationManager || hasActiveResignation;

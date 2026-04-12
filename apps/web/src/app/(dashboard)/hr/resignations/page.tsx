@@ -84,7 +84,8 @@ export default function ResignationsPage() {
   const { data: myResignationData, isLoading: loadingMyResignation } = useEmployeeResignation(
     !canViewAllResignations ? employeeId : ''
   );
-  const myResignation = (myResignationData as any)?.data || myResignationData;
+  // API client already unwraps response.data.data, so myResignationData IS the resignation object
+  const myResignation = myResignationData;
 
   // If user is TL/Employee, show self-only view
   if (!canViewAllResignations) {
