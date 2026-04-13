@@ -512,3 +512,39 @@ export const AI_TOOLS: ToolDefinition[] = [
 ];
 
 export const TOOL_NAMES = AI_TOOLS.map(t => t.function.name);
+
+// ============================================================================
+// ROLE-BASED TOOL FILTERING
+// ============================================================================
+
+/**
+ * Tools that non-admin individual contributors (Employee, Project Manager,
+ * Tech Lead, etc.) are allowed to use.  These tools only return the
+ * **current user's own** data or public/shared org data (holidays,
+ * celebrations).
+ */
+const SELF_ONLY_TOOLS = new Set([
+  // Own data
+  'get_my_attendance',
+  'get_my_leave_balance',
+  'get_my_notifications',
+  'get_my_tasks',
+  // Public / shared org data
+  'get_upcoming_holidays',
+  'get_holidays_list',
+  'get_celebrations_today',
+]);
+
+/**
+ * Return the subset of AI_TOOLS the user is allowed to use based on their
+ * roles. Admins get everything; non-admin roles only get self-scoped and
+ * public tools.
+ */
+export function getToolsForRole(userRoles: string): ToolDefinition[] {
+  const roles = userRoles ? userRoles.split(',').map(r => r.trim().toLowerCase()) : [];
+  const isAdmin = roles.includes('tenant_admin');
+
+  if (isAdmin) return AI_TOOLS;
+
+  return AI_TOOLS.filter(t => SELF_ONLY_TOOLS.has(t.function.name));
+}

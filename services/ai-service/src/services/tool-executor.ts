@@ -90,6 +90,27 @@ function hasPermission(ctx: ToolContext, perm: string): boolean {
   return perms.includes(perm) || perms.includes('*') || perms.includes('admin');
 }
 
+/** Check if user has an admin role */
+function isAdmin(ctx: ToolContext): boolean {
+  const roles = ctx.userRoles ? ctx.userRoles.split(',').map(r => r.trim().toLowerCase()) : [];
+  return roles.includes('tenant_admin');
+}
+
+/**
+ * Tools that non-admin users are allowed to execute.
+ * This is the server-side enforcement layer — even if the AI model somehow
+ * calls a restricted tool, it will be blocked here.
+ */
+const SELF_ONLY_ALLOWED_TOOLS = new Set([
+  'get_my_attendance',
+  'get_my_leave_balance',
+  'get_my_notifications',
+  'get_my_tasks',
+  'get_upcoming_holidays',
+  'get_holidays_list',
+  'get_celebrations_today',
+]);
+
 // ---------------------------------------------------------------------------
 // Tool executor
 // ---------------------------------------------------------------------------
@@ -101,6 +122,12 @@ export async function executeTool(
 ): Promise<string> {
   try {
     logger.info({ toolName, args, tenantSlug: ctx.tenantSlug }, 'Executing tool');
+
+    // Server-side role enforcement: non-admin users can only use self-scoped tools
+    if (!isAdmin(ctx) && !SELF_ONLY_ALLOWED_TOOLS.has(toolName)) {
+      logger.warn({ toolName, userId: ctx.userId, roles: ctx.userRoles }, 'Blocked restricted tool for non-admin user');
+      return 'You do not have permission to access this data. As a regular employee, you can only view your own attendance, leave balance, tasks, and notifications. For organization-wide data, please contact your administrator.';
+    }
 
     // Resolve the tenant's configured timezone once per tool call
     const tenantTz = await getTenantTimezone(ctx.tenantSlug);

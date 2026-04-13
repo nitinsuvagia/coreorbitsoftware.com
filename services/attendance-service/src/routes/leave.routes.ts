@@ -390,11 +390,18 @@ router.post(
       });
     } catch (error) {
       logger.error({ error: (error as Error).message }, 'Request leave failed');
-      if ((error as Error).message.includes('Insufficient') ||
-          (error as Error).message.includes('overlapping') ||
-          (error as Error).message.includes('advance notice') ||
-          (error as Error).message.includes('not found')) {
-        return res.status(400).json({ error: (error as Error).message });
+      const msg = (error as Error).message;
+      if (msg.includes('Insufficient') ||
+          msg.includes('overlapping') ||
+          msg.includes('advance notice') ||
+          msg.includes('not found') ||
+          msg.includes('No valid leave days') ||
+          msg.includes('Half day leave') ||
+          msg.includes('cannot be after') ||
+          msg.includes('probation') ||
+          msg.includes('Resigned') ||
+          msg.includes('notice-period')) {
+        return res.status(400).json({ error: msg });
       }
       next(error);
     }

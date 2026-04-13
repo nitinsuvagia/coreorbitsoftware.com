@@ -4,7 +4,7 @@
  */
 
 import { getTenantOpenAISettings } from './openai.service';
-import { AI_TOOLS } from './tools';
+import { AI_TOOLS, getToolsForRole } from './tools';
 import { executeTool } from './tool-executor';
 import { getTenantPrismaBySlug, getTenantTimezone } from '../utils/database';
 import { logger } from '../utils/logger';
@@ -116,6 +116,17 @@ Current user context:
 - Role: **${roleName}**${!isAdmin && permissions.length ? `\n- Permissions: ${permissions.join(', ')}` : ''}
 
 IMPORTANT: All data you fetch is scoped to this organization ("${ctx.tenantSlug}"). You can ONLY access data belonging to this tenant. Never fabricate data — always use the available tools to fetch real information from the system.
+${!isAdmin ? `
+DATA ACCESS RESTRICTION — CRITICAL:
+You are logged in as a non-admin user (${roleName}). You must ONLY show this user their own personal data. You MUST NOT:
+- Search for, look up, or display any other employee's information (profile, attendance, leave balance, documents, performance, salary, etc.)
+- Show organization-wide statistics (employee counts, department breakdowns, compensation stats, attendance overviews)
+- List or search other employees
+- View, approve, or reject anyone else's leave requests
+- Access recruitment data (candidates, interviews, job openings)
+- View other employees' documents or performance reviews
+If the user asks for any other employee's data or org-wide stats, politely respond: "As a **${roleName}**, I can only help with your own personal data — such as your attendance, leave balance, tasks, and notifications. For organization-wide data, please contact your administrator."
+You may ONLY use tools that return this user's own data (e.g., get_my_attendance, get_my_leave_balance, get_my_tasks, get_my_notifications) or public shared data (holidays, celebrations).` : ''}
 
 DATE HANDLING: When the user refers to relative dates (e.g. "yesterday", "last Monday", "last week"), compute the correct YYYY-MM-DD date based on the current date shown above and pass it to the appropriate tool. For attendance queries, always pass the \`date\` parameter in YYYY-MM-DD format.
 
@@ -276,6 +287,7 @@ export async function chat(ctx: ChatContext, userMessage: string, conversationId
   messages.push({ role: 'user', content: userMessage });
 
   // Run OpenAI with tool calling loop
+  const userTools = getToolsForRole(ctx.userRoles);
   let assistantContent = '';
   let totalTokens = 0;
   let round = 0;
@@ -283,7 +295,7 @@ export async function chat(ctx: ChatContext, userMessage: string, conversationId
 
   while (round < MAX_TOOL_ROUNDS) {
     round++;
-    const response = await callOpenAI(settings, messages);
+    const response = await callOpenAI(settings, messages, userTools);
     totalTokens += response.usage?.total_tokens || 0;
 
     const choice = response.choices?.[0];
@@ -452,13 +464,14 @@ export async function chatStream(
     messages.push({ role: 'user', content: userMessage });
 
     // Tool calling loop (non-streamed for tool rounds, then stream final response)
+    const userTools = getToolsForRole(ctx.userRoles);
     let round = 0;
     const collectedMarkers: string[] = []; // Collect :::chart::: and :::action::: markers from tool results
     while (round < MAX_TOOL_ROUNDS) {
       round++;
 
       // First, do a non-streaming call to check for tool calls
-      const response = await callOpenAI(settings, messages);
+      const response = await callOpenAI(settings, messages, userTools);
       const choice = response.choices?.[0];
       if (!choice) { onError('No response from AI'); return; }
       const msg = choice.message;
@@ -557,7 +570,7 @@ export async function chatStream(
 // OPENAI API HELPERS
 // ============================================================================
 
-async function callOpenAI(settings: any, messages: ChatMessage[]): Promise<any> {
+async function callOpenAI(settings: any, messages: ChatMessage[], tools: any[]): Promise<any> {
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -567,7 +580,7 @@ async function callOpenAI(settings: any, messages: ChatMessage[]): Promise<any> 
     body: JSON.stringify({
       model: settings.model || 'gpt-4o-mini',
       messages,
-      tools: AI_TOOLS,
+      tools,
       tool_choice: 'auto',
       max_tokens: settings.maxTokens || 2000,
       temperature: settings.temperature ?? 0.7,
