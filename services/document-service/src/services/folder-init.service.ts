@@ -267,13 +267,25 @@ export async function initializeEmployeeDocumentsFolders(
       const employeeName = `${employee.employeeCode} - ${employee.firstName} ${employee.lastName}`;
       const employeePath = `${employeeDocsPath}/${employeeName}`;
 
-      // Check if employee folder already exists
+      // Check if employee folder already exists by employee code prefix
+      // This prevents duplicates when employee names change
       let employeeFolder = await prisma.folder.findFirst({
         where: {
-          name: employeeName,
           parentId: employeeDocsFolder.id,
+          isDeleted: false,
+          name: { startsWith: `${employee.employeeCode} - ` },
         },
       });
+
+      if (!employeeFolder) {
+        // Also check for exact name match (backwards compatibility)
+        employeeFolder = await prisma.folder.findFirst({
+          where: {
+            name: employeeName,
+            parentId: employeeDocsFolder.id,
+          },
+        });
+      }
 
       if (!employeeFolder) {
         employeeFolder = await prisma.folder.create({
@@ -287,6 +299,17 @@ export async function initializeEmployeeDocumentsFolders(
           },
         });
         logger.info({ employeeId: employee.id, folderId: employeeFolder.id }, 'Created employee folder');
+      } else if (employeeFolder.name !== employeeName) {
+        // Update folder name if employee name changed
+        await prisma.folder.update({
+          where: { id: employeeFolder.id },
+          data: { 
+            name: employeeName,
+            path: employeePath,
+            description: `Documents for ${employee.firstName} ${employee.lastName}`,
+          },
+        });
+        logger.info({ employeeId: employee.id, folderId: employeeFolder.id }, 'Updated employee folder name');
       }
 
       // Create subfolders for this employee
@@ -395,16 +418,49 @@ export async function createEmployeeFolders(
     const employeeName = `${employee.employeeCode} - ${employee.firstName} ${employee.lastName}`;
     const employeePath = `/Employee Documents/${employeeName}`;
 
-    const employeeFolder = await prisma.folder.create({
-      data: {
-        name: employeeName,
-        description: `Documents for ${employee.firstName} ${employee.lastName}`,
+    // Check if folder already exists by employee code prefix
+    // This prevents duplicates when employee names change
+    let employeeFolder = await prisma.folder.findFirst({
+      where: {
         parentId: employeeDocsFolder.id,
-        path: employeePath,
-        depth: 2,
-        createdBy: userId,
+        isDeleted: false,
+        name: { startsWith: `${employee.employeeCode} - ` },
       },
     });
+
+    if (!employeeFolder) {
+      // Also check for exact name match (backwards compatibility)
+      employeeFolder = await prisma.folder.findFirst({
+        where: {
+          name: employeeName,
+          parentId: employeeDocsFolder.id,
+        },
+      });
+    }
+
+    if (!employeeFolder) {
+      employeeFolder = await prisma.folder.create({
+        data: {
+          name: employeeName,
+          description: `Documents for ${employee.firstName} ${employee.lastName}`,
+          parentId: employeeDocsFolder.id,
+          path: employeePath,
+          depth: 2,
+          createdBy: userId,
+        },
+      });
+    } else if (employeeFolder.name !== employeeName) {
+      // Update folder name if employee name changed
+      await prisma.folder.update({
+        where: { id: employeeFolder.id },
+        data: { 
+          name: employeeName,
+          path: employeePath,
+          description: `Documents for ${employee.firstName} ${employee.lastName}`,
+        },
+      });
+      logger.info({ employeeId: employee.id, folderId: employeeFolder.id }, 'Updated employee folder name');
+    }
 
     // Create subfolders
     for (const subfolder of EMPLOYEE_DOCUMENT_SUBFOLDERS) {
@@ -494,16 +550,41 @@ export async function createFoldersForEmployeeDirectly(
     const employeeName = `${employee.employeeCode} - ${employee.firstName} ${employee.lastName}`;
     const employeePath = `/Employee Documents/${employeeName}`;
 
-    // Check if folder already exists
-    const existingFolder = await prisma.folder.findFirst({
+    // Check if folder already exists by employee code prefix
+    // This prevents duplicates when employee names change
+    let existingFolder = await prisma.folder.findFirst({
       where: {
-        name: employeeName,
         parentId: employeeDocsFolder.id,
+        isDeleted: false,
+        name: { startsWith: `${employee.employeeCode} - ` },
       },
     });
 
+    if (!existingFolder) {
+      // Also check for exact name match (backwards compatibility)
+      existingFolder = await prisma.folder.findFirst({
+        where: {
+          name: employeeName,
+          parentId: employeeDocsFolder.id,
+        },
+      });
+    }
+
     if (existingFolder) {
-      logger.info({ employeeId, folderId: existingFolder.id }, 'Employee folder already exists');
+      // Update folder name if employee name changed
+      if (existingFolder.name !== employeeName) {
+        await prisma.folder.update({
+          where: { id: existingFolder.id },
+          data: { 
+            name: employeeName,
+            path: employeePath,
+            description: `Documents for ${employee.firstName} ${employee.lastName}`,
+          },
+        });
+        logger.info({ employeeId, folderId: existingFolder.id }, 'Updated employee folder name');
+      } else {
+        logger.info({ employeeId, folderId: existingFolder.id }, 'Employee folder already exists');
+      }
       return;
     }
 
@@ -833,15 +914,18 @@ export async function getEmployeeAvatarFolderId(
     });
     if (!employee) return null;
 
-    const employeeFolderName = `${employee.employeeCode} - ${employee.firstName} ${employee.lastName}`;
-
     const employeeDocsFolder = await prisma.folder.findFirst({
       where: { name: 'Employee Documents', parentId: null },
     });
     if (!employeeDocsFolder) return null;
 
+    // Find employee folder by employee code prefix (more robust than exact name)
     const employeeFolder = await prisma.folder.findFirst({
-      where: { name: employeeFolderName, parentId: employeeDocsFolder.id },
+      where: { 
+        parentId: employeeDocsFolder.id,
+        isDeleted: false,
+        name: { startsWith: `${employee.employeeCode} - ` },
+      },
     });
     if (!employeeFolder) return null;
 

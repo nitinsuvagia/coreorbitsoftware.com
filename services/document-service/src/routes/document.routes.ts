@@ -91,7 +91,7 @@ function isPrivilegedUser(roles: string[]): boolean {
 /**
  * Get the current user's employee info (employeeCode + name) for folder matching
  */
-async function getUserEmployeeInfo(prisma: any, userId: string): Promise<{ employeeId: string; employeeCode: string; folderName: string } | null> {
+async function getUserEmployeeInfo(prisma: any, userId: string): Promise<{ employeeId: string; employeeCode: string; folderName: string; employeeFolderId: string | null } | null> {
   if (!userId || userId === 'system') return null;
   
   try {
@@ -109,15 +109,125 @@ async function getUserEmployeeInfo(prisma: any, userId: string): Promise<{ emplo
     
     if (!employee) return null;
     
+    const folderName = `${employee.employeeCode} - ${employee.firstName} ${employee.lastName}`;
+    
+    // Find the employee's folder ID by employee code prefix (more robust than exact name)
+    const employeeFolder = await prisma.folder.findFirst({
+      where: {
+        isDeleted: false,
+        path: { startsWith: '/Employee Documents/' },
+        name: { startsWith: `${employee.employeeCode} - ` },
+      },
+      select: { id: true, name: true },
+    });
+    
     return {
       employeeId: employee.id,
       employeeCode: employee.employeeCode,
-      folderName: `${employee.employeeCode} - ${employee.firstName} ${employee.lastName}`,
+      folderName: employeeFolder?.name || folderName,
+      employeeFolderId: employeeFolder?.id || null,
     };
   } catch (error) {
     logger.error({ error, userId }, 'Failed to get user employee info for document access');
     return null;
   }
+}
+
+/**
+ * Check if a file belongs to the current user's employee folder
+ * Non-privileged users can only access files in their own Employee Documents folder
+ */
+async function canAccessFile(prisma: any, fileId: string, userId: string, userRoles: string[]): Promise<boolean> {
+  if (isPrivilegedUser(userRoles)) return true;
+  
+  const employeeInfo = await getUserEmployeeInfo(prisma, userId);
+  if (!employeeInfo) return false;
+  
+  const file = await prisma.file.findUnique({
+    where: { id: fileId },
+    select: { folderId: true },
+  });
+  
+  if (!file?.folderId) return false;
+  
+  // Get the folder and check if it's under the user's employee folder
+  const folder = await prisma.folder.findUnique({
+    where: { id: file.folderId },
+    select: { path: true },
+  });
+  
+  if (!folder?.path) return false;
+  
+  // Check if the file is in the user's employee folder path (match by employee code)
+  // Path format: /Employee Documents/EMP001 - John Doe/subfolder
+  const pathParts = folder.path.split('/').filter(Boolean);
+  if (pathParts.length >= 2 && pathParts[0] === 'Employee Documents') {
+    const employeeFolderName = pathParts[1];
+    const folderCode = employeeFolderName.split(' - ')[0].trim();
+    return folderCode === employeeInfo.employeeCode;
+  }
+  
+  return false;
+}
+
+/**
+ * Check if a folder belongs to the current user's employee folder
+ * Non-privileged users can only access folders in their own Employee Documents folder
+ */
+async function canAccessFolder(prisma: any, folderId: string, userId: string, userRoles: string[]): Promise<boolean> {
+  if (isPrivilegedUser(userRoles)) return true;
+  
+  const employeeInfo = await getUserEmployeeInfo(prisma, userId);
+  if (!employeeInfo) return false;
+  
+  const folder = await prisma.folder.findUnique({
+    where: { id: folderId },
+    select: { name: true, path: true },
+  });
+  
+  if (!folder) return false;
+  
+  // Allow access to "Employee Documents" root (user sees filtered contents)
+  if (folder.name === 'Employee Documents' && folder.path === '/Employee Documents') {
+    return true;
+  }
+  
+  // Check if the folder is under the user's employee folder path (match by employee code)
+  if (folder.path?.startsWith('/Employee Documents/')) {
+    const pathParts = folder.path.split('/').filter(Boolean);
+    if (pathParts.length >= 2) {
+      const employeeFolderName = pathParts[1];
+      const folderCode = employeeFolderName.split(' - ')[0].trim();
+      return folderCode === employeeInfo.employeeCode;
+    }
+  }
+  
+  return false;
+}
+
+/**
+ * Get folder IDs that the non-privileged user can access
+ * This returns the employee's folder and all its descendants
+ */
+async function getUserAccessibleFolderIds(prisma: any, userId: string, userRoles: string[]): Promise<string[]> {
+  if (isPrivilegedUser(userRoles)) return []; // Empty means no restriction
+  
+  const employeeInfo = await getUserEmployeeInfo(prisma, userId);
+  if (!employeeInfo?.employeeFolderId) return ['__none__']; // Return impossible ID to filter out everything
+  
+  // Get the employee folder and all its descendants by employee code prefix
+  const folders = await prisma.folder.findMany({
+    where: {
+      isDeleted: false,
+      OR: [
+        { id: employeeInfo.employeeFolderId },
+        { path: { startsWith: `/Employee Documents/${employeeInfo.employeeCode} - ` } },
+      ],
+    },
+    select: { id: true },
+  });
+  
+  return folders.map((f: any) => f.id);
 }
 
 function asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => Promise<any>) {
@@ -535,7 +645,13 @@ router.post(
 router.delete(
   '/folders/:id',
   asyncHandler(async (req: Request, res: Response) => {
+    const { userId, userRoles } = getTenantContext(req);
     const prisma = (req as any).prisma;
+    
+    // Non-privileged users cannot delete any folders
+    if (!isPrivilegedUser(userRoles)) {
+      return res.status(403).json({ success: false, error: 'You do not have permission to delete folders' });
+    }
     
     const recursive = req.query.recursive === 'true';
     
@@ -561,7 +677,13 @@ router.post(
 router.delete(
   '/folders/:id/permanent',
   asyncHandler(async (req: Request, res: Response) => {
+    const { userId, userRoles } = getTenantContext(req);
     const prisma = (req as any).prisma;
+    
+    // Non-privileged users cannot delete any folders
+    if (!isPrivilegedUser(userRoles)) {
+      return res.status(403).json({ success: false, error: 'You do not have permission to delete folders' });
+    }
     
     await folderService.permanentlyDeleteFolder(prisma, req.params.id);
     
@@ -577,7 +699,14 @@ router.delete(
 router.post(
   '/folders/bulk-delete',
   asyncHandler(async (req: Request, res: Response) => {
+    const { userId, userRoles } = getTenantContext(req);
     const prisma = (req as any).prisma;
+    
+    // Non-privileged users cannot delete any folders
+    if (!isPrivilegedUser(userRoles)) {
+      return res.status(403).json({ success: false, error: 'You do not have permission to delete folders' });
+    }
+    
     const { folderIds, recursive } = req.body;
     
     if (!folderIds || !Array.isArray(folderIds) || folderIds.length === 0) {
@@ -679,7 +808,14 @@ router.post(
 router.post(
   '/folders/bulk-permanent-delete',
   asyncHandler(async (req: Request, res: Response) => {
+    const { userId, userRoles } = getTenantContext(req);
     const prisma = (req as any).prisma;
+    
+    // Non-privileged users cannot delete any folders
+    if (!isPrivilegedUser(userRoles)) {
+      return res.status(403).json({ success: false, error: 'You do not have permission to delete folders' });
+    }
+    
     const { folderIds } = req.body;
     
     if (!folderIds || !Array.isArray(folderIds) || folderIds.length === 0) {
@@ -803,12 +939,17 @@ router.get(
 router.get(
   '/files/recent',
   asyncHandler(async (req: Request, res: Response) => {
-    const { tenantSlug, userId } = getTenantContext(req);
+    const { tenantSlug, userId, userRoles } = getTenantContext(req);
     const prisma = (req as any).prisma;
+    
+    // For non-privileged users, only show files from their own employee folder
+    const accessibleFolderIds = await getUserAccessibleFolderIds(prisma, userId, userRoles);
+    const hasRestrictions = accessibleFolderIds.length > 0;
     
     const files = await prisma.file.findMany({
       where: {
         isDeleted: false,
+        ...(hasRestrictions ? { folderId: { in: accessibleFolderIds } } : {}),
       },
       orderBy: { updatedAt: 'desc' },
       take: 20,
@@ -828,14 +969,19 @@ router.get(
 router.get(
   '/files/starred',
   asyncHandler(async (req: Request, res: Response) => {
-    const { tenantSlug, userId } = getTenantContext(req);
+    const { tenantSlug, userId, userRoles } = getTenantContext(req);
     const prisma = (req as any).prisma;
+    
+    // For non-privileged users, only show starred items from their own employee folder
+    const accessibleFolderIds = await getUserAccessibleFolderIds(prisma, userId, userRoles);
+    const hasRestrictions = accessibleFolderIds.length > 0;
     
     const [files, folders] = await Promise.all([
       prisma.file.findMany({
         where: {
           isStarred: true,
           isDeleted: false,
+          ...(hasRestrictions ? { folderId: { in: accessibleFolderIds } } : {}),
         },
         orderBy: { updatedAt: 'desc' },
         include: {
@@ -846,6 +992,7 @@ router.get(
         where: {
           isStarred: true,
           isDeleted: false,
+          ...(hasRestrictions ? { id: { in: accessibleFolderIds } } : {}),
         },
         orderBy: { updatedAt: 'desc' },
         include: {
@@ -871,7 +1018,13 @@ router.get(
 router.get(
   '/files/:id',
   asyncHandler(async (req: Request, res: Response) => {
+    const { userId, userRoles } = getTenantContext(req);
     const prisma = (req as any).prisma;
+    
+    // Check access before returning file
+    if (!await canAccessFile(prisma, req.params.id, userId, userRoles)) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
     
     const file = await fileService.getFileById(prisma, req.params.id);
     
@@ -887,7 +1040,13 @@ router.get(
 router.get(
   '/files/:id/download',
   asyncHandler(async (req: Request, res: Response) => {
+    const { userId, userRoles } = getTenantContext(req);
     const prisma = (req as any).prisma;
+    
+    // Check access before allowing download
+    if (!await canAccessFile(prisma, req.params.id, userId, userRoles)) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
     
     const inline = req.query.inline === 'true';
     const url = await fileService.getFileDownloadUrl(prisma, req.params.id, inline);
@@ -900,7 +1059,13 @@ router.get(
 router.get(
   '/files/:id/thumbnail/:size',
   asyncHandler(async (req: Request, res: Response) => {
+    const { userId, userRoles } = getTenantContext(req);
     const prisma = (req as any).prisma;
+    
+    // Check access before returning thumbnail
+    if (!await canAccessFile(prisma, req.params.id, userId, userRoles)) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
     
     const size = req.params.size as 'small' | 'medium' | 'large';
     const url = await fileService.getThumbnailUrl(prisma, req.params.id, size);
@@ -1011,7 +1176,13 @@ router.post(
 router.delete(
   '/files/:id',
   asyncHandler(async (req: Request, res: Response) => {
+    const { userId, userRoles } = getTenantContext(req);
     const prisma = (req as any).prisma;
+    
+    // Non-privileged users cannot delete any files
+    if (!isPrivilegedUser(userRoles)) {
+      return res.status(403).json({ success: false, error: 'You do not have permission to delete files' });
+    }
     
     const permanent = req.query.permanent === 'true';
     
@@ -1041,7 +1212,13 @@ router.post(
 router.delete(
   '/files/:id/permanent',
   asyncHandler(async (req: Request, res: Response) => {
+    const { userId, userRoles } = getTenantContext(req);
     const prisma = (req as any).prisma;
+    
+    // Non-privileged users cannot delete any files
+    if (!isPrivilegedUser(userRoles)) {
+      return res.status(403).json({ success: false, error: 'You do not have permission to delete files' });
+    }
     
     await fileService.permanentlyDeleteFile(prisma, req.params.id);
     
@@ -1057,7 +1234,14 @@ router.delete(
 router.post(
   '/files/bulk-delete',
   asyncHandler(async (req: Request, res: Response) => {
+    const { userId, userRoles } = getTenantContext(req);
     const prisma = (req as any).prisma;
+    
+    // Non-privileged users cannot delete any files
+    if (!isPrivilegedUser(userRoles)) {
+      return res.status(403).json({ success: false, error: 'You do not have permission to delete files' });
+    }
+    
     const { fileIds } = req.body;
     
     if (!fileIds || !Array.isArray(fileIds) || fileIds.length === 0) {
@@ -1191,7 +1375,14 @@ router.post(
 router.post(
   '/files/bulk-permanent-delete',
   asyncHandler(async (req: Request, res: Response) => {
+    const { userId, userRoles } = getTenantContext(req);
     const prisma = (req as any).prisma;
+    
+    // Non-privileged users cannot delete any files
+    if (!isPrivilegedUser(userRoles)) {
+      return res.status(403).json({ success: false, error: 'You do not have permission to delete files' });
+    }
+    
     const { fileIds } = req.body;
     
     if (!fileIds || !Array.isArray(fileIds) || fileIds.length === 0) {
@@ -1257,7 +1448,14 @@ router.get(
 router.get(
   '/trash',
   asyncHandler(async (req: Request, res: Response) => {
+    const { userId, userRoles } = getTenantContext(req);
     const prisma = (req as any).prisma;
+    
+    // Non-privileged users cannot delete files, so they won't have trash
+    // Return empty trash for them
+    if (!isPrivilegedUser(userRoles)) {
+      return res.json({ success: true, data: { files: [], folders: [] } });
+    }
     
     // Get all deleted folders first
     const allDeletedFolders = await prisma.folder.findMany({
@@ -1635,6 +1833,7 @@ router.post(
 router.get(
   '/search',
   asyncHandler(async (req: Request, res: Response) => {
+    const { userId, userRoles } = getTenantContext(req);
     const prisma = (req as any).prisma;
     
     const query = (req.query.q as string) || '';
@@ -1642,6 +1841,10 @@ router.get(
     if (query.length < 2) {
       return res.json({ success: true, data: { files: [], folders: [] } });
     }
+    
+    // For non-privileged users, only search within their own employee folder
+    const accessibleFolderIds = await getUserAccessibleFolderIds(prisma, userId, userRoles);
+    const hasRestrictions = accessibleFolderIds.length > 0;
     
     const [files, folders] = await Promise.all([
       prisma.file.findMany({
@@ -1651,6 +1854,7 @@ router.get(
             { name: { contains: query, mode: 'insensitive' } },
             { description: { contains: query, mode: 'insensitive' } },
           ],
+          ...(hasRestrictions ? { folderId: { in: accessibleFolderIds } } : {}),
         },
         take: 50,
         orderBy: { updatedAt: 'desc' },
@@ -1661,6 +1865,8 @@ router.get(
       prisma.folder.findMany({
         where: {
           name: { contains: query, mode: 'insensitive' },
+          isDeleted: false,
+          ...(hasRestrictions ? { id: { in: accessibleFolderIds } } : {}),
         },
         take: 20,
         orderBy: { updatedAt: 'desc' },

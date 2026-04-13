@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth/auth-context';
-import { apiClient } from '@/lib/api/client';
+import { apiClient, api } from '@/lib/api/client';
 import type { UserProfile } from '../types';
 
 interface UseProfileReturn {
@@ -96,6 +96,35 @@ export function useProfile(): UseProfileReturn {
     try {
       setSaving(true);
       
+      let avatarUrl = undefined;
+      
+      // If user has an avatar file and an employeeId, upload to document service
+      if (avatarFile && user?.employeeId) {
+        try {
+          const formData = new FormData();
+          formData.append('file', avatarFile);
+          
+          const uploadRes = await api.post(
+            `/api/documents/files/upload-avatar/${user.employeeId}`,
+            formData,
+            { headers: { 'Content-Type': 'multipart/form-data' } }
+          );
+          
+          const uploaded = uploadRes.data?.data?.uploaded?.[0];
+          if (uploaded?.storageKey) {
+            // Use key-based public download URL
+            avatarUrl = `/api/documents/files/download?key=${encodeURIComponent(uploaded.storageKey)}&inline=true`;
+          }
+        } catch (uploadError) {
+          console.error('Failed to upload avatar to document service:', uploadError);
+          // Fall back to base64 if document service upload fails
+          avatarUrl = avatarPreview || undefined;
+        }
+      } else if (avatarFile && avatarPreview) {
+        // No employeeId, use base64 fallback
+        avatarUrl = avatarPreview;
+      }
+      
       const response = await apiClient.put<UserProfile>('/api/v1/users/profile', {
         firstName: profileForm.firstName,
         lastName: profileForm.lastName,
@@ -103,7 +132,7 @@ export function useProfile(): UseProfileReturn {
         bio: profileForm.bio,
         skills: profileForm.skills,
         location: profileForm.location,
-        avatar: avatarFile && avatarPreview ? avatarPreview : undefined,
+        avatar: avatarUrl,
       });
 
       if (response.success && response.data) {
