@@ -98,14 +98,14 @@ export function useProfile(): UseProfileReturn {
       
       let avatarUrl = undefined;
       
-      // If user has an avatar file and an employeeId, upload to document service
-      if (avatarFile && user?.employeeId) {
+      // If user has an avatar file and an employeeRecordId, upload to document service
+      if (avatarFile && user?.employeeRecordId) {
         try {
           const formData = new FormData();
           formData.append('file', avatarFile);
           
           const uploadRes = await api.post(
-            `/api/documents/files/upload-avatar/${user.employeeId}`,
+            `/api/documents/files/upload-avatar/${user.employeeRecordId}`,
             formData,
             { headers: { 'Content-Type': 'multipart/form-data' } }
           );
@@ -121,7 +121,7 @@ export function useProfile(): UseProfileReturn {
           avatarUrl = avatarPreview || undefined;
         }
       } else if (avatarFile && avatarPreview) {
-        // No employeeId, use base64 fallback
+        // No employeeRecordId, use base64 fallback
         avatarUrl = avatarPreview;
       }
       
