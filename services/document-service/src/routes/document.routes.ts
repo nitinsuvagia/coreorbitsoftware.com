@@ -394,30 +394,23 @@ router.get(
     const { userId, userRoles } = getTenantContext(req);
     
     const parentId = req.query.parentId as string | undefined;
-    let tree = await folderService.getFolderTree(prisma, parentId);
     
-    // Non-privileged users: filter the tree
+    // Non-privileged users: show their employee folder's subfolders as the root tree
     if (!isPrivilegedUser(userRoles)) {
       const employeeInfo = await getUserEmployeeInfo(prisma, userId);
       
-      // At root level, only show "Employee Documents"
-      tree = tree.filter(node => node.name === 'Employee Documents');
-      
-      // Inside "Employee Documents", only show the user's own employee folder
-      if (employeeInfo && tree.length > 0) {
-        const empDocsNode = tree[0];
-        if (empDocsNode.children && Array.isArray(empDocsNode.children)) {
-          empDocsNode.children = empDocsNode.children.filter((child: any) => {
-            const folderCode = child.name.split(' - ')[0].trim();
-            return folderCode === employeeInfo.employeeCode;
-          });
-        }
-      } else if (tree.length > 0) {
-        // No employee record — hide all employee folders
-        tree[0].children = [];
+      if (employeeInfo?.employeeFolderId) {
+        // Get tree starting from the employee's folder (their subfolders become root)
+        const tree = await folderService.getFolderTree(prisma, employeeInfo.employeeFolderId);
+        return res.json({ success: true, data: tree });
       }
+      
+      // No employee folder - return empty tree
+      return res.json({ success: true, data: [] });
     }
     
+    // Privileged users see the full tree
+    const tree = await folderService.getFolderTree(prisma, parentId);
     res.json({ success: true, data: tree });
   })
 );
@@ -429,13 +422,38 @@ router.get(
     const prisma = (req as any).prisma;
     const { userId, userRoles } = getTenantContext(req);
     
-    let folders = await folderService.listRootFolders(prisma);
-    
-    // Non-privileged users only see "Employee Documents" root folder
+    // Non-privileged users: return their employee folder's subfolders as root
     if (!isPrivilegedUser(userRoles)) {
-      folders = folders.filter(f => f.name === 'Employee Documents');
+      const employeeInfo = await getUserEmployeeInfo(prisma, userId);
+      if (employeeInfo?.employeeFolderId) {
+        // Get subfolders of the employee's folder as "root" folders
+        const employeeSubfolders = await prisma.folder.findMany({
+          where: { 
+            parentId: employeeInfo.employeeFolderId,
+            isDeleted: false,
+          },
+          orderBy: { name: 'asc' },
+          include: {
+            _count: { select: { children: true, files: true } },
+            creator: { select: { id: true, firstName: true, lastName: true } },
+          },
+        });
+        
+        const folders = employeeSubfolders.map((f: any) => ({
+          ...f,
+          createdBy: f.creator,
+          fileCount: f._count?.files || 0,
+          subfolderCount: f._count?.children || 0,
+        }));
+        
+        return res.json({ success: true, data: folders });
+      }
+      // No employee folder found - return empty
+      return res.json({ success: true, data: [] });
     }
     
+    // Privileged users see all root folders
+    const folders = await folderService.listRootFolders(prisma);
     res.json({ success: true, data: folders });
   })
 );
@@ -452,14 +470,20 @@ router.get(
       return res.status(500).json({ success: false, error: 'Database connection not available' });
     }
     
-    const contents = await folderService.listFolderContents(prisma, null);
-    
-    // Non-privileged users: only show "Employee Documents" at root level
+    // Non-privileged users: return their employee folder's contents as root
     if (!isPrivilegedUser(userRoles)) {
-      contents.folders = contents.folders.filter(f => f.name === 'Employee Documents');
-      contents.files = []; // No files at root for non-privileged users
+      const employeeInfo = await getUserEmployeeInfo(prisma, userId);
+      if (employeeInfo?.employeeFolderId) {
+        // Get contents of the employee's folder as "root" contents
+        const contents = await folderService.listFolderContents(prisma, employeeInfo.employeeFolderId);
+        return res.json({ success: true, data: contents });
+      }
+      // No employee folder found - return empty
+      return res.json({ success: true, data: { folders: [], files: [] } });
     }
     
+    // Privileged users see actual root contents
+    const contents = await folderService.listFolderContents(prisma, null);
     res.json({ success: true, data: contents });
   })
 );
@@ -555,23 +579,24 @@ router.get(
         }
       }
       
-      // If navigating into "Employee Documents", filter to only show the user's own folder
+      // If navigating into "Employee Documents", redirect to employee's folder contents
       if (folder.name === 'Employee Documents' && !folder.parentId) {
         const employeeInfo = await getUserEmployeeInfo(prisma, userId);
-        const contents = await folderService.listFolderContents(prisma, folderId);
         
-        if (employeeInfo) {
-          // Only show the folder matching the current user's employee code
-          contents.folders = contents.folders.filter(f => {
-            const folderCode = f.name.split(' - ')[0].trim();
-            return folderCode === employeeInfo.employeeCode;
-          });
-        } else {
-          // No employee record found — show no folders
-          contents.folders = [];
+        if (employeeInfo?.employeeFolderId) {
+          // Return the employee's folder contents directly (their subfolders)
+          const contents = await folderService.listFolderContents(prisma, employeeInfo.employeeFolderId);
+          return res.json({ success: true, data: contents });
         }
-        contents.files = [];
         
+        // No employee folder - return empty
+        return res.json({ success: true, data: { folders: [], files: [] } });
+      }
+      
+      // If accessing their own employee folder directly, return its contents
+      const employeeInfo = await getUserEmployeeInfo(prisma, userId);
+      if (employeeInfo && folder.id === employeeInfo.employeeFolderId) {
+        const contents = await folderService.listFolderContents(prisma, folderId);
         return res.json({ success: true, data: contents });
       }
       
@@ -606,8 +631,21 @@ router.get(
   '/folders/:id/breadcrumb',
   asyncHandler(async (req: Request, res: Response) => {
     const prisma = (req as any).prisma;
+    const { userId, userRoles } = getTenantContext(req);
     
-    const breadcrumb = await folderService.getBreadcrumb(prisma, req.params.id);
+    let breadcrumb = await folderService.getBreadcrumb(prisma, req.params.id);
+    
+    // Non-privileged users: filter out "Employee Documents" and their employee folder
+    if (!isPrivilegedUser(userRoles)) {
+      const employeeInfo = await getUserEmployeeInfo(prisma, userId);
+      if (employeeInfo && breadcrumb && Array.isArray(breadcrumb)) {
+        breadcrumb = breadcrumb.filter((crumb: any) => {
+          if (crumb.name === 'Employee Documents') return false;
+          if (crumb.name?.startsWith(`${employeeInfo.employeeCode} - `)) return false;
+          return true;
+        });
+      }
+    }
     
     res.json({ success: true, data: breadcrumb });
   })
@@ -1433,8 +1471,25 @@ router.get(
   '/folders/:id/breadcrumbs',
   asyncHandler(async (req: Request, res: Response) => {
     const prisma = (req as any).prisma;
+    const { userId, userRoles } = getTenantContext(req);
     
-    const breadcrumbs = await folderService.getBreadcrumb(prisma, req.params.id);
+    let breadcrumbs = await folderService.getBreadcrumb(prisma, req.params.id);
+    
+    // Non-privileged users: filter out "Employee Documents" and their employee folder
+    // So breadcrumbs start directly from their subfolders
+    if (!isPrivilegedUser(userRoles)) {
+      const employeeInfo = await getUserEmployeeInfo(prisma, userId);
+      if (employeeInfo && breadcrumbs && Array.isArray(breadcrumbs)) {
+        // Remove "Employee Documents" folder and the employee's folder from breadcrumbs
+        breadcrumbs = breadcrumbs.filter((crumb: any) => {
+          // Skip "Employee Documents" folder
+          if (crumb.name === 'Employee Documents') return false;
+          // Skip the employee's own folder (matches by employee code prefix)
+          if (crumb.name?.startsWith(`${employeeInfo.employeeCode} - `)) return false;
+          return true;
+        });
+      }
+    }
     
     res.json({ success: true, data: breadcrumbs });
   })
