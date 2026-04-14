@@ -611,7 +611,7 @@ export async function listFolderContents(
   ]);
   
   // If parent is "Employee Documents", fetch employee info for each folder
-  let employeeMap: Map<string, { id: string; firstName: string; lastName: string; avatar?: string }> = new Map();
+  let employeeMap: Map<string, { id: string; firstName: string; lastName: string; avatar?: string; status: string }> = new Map();
   
   if (isEmployeeDocumentsFolder) {
     // Extract employee codes from folder names (format: "SQT001 - John Doe")
@@ -622,7 +622,7 @@ export async function listFolderContents(
     if (employeeCodes.length > 0) {
       const employees = await prisma.employee.findMany({
         where: { employeeCode: { in: employeeCodes } },
-        select: { id: true, employeeCode: true, firstName: true, lastName: true, avatar: true },
+        select: { id: true, employeeCode: true, firstName: true, lastName: true, avatar: true, status: true },
       });
       
       employees.forEach(emp => {
@@ -631,6 +631,7 @@ export async function listFolderContents(
           firstName: emp.firstName,
           lastName: emp.lastName,
           avatar: emp.avatar || undefined,
+          status: emp.status || 'ACTIVE',
         });
       });
     }

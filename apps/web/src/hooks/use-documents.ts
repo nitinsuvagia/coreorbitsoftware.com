@@ -58,7 +58,7 @@ export interface Folder {
   color?: string;
   createdById: string;
   createdBy?: { id: string; firstName: string; lastName: string };
-  employee?: { id: string; firstName: string; lastName: string; avatar?: string };
+  employee?: { id: string; firstName: string; lastName: string; avatar?: string; status?: string };
   fileCount?: number;
   subfolderCount?: number;
   isStarred?: boolean;

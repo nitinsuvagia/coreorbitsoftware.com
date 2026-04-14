@@ -1315,6 +1315,75 @@ export default function DocumentsPage() {
     });
   }, [viewData.files, sortBy, sortOrder]);
   
+  // Check if we're viewing the Employee Documents folder (for grouping)
+  const isInEmployeeDocumentsFolder = useMemo(() => {
+    if (!breadcrumbs || !Array.isArray(breadcrumbs) || breadcrumbs.length === 0) return false;
+    const lastBreadcrumb = breadcrumbs[breadcrumbs.length - 1];
+    return lastBreadcrumb?.name === 'Employee Documents';
+  }, [breadcrumbs]);
+  
+  // State for collapsed employee status groups
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  
+  const toggleGroup = (group: string) => {
+    setCollapsedGroups(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(group)) {
+        newSet.delete(group);
+      } else {
+        newSet.add(group);
+      }
+      return newSet;
+    });
+  };
+  
+  // Group employee folders by status when in Employee Documents folder
+  type EmployeeStatusGroup = 'current' | 'probation' | 'relieving' | 'ex-employees';
+  
+  const employeeFolderGroups = useMemo(() => {
+    if (!isInEmployeeDocumentsFolder) return null;
+    
+    const groups: Record<EmployeeStatusGroup, typeof sortedFolders> = {
+      'current': [],
+      'probation': [],
+      'relieving': [],
+      'ex-employees': [],
+    };
+    
+    for (const folder of sortedFolders) {
+      const status = folder.employee?.status?.toUpperCase() || 'ACTIVE';
+      
+      switch (status) {
+        case 'ACTIVE':
+          groups['current'].push(folder);
+          break;
+        case 'PROBATION':
+          groups['probation'].push(folder);
+          break;
+        case 'RELIEVING':
+          groups['relieving'].push(folder);
+          break;
+        case 'TERMINATED':
+        case 'RESIGNED':
+          groups['ex-employees'].push(folder);
+          break;
+        default:
+          groups['current'].push(folder);
+      }
+    }
+    
+    return groups;
+  }, [isInEmployeeDocumentsFolder, sortedFolders]);
+  
+  const employeeGroupLabels: Record<EmployeeStatusGroup, string> = {
+    'current': 'Current',
+    'probation': 'Probation',
+    'relieving': 'Relieving',
+    'ex-employees': 'Ex-employees',
+  };
+  
+  const employeeGroupOrder: EmployeeStatusGroup[] = ['current', 'probation', 'relieving', 'ex-employees'];
+  
   // Handlers
   const onDrop = useCallback(async (acceptedFiles: globalThis.File[]) => {
     for (const file of acceptedFiles) {
@@ -2275,34 +2344,154 @@ export default function DocumentsPage() {
                 </div>
               ) : (
                 <>
-                  {/* Folders Section */}
+                  {/* Folders Section - Grouped by employee status when in Employee Documents */}
                   {sortedFolders.length > 0 && (
                     <div className="mb-6" onClick={handleClearSelection}>
-                      <h3 className="text-sm font-medium text-muted-foreground mb-3">Folders</h3>
-                      {viewMode === 'list' ? (
-                        <div className="border rounded-lg overflow-hidden">
-                          <table className="w-full">
-                            <thead className="bg-muted/50">
-                              <tr className="text-left text-xs text-muted-foreground uppercase">
-                                <th className="p-3 w-8">
-                                  <Checkbox 
-                                    checked={selectedItems.size > 0}
-                                    onCheckedChange={handleSelectAll}
-                                  />
-                                </th>
-                                <th className="p-3">Name</th>
-                                <th className="p-3">Owner</th>
-                                <th className="p-3">Modified</th>
-                                <th className="p-3">Size</th>
-                                <th className="p-3 w-12"></th>
-                              </tr>
-                            </thead>
-                            <tbody>
+                      {isInEmployeeDocumentsFolder && employeeFolderGroups ? (
+                        // Employee Documents - show grouped by status
+                        <div className="space-y-6">
+                          {employeeGroupOrder.map((groupKey) => {
+                            const groupFolders = employeeFolderGroups[groupKey];
+                            if (groupFolders.length === 0) return null;
+                            
+                            const isCollapsed = collapsedGroups.has(groupKey);
+                            
+                            return (
+                              <div key={groupKey}>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); toggleGroup(groupKey); }}
+                                  className="flex items-center gap-2 mb-3 hover:opacity-80 transition-opacity"
+                                >
+                                  <ChevronRight className={cn(
+                                    "h-4 w-4 text-muted-foreground transition-transform",
+                                    !isCollapsed && "rotate-90"
+                                  )} />
+                                  <h3 className="text-base font-semibold">{employeeGroupLabels[groupKey]}</h3>
+                                  <Badge variant="secondary" className="ml-1 text-xs">
+                                    {groupFolders.length}
+                                  </Badge>
+                                </button>
+                                
+                                {!isCollapsed && (
+                                  viewMode === 'list' ? (
+                                    <div className="border rounded-lg overflow-hidden">
+                                      <table className="w-full">
+                                        <thead className="bg-muted/50">
+                                          <tr className="text-left text-xs text-muted-foreground uppercase">
+                                            <th className="p-3 w-8">
+                                              <Checkbox 
+                                                checked={selectedItems.size > 0}
+                                                onCheckedChange={handleSelectAll}
+                                              />
+                                            </th>
+                                            <th className="p-3">Name</th>
+                                            <th className="p-3">Owner</th>
+                                            <th className="p-3">Modified</th>
+                                            <th className="p-3">Size</th>
+                                            <th className="p-3 w-12"></th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {groupFolders.map((folder) => (
+                                            <FolderCard
+                                              key={folder.id}
+                                              folder={folder}
+                                              view="list"
+                                              selected={selectedItems.has(folder.id)}
+                                              isTrash={currentView === 'trash'}
+                                              onSelect={handleSelect}
+                                              onOpen={() => openFolder(folder.id)}
+                                              onDelete={() => { setDeleteTarget({ type: 'folder', id: folder.id, name: folder.name }); setShowDeleteDialog(true); }}
+                                              onRename={() => { setRenameTarget({ type: 'folder', id: folder.id, name: folder.name }); setNewName(folder.name); setShowRenameDialog(true); }}
+                                              onMove={() => { setMoveTarget({ type: 'folder', id: folder.id }); setShowMoveDialog(true); }}
+                                              onChangeColor={(color) => handleChangeColor(folder.id, color)}
+                                              onStar={() => handleStarFolder(folder)}
+                                              onRestore={() => handleRestoreFolder(folder)}
+                                              onPermanentDelete={() => handlePermanentDeleteFolder(folder)}
+                                            />
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  ) : (
+                                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                                      {groupFolders.map((folder) => (
+                                        <FolderCard
+                                          key={folder.id}
+                                          folder={folder}
+                                          view="grid"
+                                          selected={selectedItems.has(folder.id)}
+                                          isTrash={currentView === 'trash'}
+                                          onSelect={handleSelect}
+                                          onOpen={() => openFolder(folder.id)}
+                                          onDelete={() => { setDeleteTarget({ type: 'folder', id: folder.id, name: folder.name }); setShowDeleteDialog(true); }}
+                                          onRename={() => { setRenameTarget({ type: 'folder', id: folder.id, name: folder.name }); setNewName(folder.name); setShowRenameDialog(true); }}
+                                          onMove={() => { setMoveTarget({ type: 'folder', id: folder.id }); setShowMoveDialog(true); }}
+                                          onChangeColor={(color) => handleChangeColor(folder.id, color)}
+                                          onStar={() => handleStarFolder(folder)}
+                                          onRestore={() => handleRestoreFolder(folder)}
+                                          onPermanentDelete={() => handlePermanentDeleteFolder(folder)}
+                                        />
+                                      ))}
+                                    </div>
+                                  )
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        // Normal folder listing
+                        <>
+                          <h3 className="text-sm font-medium text-muted-foreground mb-3">Folders</h3>
+                          {viewMode === 'list' ? (
+                            <div className="border rounded-lg overflow-hidden">
+                              <table className="w-full">
+                                <thead className="bg-muted/50">
+                                  <tr className="text-left text-xs text-muted-foreground uppercase">
+                                    <th className="p-3 w-8">
+                                      <Checkbox 
+                                        checked={selectedItems.size > 0}
+                                        onCheckedChange={handleSelectAll}
+                                      />
+                                    </th>
+                                    <th className="p-3">Name</th>
+                                    <th className="p-3">Owner</th>
+                                    <th className="p-3">Modified</th>
+                                    <th className="p-3">Size</th>
+                                    <th className="p-3 w-12"></th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {sortedFolders.map((folder) => (
+                                    <FolderCard
+                                      key={folder.id}
+                                      folder={folder}
+                                      view="list"
+                                      selected={selectedItems.has(folder.id)}
+                                      isTrash={currentView === 'trash'}
+                                      onSelect={handleSelect}
+                                      onOpen={() => openFolder(folder.id)}
+                                      onDelete={() => { setDeleteTarget({ type: 'folder', id: folder.id, name: folder.name }); setShowDeleteDialog(true); }}
+                                      onRename={() => { setRenameTarget({ type: 'folder', id: folder.id, name: folder.name }); setNewName(folder.name); setShowRenameDialog(true); }}
+                                      onMove={() => { setMoveTarget({ type: 'folder', id: folder.id }); setShowMoveDialog(true); }}
+                                      onChangeColor={(color) => handleChangeColor(folder.id, color)}
+                                      onStar={() => handleStarFolder(folder)}
+                                      onRestore={() => handleRestoreFolder(folder)}
+                                      onPermanentDelete={() => handlePermanentDeleteFolder(folder)}
+                                    />
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4" onClick={handleClearSelection}>
                               {sortedFolders.map((folder) => (
                                 <FolderCard
                                   key={folder.id}
                                   folder={folder}
-                                  view="list"
+                                  view="grid"
                                   selected={selectedItems.has(folder.id)}
                                   isTrash={currentView === 'trash'}
                                   onSelect={handleSelect}
@@ -2316,30 +2505,9 @@ export default function DocumentsPage() {
                                   onPermanentDelete={() => handlePermanentDeleteFolder(folder)}
                                 />
                               ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4" onClick={handleClearSelection}>
-                          {sortedFolders.map((folder) => (
-                            <FolderCard
-                              key={folder.id}
-                              folder={folder}
-                              view="grid"
-                              selected={selectedItems.has(folder.id)}
-                              isTrash={currentView === 'trash'}
-                              onSelect={handleSelect}
-                              onOpen={() => openFolder(folder.id)}
-                              onDelete={() => { setDeleteTarget({ type: 'folder', id: folder.id, name: folder.name }); setShowDeleteDialog(true); }}
-                              onRename={() => { setRenameTarget({ type: 'folder', id: folder.id, name: folder.name }); setNewName(folder.name); setShowRenameDialog(true); }}
-                              onMove={() => { setMoveTarget({ type: 'folder', id: folder.id }); setShowMoveDialog(true); }}
-                              onChangeColor={(color) => handleChangeColor(folder.id, color)}
-                              onStar={() => handleStarFolder(folder)}
-                              onRestore={() => handleRestoreFolder(folder)}
-                              onPermanentDelete={() => handlePermanentDeleteFolder(folder)}
-                            />
-                          ))}
-                        </div>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   )}
