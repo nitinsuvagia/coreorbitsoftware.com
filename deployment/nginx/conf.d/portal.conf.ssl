@@ -82,6 +82,13 @@ server {
         add_header Content-Type text/plain;
     }
 
+    # API requests go to API gateway (includes document downloads, auth, etc.)
+    location /api/ {
+        proxy_pass http://api_gateway;
+        proxy_read_timeout 120;
+        proxy_connect_timeout 60;
+    }
+
     # Main location
     location / {
         proxy_pass http://web_portal;
@@ -134,6 +141,13 @@ server {
 
     limit_conn conn_limit 30;
     client_max_body_size 50M;
+
+    # API requests go to API gateway (includes document downloads, auth, etc.)
+    location /api/ {
+        proxy_pass http://api_gateway;
+        proxy_read_timeout 120;
+        proxy_connect_timeout 60;
+    }
 
     location / {
         proxy_pass http://web_portal;
