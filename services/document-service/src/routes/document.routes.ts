@@ -2048,4 +2048,210 @@ router.get(
   })
 );
 
+// ============================================================================
+// ADMIN: Migrate base64 avatars to document storage
+// ============================================================================
+
+// Helper to convert base64 to buffer
+function base64ToBuffer(base64String: string): { buffer: Buffer; mimeType: string; extension: string } | null {
+  try {
+    const matches = base64String.match(/^data:([^;]+);base64,(.+)$/);
+    if (!matches) return null;
+    
+    const mimeType = matches[1];
+    const data = matches[2];
+    const buffer = Buffer.from(data, 'base64');
+    
+    const extensionMap: Record<string, string> = {
+      'image/jpeg': 'jpg',
+      'image/jpg': 'jpg',
+      'image/png': 'png',
+      'image/gif': 'gif',
+      'image/webp': 'webp',
+    };
+    const extension = extensionMap[mimeType] || 'jpg';
+    
+    return { buffer, mimeType, extension };
+  } catch {
+    return null;
+  }
+}
+
+router.post(
+  '/admin/migrate-avatars',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { userRoles } = getTenantContext(req);
+    const prisma = (req as any).prisma;
+    const tenantSlug = req.headers['x-tenant-slug'] as string;
+    
+    // Only admins can run this
+    if (!isPrivilegedUser(userRoles)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    
+    const results = {
+      migrated: 0,
+      failed: 0,
+      skipped: 0,
+      details: [] as string[],
+    };
+    
+    try {
+      // Find all users with base64 avatars
+      const usersWithAvatars = await prisma.user.findMany({
+        where: {
+          avatar: { startsWith: 'data:image' },
+          deletedAt: null,
+        },
+        select: {
+          id: true,
+          email: true,
+          avatar: true,
+          employeeId: true,
+        },
+      });
+      
+      results.details.push(`Found ${usersWithAvatars.length} users with base64 avatars`);
+      
+      // Get Employee Documents folder
+      const employeeDocsFolder = await prisma.folder.findFirst({
+        where: { name: 'Employee Documents', parentId: null },
+      });
+      
+      if (!employeeDocsFolder) {
+        return res.json({ success: true, data: { ...results, error: 'Employee Documents folder not found' } });
+      }
+      
+      for (const user of usersWithAvatars) {
+        try {
+          if (!user.employeeId) {
+            results.skipped++;
+            results.details.push(`SKIP: ${user.email} - No employee record`);
+            continue;
+          }
+          
+          // Get employee details
+          const employee = await prisma.employee.findUnique({
+            where: { id: user.employeeId },
+            select: { id: true, employeeCode: true, firstName: true, lastName: true },
+          });
+          
+          if (!employee) {
+            results.skipped++;
+            results.details.push(`SKIP: ${user.email} - Employee not found`);
+            continue;
+          }
+          
+          // Find employee folder
+          let employeeFolder = await prisma.folder.findFirst({
+            where: {
+              parentId: employeeDocsFolder.id,
+              isDeleted: false,
+              name: { startsWith: `${employee.employeeCode} - ` },
+            },
+          });
+          
+          if (!employeeFolder) {
+            // Create employee folder
+            const employeeFolderName = `${employee.employeeCode} - ${employee.firstName} ${employee.lastName}`;
+            employeeFolder = await prisma.folder.create({
+              data: {
+                name: employeeFolderName,
+                description: `Documents for ${employee.firstName} ${employee.lastName}`,
+                parentId: employeeDocsFolder.id,
+                path: `/Employee Documents/${employeeFolderName}`,
+                depth: 2,
+                createdBy: user.id,
+              },
+            });
+          }
+          
+          // Find or create Profile Photo folder
+          let profilePhotoFolder = await prisma.folder.findFirst({
+            where: { name: 'Profile Photo', parentId: employeeFolder.id, isDeleted: false },
+          });
+          
+          if (!profilePhotoFolder) {
+            profilePhotoFolder = await prisma.folder.create({
+              data: {
+                name: 'Profile Photo',
+                description: 'Profile pictures',
+                parentId: employeeFolder.id,
+                path: `${employeeFolder.path}/Profile Photo`,
+                depth: 3,
+                createdBy: user.id,
+              },
+            });
+          }
+          
+          // Convert base64 to buffer
+          const parsed = base64ToBuffer(user.avatar);
+          if (!parsed) {
+            results.failed++;
+            results.details.push(`FAIL: ${user.email} - Invalid base64 format`);
+            continue;
+          }
+          
+          const { buffer, mimeType, extension } = parsed;
+          const storageName = `${Date.now()}-avatar.${extension}`;
+          const storageKey = `${tenantSlug}/${employee.employeeCode}/profile-photo/${storageName}`;
+          
+          // Upload to storage
+          await storageService.uploadFile({
+            key: storageKey,
+            body: buffer,
+            contentType: mimeType,
+            metadata: { originalName: `avatar.${extension}` },
+          });
+          
+          // Create or update file record
+          const existingFile = await prisma.file.findFirst({
+            where: { folderId: profilePhotoFolder.id, name: { startsWith: 'avatar.' }, isDeleted: false },
+          });
+          
+          if (existingFile) {
+            await prisma.file.update({
+              where: { id: existingFile.id },
+              data: { storageName, storageKey, size: buffer.length, mimeType, updatedAt: new Date() },
+            });
+          } else {
+            await prisma.file.create({
+              data: {
+                name: `avatar.${extension}`,
+                storageName,
+                storageKey,
+                mimeType,
+                size: buffer.length,
+                folderId: profilePhotoFolder.id,
+                uploadedBy: user.id,
+                entityType: 'EMPLOYEE',
+                entityId: employee.id,
+              },
+            });
+          }
+          
+          // Update user and employee avatar URLs
+          const newAvatarUrl = `/api/documents/files/download?key=${encodeURIComponent(storageKey)}&inline=true`;
+          
+          await prisma.user.update({ where: { id: user.id }, data: { avatar: newAvatarUrl } });
+          await prisma.employee.update({ where: { id: employee.id }, data: { avatar: newAvatarUrl } });
+          
+          results.migrated++;
+          results.details.push(`OK: ${user.email} -> ${storageKey}`);
+          
+        } catch (userError: any) {
+          results.failed++;
+          results.details.push(`FAIL: ${user.email} - ${userError.message}`);
+        }
+      }
+      
+      res.json({ success: true, data: results });
+      
+    } catch (error: any) {
+      logger.error({ error }, 'Avatar migration failed');
+      res.status(500).json({ success: false, error: error.message, data: results });
+    }
+  })
+);
+
 export default router;
