@@ -2116,90 +2116,96 @@ export default function DocumentsPage() {
             </div>
           </div>
           
-          {/* Selection Bar */}
-          {selectedItems.size > 0 && (
-            <div className="border-b bg-primary/5 p-2 flex items-center gap-4 flex-shrink-0">
-              <Button variant="ghost" size="sm" onClick={() => setSelectedItems(new Set())}>
-                <X className="mr-2 h-4 w-4" /> Clear selection
-              </Button>
-              <span className="text-sm text-muted-foreground">{selectedItems.size} selected</span>
-              <Separator orientation="vertical" className="h-5" />
+          {/* Selection Bar - Always visible, actions disabled when nothing selected */}
+          <div className="border-b bg-muted/30 p-2 flex items-center gap-4 flex-shrink-0 min-h-[52px]">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={() => setSelectedItems(new Set())}
+              disabled={selectedItems.size === 0}
+              className={selectedItems.size === 0 ? "opacity-50" : ""}
+            >
+              <X className="mr-2 h-4 w-4" /> Clear selection
+            </Button>
+            <span className="text-sm text-muted-foreground min-w-[80px]">
+              {selectedItems.size > 0 ? `${selectedItems.size} selected` : 'No selection'}
+            </span>
+            <Separator orientation="vertical" className="h-5" />
+            
+            {currentView === 'trash' ? (
+              // Trash view - show Restore and Permanently Delete options
+              <>
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={handleBulkRestore}
+                  disabled={selectedItems.size === 0 || bulkRestoreFilesMutation.isPending || bulkRestoreFoldersMutation.isPending}
+                  className={selectedItems.size === 0 ? "opacity-50" : ""}
+                >
+                  <RotateCcw className="mr-2 h-4 w-4" /> 
+                  {bulkRestoreFilesMutation.isPending || bulkRestoreFoldersMutation.isPending 
+                    ? 'Restoring...' 
+                    : 'Restore'}
+                </Button>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className={cn("text-destructive hover:text-destructive", selectedItems.size === 0 && "opacity-50")}
+                  onClick={handleBulkPermanentDelete}
+                  disabled={selectedItems.size === 0 || bulkPermanentDeleteFilesMutation.isPending || bulkPermanentDeleteFoldersMutation.isPending}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" /> 
+                  {bulkPermanentDeleteFilesMutation.isPending || bulkPermanentDeleteFoldersMutation.isPending 
+                    ? 'Deleting...' 
+                    : 'Delete Permanently'}
+                </Button>
+              </>
+            ) : (() => {
+              // Check if any selected folder is protected
+              const selectedFolderIds = Array.from(selectedItems).filter(id => 
+                sortedFolders.some(f => f.id === id)
+              );
+              const hasProtectedFolder = selectedFolderIds.some(id => {
+                const folder = sortedFolders.find(f => f.id === id);
+                return folder && isProtectedDefaultFolder(folder);
+              });
               
-              {currentView === 'trash' ? (
-                // Trash view - show Restore and Permanently Delete options
+              return (
+                // Normal view - show Download, Move, Delete options
                 <>
                   <Button 
                     variant="ghost" 
-                    size="sm"
-                    onClick={handleBulkRestore}
-                    disabled={bulkRestoreFilesMutation.isPending || bulkRestoreFoldersMutation.isPending}
+                    size="sm" 
+                    onClick={handleBulkDownload}
+                    disabled={selectedItems.size === 0 || bulkDownloadUrlsMutation.isPending}
+                    className={selectedItems.size === 0 ? "opacity-50" : ""}
                   >
-                    <RotateCcw className="mr-2 h-4 w-4" /> 
-                    {bulkRestoreFilesMutation.isPending || bulkRestoreFoldersMutation.isPending 
-                      ? 'Restoring...' 
-                      : selectedItems.size === 1 ? 'Restore' : 'Restore All'}
+                    <Download className="mr-2 h-4 w-4" /> 
+                    {bulkDownloadUrlsMutation.isPending ? 'Downloading...' : 'Download'}
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={() => { setBulkMoveDestination(null); setShowBulkMoveDialog(true); }}
+                    disabled={selectedItems.size === 0 || hasProtectedFolder}
+                    className={selectedItems.size === 0 || hasProtectedFolder ? "opacity-50" : ""}
+                  >
+                    <Move className="mr-2 h-4 w-4" /> Move
                   </Button>
                   <Button 
                     variant="ghost" 
                     size="sm" 
-                    className="text-destructive hover:text-destructive"
-                    onClick={handleBulkPermanentDelete}
-                    disabled={bulkPermanentDeleteFilesMutation.isPending || bulkPermanentDeleteFoldersMutation.isPending}
+                    className={cn("text-destructive hover:text-destructive", (selectedItems.size === 0 || hasProtectedFolder) && "opacity-50")}
+                    onClick={handleBulkDelete}
+                    disabled={selectedItems.size === 0 || hasProtectedFolder || bulkDeleteFilesMutation.isPending || bulkDeleteFoldersMutation.isPending}
                   >
                     <Trash2 className="mr-2 h-4 w-4" /> 
-                    {bulkPermanentDeleteFilesMutation.isPending || bulkPermanentDeleteFoldersMutation.isPending 
-                      ? 'Deleting...' 
-                      : selectedItems.size === 1 ? 'Delete Permanently' : 'Delete All Permanently'}
+                    {bulkDeleteFilesMutation.isPending || bulkDeleteFoldersMutation.isPending ? 'Deleting...' : 'Delete'}
                   </Button>
                 </>
-              ) : (() => {
-                // Check if any selected folder is protected
-                const selectedFolderIds = Array.from(selectedItems).filter(id => 
-                  sortedFolders.some(f => f.id === id)
-                );
-                const hasProtectedFolder = selectedFolderIds.some(id => {
-                  const folder = sortedFolders.find(f => f.id === id);
-                  return folder && isProtectedDefaultFolder(folder);
-                });
-                
-                return (
-                  // Normal view - show Download, Move, Delete options
-                  <>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      onClick={handleBulkDownload}
-                      disabled={bulkDownloadUrlsMutation.isPending}
-                    >
-                      <Download className="mr-2 h-4 w-4" /> 
-                      {bulkDownloadUrlsMutation.isPending ? 'Downloading...' : 'Download'}
-                    </Button>
-                    {!hasProtectedFolder && (
-                      <Button 
-                        variant="ghost" 
-                        size="sm"
-                        onClick={() => { setBulkMoveDestination(null); setShowBulkMoveDialog(true); }}
-                      >
-                        <Move className="mr-2 h-4 w-4" /> Move
-                      </Button>
-                    )}
-                    {!hasProtectedFolder && (
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        className="text-destructive hover:text-destructive"
-                        onClick={handleBulkDelete}
-                        disabled={bulkDeleteFilesMutation.isPending || bulkDeleteFoldersMutation.isPending}
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" /> 
-                        {bulkDeleteFilesMutation.isPending || bulkDeleteFoldersMutation.isPending ? 'Deleting...' : 'Delete'}
-                      </Button>
-                    )}
-                  </>
-                );
-              })()}
-            </div>
-          )}
+              );
+            })()}
+          </div>
           
           {/* Content */}
           <ScrollArea className="flex-1 h-full">
