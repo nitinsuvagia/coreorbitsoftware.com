@@ -440,6 +440,12 @@ export async function sendNotificationPush(
       icon: '/icons/anniversary.png',
       data: { type, employeeId: data.employeeId },
     }),
+    'payroll.run_finalized': () => ({
+      title: '💰 Payslip Ready',
+      body: `Your payslip for ${data.periodLabel || 'this month'} is available to download.`,
+      icon: '/icons/payslip.png',
+      data: { type, runId: data.runId, url: '/documents' },
+    }),
   } as unknown as Record<NotificationType, () => PushPayload>;
   
   const payloadFn = payloadMap[type];

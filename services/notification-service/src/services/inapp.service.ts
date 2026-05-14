@@ -480,6 +480,11 @@ export async function createTypedNotification(
       message: `${data.jobTitle || 'A position'} is now open for referrals`,
       priority: 'low',
     },
+    'payroll.run_finalized': {
+      title: 'Payslip available 💰',
+      message: `Your payslip for ${data.periodLabel || 'this month'} is ready to download.`,
+      priority: 'normal',
+    },
   } as Record<NotificationType, { title: string; message: string; priority?: 'low' | 'normal' | 'high' | 'urgent' }>;
   
   const content = contentMap[type];

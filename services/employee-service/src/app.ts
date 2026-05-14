@@ -29,6 +29,7 @@ import setupStatusRoutes from './routes/setup-status.routes';
 import importRoutes from './routes/import.routes';
 import customFieldsRoutes from './routes/custom-fields.routes';
 import resignationRoutes from './routes/resignation.routes';
+import payrollRoutes from './routes/payroll.routes';
 
 // ============================================================================
 // CREATE APP
@@ -121,6 +122,7 @@ app.use('/api/v1/employees/:employeeId/notes', noteRoutes);
 app.use('/api/v1/employees', customFieldsRoutes); // Custom fields routes (handles /:employeeId/custom-fields)
 app.use('/api/v1/employees/import', importRoutes); // Import routes
 app.use('/api/v1/resignations', resignationRoutes); // Resignation & offboarding routes
+app.use('/api/v1/payroll', payrollRoutes); // Payroll / Salary Run routes
 app.use('/api/v1/setup-status', setupStatusRoutes);
 
 // ============================================================================

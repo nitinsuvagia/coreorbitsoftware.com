@@ -1,0 +1,27 @@
+<h2>Your payslip is ready</h2>
+
+<p>Hi {{employeeName}},</p>
+
+<p>Your salary slip for <strong>{{periodLabel}}</strong> has been finalized and is now available in your portal.</p>
+
+<div class="info-box">
+  <p><strong>Summary</strong></p>
+  <p>
+    Period: {{periodLabel}}<br>
+    Net payable: <strong>{{netPayable}}</strong>
+  </p>
+</div>
+
+<p>You can download the PDF payslip from your portal:</p>
+
+<a href="{{payslipUrl}}" class="button">View Payslip</a>
+
+<p style="font-size: 14px; color: #718096;">Or copy and paste this link into your browser:<br>
+<a href="{{payslipUrl}}">{{payslipUrl}}</a></p>
+
+<div class="divider"></div>
+
+<p>If anything looks incorrect, please contact your HR team.</p>
+
+<p>Best regards,<br>
+<strong>{{companyName}}</strong></p>

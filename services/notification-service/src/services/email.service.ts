@@ -366,6 +366,7 @@ export async function sendNotificationEmail(
     'employee.onboarded': `Welcome ${data.employeeName || ''} to the team!`,
     'employee.birthday': `🎂 Happy Birthday ${data.employeeName || ''}!`,
     'employee.anniversary': `🎉 Work Anniversary: ${data.employeeName || ''}`,
+    'payroll.run_finalized': `Payslip available — ${data.periodLabel || 'this month'}`,
   } as Record<NotificationType, string>;
   
   const subject = subjectMap[type] || 'Notification';

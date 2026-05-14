@@ -8,7 +8,9 @@ WORKDIR /app
 COPY package*.json ./
 COPY apps/web/package*.json ./apps/web/
 
-RUN npm ci --workspace=apps/web
+# canvas (transitive via jest-environment-jsdom) needs native build tools we don't have.
+# It is never used at runtime, so skip postinstall scripts.
+RUN npm ci --workspace=apps/web --ignore-scripts
 
 FROM base AS builder
 WORKDIR /app

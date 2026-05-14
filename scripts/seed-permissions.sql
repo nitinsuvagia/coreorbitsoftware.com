@@ -78,7 +78,14 @@ INSERT INTO permissions (id, resource, action, description) VALUES
   ('perm-settings-manage',      'settings',     'manage', 'Manage system settings'),
 
   -- Notifications
-  ('perm-notifications-read',   'notifications','read',   'View notifications')
+  ('perm-notifications-read',   'notifications','read',   'View notifications'),
+
+  -- Payroll / Salary Run
+  ('perm-payroll-self',         'payroll',      'self',     'View own payslips'),
+  ('perm-payroll-read',         'payroll',      'read',     'View all salary runs and payslips'),
+  ('perm-payroll-write',        'payroll',      'write',    'Create/edit salary runs and import data'),
+  ('perm-payroll-finalize',     'payroll',      'finalize', 'Finalize and lock salary runs'),
+  ('perm-payroll-delete',       'payroll',      'delete',   'Delete/cancel salary runs')
 
 ON CONFLICT (resource, action) DO NOTHING;
 
@@ -139,6 +146,11 @@ INSERT INTO role_permissions (id, role_id, permission_id, scope) VALUES
   ('rp-hr-documents-read',       '419602c4-cd98-4949-bfa6-a78b8ab901f8', 'perm-documents-read',       'ALL'),
   ('rp-hr-documents-write',      '419602c4-cd98-4949-bfa6-a78b8ab901f8', 'perm-documents-write',      'ALL'),
   ('rp-hr-reports-view',         '419602c4-cd98-4949-bfa6-a78b8ab901f8', 'perm-reports-view',         'ALL'),
+  ('rp-hr-payroll-self',         '419602c4-cd98-4949-bfa6-a78b8ab901f8', 'perm-payroll-self',         'OWN'),
+  ('rp-hr-payroll-read',         '419602c4-cd98-4949-bfa6-a78b8ab901f8', 'perm-payroll-read',         'ALL'),
+  ('rp-hr-payroll-write',        '419602c4-cd98-4949-bfa6-a78b8ab901f8', 'perm-payroll-write',        'ALL'),
+  ('rp-hr-payroll-finalize',     '419602c4-cd98-4949-bfa6-a78b8ab901f8', 'perm-payroll-finalize',     'ALL'),
+  ('rp-hr-payroll-delete',       '419602c4-cd98-4949-bfa6-a78b8ab901f8', 'perm-payroll-delete',       'ALL'),
   ('rp-hr-notifications-read',   '419602c4-cd98-4949-bfa6-a78b8ab901f8', 'perm-notifications-read',   'ALL')
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -196,7 +208,8 @@ INSERT INTO role_permissions (id, role_id, permission_id, scope) VALUES
   ('rp-emp-notifications-read',  'de717df9-f0c7-456c-b721-d43fc55b900e', 'perm-notifications-read',   'OWN'),
   ('rp-emp-tasks-read',          'de717df9-f0c7-456c-b721-d43fc55b900e', 'perm-tasks-read',           'OWN'),
   ('rp-emp-tasks-write',         'de717df9-f0c7-456c-b721-d43fc55b900e', 'perm-tasks-write',          'OWN'),
-  ('rp-emp-projects-read',       'de717df9-f0c7-456c-b721-d43fc55b900e', 'perm-projects-read',        'OWN')
+  ('rp-emp-projects-read',       'de717df9-f0c7-456c-b721-d43fc55b900e', 'perm-projects-read',        'OWN'),
+  ('rp-emp-payroll-self',        'de717df9-f0c7-456c-b721-d43fc55b900e', 'perm-payroll-self',         'OWN')
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
 -- ─────────────────────────────────────────────────────────────────────────────

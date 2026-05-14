@@ -101,7 +101,12 @@ function subscribeToEvents(eventBus: any): void {
   // PROJECT EVENTS
   // ============================================================================
   eventBus.subscribeToTopic('project-member-added', createEventHandler('project.member_added'));
-  
+
+  // ============================================================================
+  // PAYROLL EVENTS
+  // ============================================================================
+  eventBus.subscribeToTopic('payroll-run-finalized', createEventHandler('payroll.run_finalized'));
+
   logger.info('Subscribed to all notification event topics');
 }
 

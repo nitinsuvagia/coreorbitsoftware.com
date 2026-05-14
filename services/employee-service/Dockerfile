@@ -18,7 +18,7 @@ RUN npm ci --workspace=packages/database --workspace=packages/event-bus --worksp
     cd /app && npm install helmet@7.1.0 pino-pretty@10.3.0 --save-exact --ignore-scripts
 
 FROM base AS builder
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates openssl
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules

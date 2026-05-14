@@ -88,6 +88,7 @@ const categories: NavCategory[] = [
       { title: 'Leave Management', href: '/hr/leave-management', icon: CalendarClock, permission: ['leave:read', 'leave:self'] },
       { title: 'Performance', href: '/hr/performance-reviews', icon: ClipboardList, permission: ['performance:read', 'performance:self'] },
       { title: 'Resignations', href: '/hr/resignations', icon: UserMinus },
+      { title: 'Payroll', href: '/hr/payroll', icon: Receipt, permission: ['payroll:read', 'payroll:write', 'payroll:finalize'] },
       { title: 'Documents', href: '/documents', icon: File, permission: ['documents:read', 'documents:self'] },
     ],
   },

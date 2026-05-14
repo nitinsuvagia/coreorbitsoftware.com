@@ -129,6 +129,7 @@ const skipBodyParserPaths = [
   '/api/v1/badges',
   '/api/v1/performance-reviews',
   '/api/v1/roles',
+  '/api/v1/payroll',
 ];
 
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -203,6 +204,60 @@ app.post('/internal/invalidate-tenant-cache', (req: Request, res: Response) => {
   } catch (error) {
     logger.error({ error, tenantSlug }, 'Failed to invalidate tenant cache');
     res.status(500).json({ success: false, error: 'Failed to invalidate cache' });
+  }
+});
+
+// Internal endpoint: return tenant profile (name, logo, address, currency).
+// Used by tenant-scoped services that need to render company-branded artifacts
+// (e.g., payroll PDFs) without giving them direct access to the master DB.
+app.get('/internal/tenant-profile', async (req: Request, res: Response) => {
+  const internalSecret = req.headers['x-internal-secret'];
+  const tenantSlug = (req.headers['x-tenant-slug'] as string) || (req.query.slug as string);
+
+  if (internalSecret !== (process.env.INTERNAL_SECRET || 'internal-api-secret')) {
+    return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } });
+  }
+  if (!tenantSlug) {
+    return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'tenantSlug required' } });
+  }
+
+  try {
+    const masterPrisma = getMasterPrisma();
+    const tenant = await masterPrisma.tenant.findUnique({
+      where: { slug: tenantSlug },
+      include: { settings: true },
+    });
+    if (!tenant) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Tenant not found' } });
+    }
+    res.json({
+      success: true,
+      data: {
+        id: tenant.id,
+        slug: tenant.slug,
+        name: tenant.name,
+        legalName: tenant.legalName,
+        logo: tenant.logo,
+        reportLogo: tenant.reportLogo,
+        email: tenant.email,
+        phone: tenant.phone,
+        website: tenant.website,
+        addressLine1: tenant.addressLine1,
+        addressLine2: tenant.addressLine2,
+        city: tenant.city,
+        state: tenant.state,
+        country: tenant.country,
+        postalCode: tenant.postalCode,
+        currency: tenant.settings?.currency ?? 'USD',
+        timezone: tenant.settings?.timezone ?? 'UTC',
+        dateFormat: tenant.settings?.dateFormat ?? 'YYYY-MM-DD',
+        primaryColor: tenant.settings?.primaryColor ?? '#3B82F6',
+        logoUrl: tenant.settings?.logoUrl ?? null,
+      },
+    });
+  } catch (error: any) {
+    logger.error({ error: error?.message, tenantSlug }, 'Failed to fetch tenant profile');
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch tenant profile' } });
   }
 });
 
@@ -1439,6 +1494,35 @@ app.use('/api/v1/employees',
     },
     onProxyRes: (proxyRes, req) => {
       // Ensure CORS headers from gateway are preserved
+      const origin = req.headers.origin;
+      if (origin) {
+        proxyRes.headers['access-control-allow-origin'] = origin;
+        proxyRes.headers['access-control-allow-credentials'] = 'true';
+      }
+    },
+  })
+);
+
+// Payroll / Salary Run proxy (employee-service)
+// Permission gate is broad — fine-grained scope (OWN vs ALL) enforced inside the service.
+app.use('/api/v1/payroll',
+  requireAuth,
+  requireTenantContext,
+  requireAnyPermission(
+    'payroll:self',
+    'payroll:read',
+    'payroll:write',
+    'payroll:finalize',
+    'payroll:delete',
+  ),
+  createProxyMiddleware({
+    target: config.employeeServiceUrl,
+    changeOrigin: true,
+    pathRewrite: { '^/api/v1/payroll': '/api/v1/payroll' },
+    onProxyReq: (proxyReq, req) => {
+      addTenantHeaders(proxyReq, req as TenantContextRequest);
+    },
+    onProxyRes: (proxyRes, req) => {
       const origin = req.headers.origin;
       if (origin) {
         proxyRes.headers['access-control-allow-origin'] = origin;

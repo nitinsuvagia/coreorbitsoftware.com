@@ -18,6 +18,29 @@ import path from 'path';
 
 const router = Router();
 
+/**
+ * Files uploaded by other services on behalf of the system (payslips, salary
+ * run archives, etc.) are pinned to their original folder. Users cannot move
+ * them out of HR-controlled folders. The set is matched against File.entityType.
+ */
+const SYSTEM_GENERATED_ENTITY_TYPES = new Set(['PAYSLIP', 'SALARY_RUN']);
+
+async function assertFilesAreMovable(prisma: any, fileIds: string[]): Promise<void> {
+  if (!fileIds.length) return;
+  const systemFiles = await prisma.file.findMany({
+    where: { id: { in: fileIds }, entityType: { in: Array.from(SYSTEM_GENERATED_ENTITY_TYPES) } },
+    select: { id: true, name: true, entityType: true },
+  });
+  if (systemFiles.length > 0) {
+    const names = systemFiles.map((f: any) => f.name).join(', ');
+    const err: any = new Error(
+      `SYSTEM_GENERATED_FILE: System-generated documents cannot be moved (${names}).`
+    );
+    err.statusCode = 403;
+    throw err;
+  }
+}
+
 // ============================================================================
 // VALIDATION SCHEMAS
 // ============================================================================
@@ -1182,6 +1205,11 @@ router.patch(
     const prisma = (req as any).prisma;
     
     const input = updateFileSchema.parse(req.body);
+
+    // Block re-parenting (move) of system-generated files via PATCH as well.
+    if (input.folderId !== undefined) {
+      await assertFilesAreMovable(prisma, [req.params.id]);
+    }
     
     const file = await fileService.updateFile(prisma, req.params.id, input);
     
@@ -1319,10 +1347,21 @@ router.post(
     if (!fileIds || !Array.isArray(fileIds) || fileIds.length === 0) {
       return res.status(400).json({ success: false, error: 'fileIds array is required' });
     }
+
+    // Filter out system-generated files up-front so the rest can still move.
+    const systemFiles = await prisma.file.findMany({
+      where: { id: { in: fileIds }, entityType: { in: Array.from(SYSTEM_GENERATED_ENTITY_TYPES) } },
+      select: { id: true },
+    });
+    const blockedIds = new Set(systemFiles.map((f: any) => f.id));
     
     const results: { id: string; success: boolean; error?: string }[] = [];
     
     for (const id of fileIds) {
+      if (blockedIds.has(id)) {
+        results.push({ id, success: false, error: 'System-generated documents cannot be moved' });
+        continue;
+      }
       try {
         await fileService.updateFile(prisma, id, { folderId: targetFolderId || null });
         results.push({ id, success: true });
@@ -1640,6 +1679,8 @@ router.post(
     const prisma = (req as any).prisma;
     
     const { targetFolderId } = req.body;
+
+    await assertFilesAreMovable(prisma, [req.params.id]);
     
     const file = await prisma.file.update({
       where: { id: req.params.id },

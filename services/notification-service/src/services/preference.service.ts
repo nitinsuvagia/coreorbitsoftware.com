@@ -335,5 +335,8 @@ export function getNotificationTypes(): { type: NotificationType; category: stri
     { type: 'employee.onboarded', category: 'Team', description: 'When new team members join' },
     { type: 'employee.birthday', category: 'Team', description: 'Team member birthdays' },
     { type: 'employee.anniversary', category: 'Team', description: 'Work anniversaries' },
+
+    // Payroll
+    { type: 'payroll.run_finalized', category: 'Payroll', description: 'When your monthly payslip is ready to download' },
   ];
 }

@@ -149,6 +149,9 @@ export const config = {
     'employee.onboarded',
     'employee.birthday',
     'employee.anniversary',
+
+    // Payroll
+    'payroll.run_finalized',
   ] as const,
   
   // Default preferences for new users

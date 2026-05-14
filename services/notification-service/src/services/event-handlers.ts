@@ -1183,6 +1183,71 @@ export async function handleEmployeeAnniversary(
 }
 
 // ============================================================================
+// PAYROLL HANDLERS
+// ============================================================================
+
+/**
+ * payload: {
+ *   runId, month, year, periodLabel,
+ *   items: [{ employeeId, userId?, employeeName, netPayable, payslipFileId }],
+ *   companyName?
+ * }
+ */
+export async function handlePayrollRunFinalized(
+  payload: any,
+  context: TenantContext
+): Promise<void> {
+  const { tenantSlug } = context;
+  const prisma = await getTenantPrisma(tenantSlug);
+
+  const items: any[] = Array.isArray(payload.items) ? payload.items : [];
+  if (items.length === 0) {
+    logger.warn({ runId: payload.runId, tenantSlug }, 'payroll.run_finalized event had no items');
+    return;
+  }
+
+  // Resolve userIds for employees that don't have one in the payload
+  const employeeIdsNeedingLookup = items
+    .filter((it) => !it.userId && it.employeeId)
+    .map((it) => it.employeeId);
+
+  let employeeUserMap = new Map<string, string>();
+  if (employeeIdsNeedingLookup.length > 0) {
+    const users = await prisma.user.findMany({
+      where: { employeeId: { in: employeeIdsNeedingLookup }, status: 'ACTIVE' },
+      select: { id: true, employeeId: true },
+    });
+    employeeUserMap = new Map(users.map((u) => [u.employeeId!, u.id]));
+  }
+
+  let sent = 0;
+  for (const item of items) {
+    const userId = item.userId || (item.employeeId ? employeeUserMap.get(item.employeeId) : undefined);
+    if (!userId) continue;
+
+    await dispatchNotification({
+      tenantSlug,
+      type: 'payroll.run_finalized',
+      recipientUserIds: [userId],
+      data: {
+        runId: payload.runId,
+        periodLabel: payload.periodLabel,
+        month: payload.month,
+        year: payload.year,
+        employeeName: item.employeeName,
+        netPayable: item.netPayable,
+        payslipFileId: item.payslipFileId,
+        payslipUrl: `/documents`,
+        companyName: payload.companyName,
+      },
+    });
+    sent++;
+  }
+
+  logger.info({ runId: payload.runId, tenantSlug, sent }, 'Payroll run finalized notifications dispatched');
+}
+
+// ============================================================================
 // MASTER EVENT HANDLER
 // ============================================================================
 
@@ -1304,7 +1369,12 @@ export async function handleEvent(
       case 'employee.anniversary':
         await handleEmployeeAnniversary(payload, context);
         break;
-        
+
+      // Payroll
+      case 'payroll.run_finalized':
+        await handlePayrollRunFinalized(payload, context);
+        break;
+
       default:
         logger.debug({ eventType }, 'Unhandled notification event type');
     }
