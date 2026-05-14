@@ -116,7 +116,7 @@ services:
       - "traefik.http.routers.coreorbit-api.entrypoints=websecure"
       - "traefik.http.routers.coreorbit-api.tls=true"
       - "traefik.http.routers.coreorbit-api.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.coreorbit-api.priority=10"
+      - "traefik.http.routers.coreorbit-api.priority=200"
       - "traefik.http.services.coreorbit-api.loadbalancer.server.port=4000"
       # Route /api/* paths on tenant subdomains to API gateway (for avatar images, etc.)
       - 'traefik.http.routers.coreorbit-tenant-api.rule=HostRegexp(`[a-z0-9-]+\.coreorbitsoftware\.com`) && PathPrefix(`/api`)'
@@ -125,7 +125,7 @@ services:
       - "traefik.http.routers.coreorbit-tenant-api.tls.certresolver=letsencrypt-dns"
       - "traefik.http.routers.coreorbit-tenant-api.tls.domains[0].main=coreorbitsoftware.com"
       - "traefik.http.routers.coreorbit-tenant-api.tls.domains[0].sans=*.coreorbitsoftware.com"
-      - "traefik.http.routers.coreorbit-tenant-api.priority=5"
+      - "traefik.http.routers.coreorbit-tenant-api.priority=150"
       - "traefik.http.services.coreorbit-tenant-api.loadbalancer.server.port=4000"
     networks:
       - oms-network
